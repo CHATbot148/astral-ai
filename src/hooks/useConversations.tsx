@@ -182,6 +182,27 @@ export const useConversations = () => {
     }
   };
 
+  const renameConversation = async (conversationId: string, newTitle: string) => {
+    try {
+      const { error } = await supabase
+        .from('conversations')
+        .update({ title: newTitle })
+        .eq('id', conversationId);
+
+      if (error) throw error;
+
+      setConversations(prev => prev.map(c => 
+        c.id === conversationId ? { ...c, title: newTitle } : c
+      ));
+      
+      if (currentConversation?.id === conversationId) {
+        setCurrentConversation(prev => prev ? { ...prev, title: newTitle } : null);
+      }
+    } catch (error) {
+      console.error('Error renaming conversation:', error);
+    }
+  };
+
   const startNewChat = () => {
     setCurrentConversation(null);
     setMessages([]);
@@ -197,6 +218,7 @@ export const useConversations = () => {
     addMessage,
     updateMessage,
     deleteConversation,
+    renameConversation,
     startNewChat,
     setMessages,
   };

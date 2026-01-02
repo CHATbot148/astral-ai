@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -7,15 +7,18 @@ import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { WelcomeScreen } from './WelcomeScreen';
 import { Sidebar } from './Sidebar';
+import { TypingIndicator } from './TypingIndicator';
 import { useConversations, Message } from '@/hooks/useConversations';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import xaiLogo from '@/assets/xai-logo.png';
 
 export const ChatContainer = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
+  const [profile, setProfile] = useState<{ full_name: string | null; avatar_url: string | null } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const { user } = useAuth();
@@ -28,8 +31,8 @@ export const ChatContainer = () => {
     createConversation,
     addMessage,
     deleteConversation,
+    renameConversation,
     startNewChat,
-    setMessages,
   } = useConversations();
 
   useEffect(() => {
@@ -37,6 +40,22 @@ export const ChatContainer = () => {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, streamingContent]);
+
+  useEffect(() => {
+    if (user) {
+      fetchProfile();
+    }
+  }, [user]);
+
+  const fetchProfile = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('profiles')
+      .select('full_name, avatar_url')
+      .eq('user_id', user.id)
+      .single();
+    if (data) setProfile(data);
+  };
 
   const uploadFiles = async (files: File[]): Promise<string[]> => {
     if (!user) return [];
@@ -49,7 +68,8 @@ export const ChatContainer = () => {
         .upload(fileName, file);
 
       if (!error) {
-        urls.push(fileName);
+        const { data } = supabase.storage.from('chat-files').getPublicUrl(fileName);
+        urls.push(data.publicUrl);
       }
     }
     return urls;
@@ -62,32 +82,25 @@ export const ChatContainer = () => {
     setStreamingContent('');
 
     try {
-      // Create conversation if needed
       let convId = currentConversation?.id;
       if (!convId) {
         const newConv = await createConversation(content);
-        if (!newConv) {
-          throw new Error('Failed to create conversation');
-        }
+        if (!newConv) throw new Error('Failed to create conversation');
         convId = newConv.id;
       }
 
-      // Upload files if any
       let fileUrls: string[] = [];
       if (files && files.length > 0) {
         fileUrls = await uploadFiles(files);
       }
 
-      // Add user message
       await addMessage(convId, 'user', content, fileUrls.length > 0 ? fileUrls : undefined);
 
-      // Prepare messages for API
       const apiMessages = [
         ...messages.map(m => ({ role: m.role, content: m.content })),
         { role: 'user' as const, content }
       ];
 
-      // Stream response
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
         method: 'POST',
         headers: {
@@ -97,6 +110,7 @@ export const ChatContainer = () => {
         body: JSON.stringify({
           messages: apiMessages,
           fileContext: fileUrls.length > 0 ? `User uploaded ${fileUrls.length} file(s)` : undefined,
+          userId: user?.id,
         }),
       });
 
@@ -105,9 +119,7 @@ export const ChatContainer = () => {
         throw new Error(errorData.error || 'Failed to get response');
       }
 
-      if (!response.body) {
-        throw new Error('No response body');
-      }
+      if (!response.body) throw new Error('No response body');
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -146,7 +158,6 @@ export const ChatContainer = () => {
         }
       }
 
-      // Save assistant message
       if (fullContent) {
         await addMessage(convId, 'assistant', fullContent);
       }
@@ -163,10 +174,6 @@ export const ChatContainer = () => {
     }
   };
 
-  const handleSuggestionClick = (suggestion: string) => {
-    handleSend(suggestion);
-  };
-
   const displayMessages = [...messages];
   if (streamingContent) {
     displayMessages.push({
@@ -181,23 +188,22 @@ export const ChatContainer = () => {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      {/* Aurora Background */}
       <div className="aurora-bg" />
 
-      {/* Sidebar */}
       <Sidebar
         conversations={conversations}
         currentConversation={currentConversation}
         onSelectConversation={selectConversation}
         onNewChat={startNewChat}
         onDeleteConversation={deleteConversation}
+        onRenameConversation={renameConversation}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        profile={profile}
+        onProfileUpdate={fetchProfile}
       />
 
-      {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
         <header className="h-14 border-b border-border flex items-center px-4 gap-4 bg-background/50 backdrop-blur-sm">
           <Button
             variant="ghost"
@@ -209,8 +215,8 @@ export const ChatContainer = () => {
           </Button>
           
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-md bg-gradient-to-br from-xai-cyan to-xai-purple flex items-center justify-center">
-              <span className="font-display font-bold text-xs text-primary-foreground">X</span>
+            <div className="w-6 h-6 rounded-full overflow-hidden">
+              <img src={xaiLogo} alt="XAI" className="w-full h-full object-cover" />
             </div>
             <span className="font-display font-semibold">
               {currentConversation?.title || 'New Chat'}
@@ -218,30 +224,28 @@ export const ChatContainer = () => {
           </div>
         </header>
 
-        {/* Messages */}
         <ScrollArea ref={scrollRef} className="flex-1">
           {displayMessages.length === 0 ? (
-            <WelcomeScreen onSuggestionClick={handleSuggestionClick} />
+            <WelcomeScreen onSuggestionClick={handleSend} />
           ) : (
             <div className="max-w-4xl mx-auto">
-              {displayMessages.map((msg, index) => (
+              {displayMessages.map((msg) => (
                 <ChatMessage
                   key={msg.id}
                   role={msg.role}
                   content={msg.content}
                   isStreaming={msg.id === 'streaming'}
+                  fileUrls={msg.file_urls}
+                  userAvatar={profile?.avatar_url}
+                  userName={profile?.full_name}
                 />
               ))}
+              {isLoading && !streamingContent && <TypingIndicator />}
             </div>
           )}
         </ScrollArea>
 
-        {/* Input */}
-        <ChatInput
-          onSend={handleSend}
-          isLoading={isLoading}
-          disabled={!user}
-        />
+        <ChatInput onSend={handleSend} isLoading={isLoading} disabled={!user} />
       </main>
     </div>
   );
