@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, LogOut, Trash2, Camera, Sun, Moon, Monitor, Check, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -7,7 +7,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import xaiLogo from '@/assets/xai-logo.png';
 
 interface ProfilePopupProps {
   isOpen: boolean;
@@ -32,6 +31,13 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   const [isSavingName, setIsSavingName] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [cropperImage, setCropperImage] = useState<string | null>(null);
+
+  // Reset name when profile changes
+  useEffect(() => {
+    if (profile?.full_name) {
+      setName(profile.full_name);
+    }
+  }, [profile?.full_name]);
 
   const handleAvatarSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -77,7 +83,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       setAvatarPreview(cropperImage);
       setCropperImage(null);
       onProfileUpdate();
-      toast({ title: 'Avatar updated successfully' });
+      toast({ title: 'Avatar updated successfully ✨' });
     } catch (error) {
       toast({ 
         title: 'Failed to update avatar', 
@@ -99,7 +105,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       if (error) throw error;
       
       onProfileUpdate();
-      toast({ title: 'Name updated successfully' });
+      toast({ title: 'Name updated successfully ✨' });
     } catch (error) {
       toast({ 
         title: 'Failed to update name', 
@@ -137,7 +143,6 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       }
 
       // Delete user data (RLS will handle cascade)
-      // Note: Full account deletion requires admin API
       await signOut();
       toast({ title: 'Account data cleared. Contact support to fully delete your account.' });
     } catch (error) {
@@ -166,19 +171,23 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   return (
     <AnimatePresence>
       {isOpen && (
-        <>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50"
+            className="absolute inset-0 bg-background/80 backdrop-blur-sm"
             onClick={onClose}
           />
+          
+          {/* Popup - centered with fixed positioning */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            className="relative z-10 w-full max-w-md max-h-[90vh] overflow-y-auto"
           >
             <div className="xai-gradient-border rounded-xl bg-card p-6">
               {/* Header */}
@@ -190,43 +199,59 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
               </div>
 
               {/* Avatar Cropper Modal */}
-              {cropperImage && (
-                <div className="fixed inset-0 bg-background/90 z-[60] flex items-center justify-center p-4">
-                  <div className="bg-card rounded-xl p-6 max-w-sm w-full">
-                    <h3 className="text-lg font-semibold mb-4">Crop Avatar</h3>
-                    <div className="relative w-48 h-48 mx-auto rounded-full overflow-hidden border-2 border-xai-cyan">
-                      <img 
-                        src={cropperImage} 
-                        alt="Preview" 
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    <p className="text-sm text-muted-foreground text-center mt-4">
-                      Your avatar will be cropped as a circle
-                    </p>
-                    <div className="flex gap-3 mt-6">
-                      <Button 
-                        variant="outline" 
-                        className="flex-1"
-                        onClick={() => setCropperImage(null)}
-                      >
-                        Cancel
-                      </Button>
-                      <Button 
-                        variant="xai" 
-                        className="flex-1"
-                        onClick={handleCropConfirm}
-                      >
-                        Confirm
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              )}
+              <AnimatePresence>
+                {cropperImage && (
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 bg-background/90 z-[60] flex items-center justify-center p-4"
+                  >
+                    <motion.div 
+                      initial={{ scale: 0.9 }}
+                      animate={{ scale: 1 }}
+                      exit={{ scale: 0.9 }}
+                      className="bg-card rounded-xl p-6 max-w-sm w-full"
+                    >
+                      <h3 className="text-lg font-semibold mb-4">Crop Avatar</h3>
+                      <div className="relative w-48 h-48 mx-auto rounded-full overflow-hidden border-2 border-xai-cyan">
+                        <img 
+                          src={cropperImage} 
+                          alt="Preview" 
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <p className="text-sm text-muted-foreground text-center mt-4">
+                        Your avatar will be cropped as a circle
+                      </p>
+                      <div className="flex gap-3 mt-6">
+                        <Button 
+                          variant="outline" 
+                          className="flex-1"
+                          onClick={() => setCropperImage(null)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button 
+                          variant="xai" 
+                          className="flex-1"
+                          onClick={handleCropConfirm}
+                        >
+                          Confirm
+                        </Button>
+                      </div>
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Avatar Section */}
               <div className="flex flex-col items-center mb-6">
-                <div className="relative group">
+                <motion.div 
+                  className="relative group"
+                  whileHover={{ scale: 1.05 }}
+                  transition={{ type: 'spring', stiffness: 300 }}
+                >
                   <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-xai-cyan bg-secondary flex items-center justify-center">
                     {avatarUrl ? (
                       <img 
@@ -251,7 +276,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
                     onChange={handleAvatarSelect}
                     className="hidden"
                   />
-                </div>
+                </motion.div>
               </div>
 
               {/* Email (read-only) */}
@@ -288,9 +313,11 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
                 <label className="text-sm text-muted-foreground mb-3 block">Theme</label>
                 <div className="flex gap-2">
                   {themes.map(({ value, icon: Icon, label }) => (
-                    <button
+                    <motion.button
                       key={value}
                       onClick={() => setTheme(value)}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
                       className={`flex-1 flex flex-col items-center gap-2 p-3 rounded-lg border transition-all ${
                         theme === value 
                           ? 'border-xai-cyan bg-xai-cyan/10' 
@@ -302,9 +329,11 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
                         {label}
                       </span>
                       {theme === value && (
-                        <Check className="h-3 w-3 text-xai-cyan" />
+                        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}>
+                          <Check className="h-3 w-3 text-xai-cyan" />
+                        </motion.div>
                       )}
-                    </button>
+                    </motion.button>
                   ))}
                 </div>
               </div>
@@ -330,7 +359,11 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
                     Delete account
                   </Button>
                 ) : (
-                  <div className="p-3 rounded-lg border border-destructive/50 bg-destructive/5">
+                  <motion.div 
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="p-3 rounded-lg border border-destructive/50 bg-destructive/5"
+                  >
                     <p className="text-sm text-destructive mb-3">
                       Enter your password to confirm account deletion:
                     </p>
@@ -361,12 +394,12 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
                         {isDeleting ? 'Deleting...' : 'Delete'}
                       </Button>
                     </div>
-                  </div>
+                  </motion.div>
                 )}
               </div>
             </div>
           </motion.div>
-        </>
+        </div>
       )}
     </AnimatePresence>
   );

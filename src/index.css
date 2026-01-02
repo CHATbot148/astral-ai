@@ -6,6 +6,57 @@
 
 @layer base {
   :root {
+    /* Light theme */
+    --background: 0 0% 100%;
+    --foreground: 220 20% 10%;
+
+    --card: 0 0% 98%;
+    --card-foreground: 220 20% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 10%;
+
+    --primary: 185 100% 40%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 15% 92%;
+    --secondary-foreground: 220 20% 10%;
+
+    --muted: 220 15% 95%;
+    --muted-foreground: 220 10% 45%;
+
+    --accent: 270 80% 60%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 15% 88%;
+    --input: 220 15% 92%;
+    --ring: 185 100% 40%;
+
+    --radius: 0.75rem;
+
+    /* Custom XAI tokens - Light */
+    --xai-cyan: 185 100% 40%;
+    --xai-cyan-glow: 185 100% 50%;
+    --xai-purple: 270 80% 55%;
+    --xai-purple-glow: 270 80% 65%;
+    --xai-gradient: linear-gradient(135deg, hsl(185 100% 40%), hsl(270 80% 55%));
+    --xai-glass: 0 0% 100% / 0.9;
+    --xai-glass-border: 220 15% 85% / 0.6;
+
+    --sidebar-background: 220 15% 97%;
+    --sidebar-foreground: 220 20% 20%;
+    --sidebar-primary: 185 100% 40%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 15% 92%;
+    --sidebar-accent-foreground: 220 20% 10%;
+    --sidebar-border: 220 15% 88%;
+    --sidebar-ring: 185 100% 40%;
+  }
+
+  .dark {
     --background: 220 20% 4%;
     --foreground: 210 40% 98%;
 
@@ -34,9 +85,7 @@
     --input: 220 15% 12%;
     --ring: 185 100% 50%;
 
-    --radius: 0.75rem;
-
-    /* Custom XAI tokens */
+    /* Custom XAI tokens - Dark */
     --xai-cyan: 185 100% 50%;
     --xai-cyan-glow: 185 100% 60%;
     --xai-purple: 270 100% 65%;
@@ -53,11 +102,6 @@
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-border: 220 15% 15%;
     --sidebar-ring: 185 100% 50%;
-  }
-
-  .dark {
-    --background: 220 20% 4%;
-    --foreground: 210 40% 98%;
   }
 }
 
@@ -204,8 +248,8 @@
   pointer-events: none;
 }
 
-.aurora-bg::before,
-.aurora-bg::after {
+.dark .aurora-bg::before,
+.dark .aurora-bg::after {
   content: '';
   position: absolute;
   width: 150%;
@@ -216,18 +260,43 @@
   animation: aurora 20s ease-in-out infinite;
 }
 
-.aurora-bg::before {
+.dark .aurora-bg::before {
   background: radial-gradient(circle, hsl(185 100% 50%) 0%, transparent 70%);
   top: -50%;
   left: -25%;
   animation-delay: 0s;
 }
 
-.aurora-bg::after {
+.dark .aurora-bg::after {
   background: radial-gradient(circle, hsl(270 100% 65%) 0%, transparent 70%);
   bottom: -50%;
   right: -25%;
   animation-delay: -10s;
+}
+
+/* Light theme aurora - more subtle */
+:root:not(.dark) .aurora-bg::before,
+:root:not(.dark) .aurora-bg::after {
+  content: '';
+  position: absolute;
+  width: 150%;
+  height: 150%;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.08;
+  animation: aurora 25s ease-in-out infinite;
+}
+
+:root:not(.dark) .aurora-bg::before {
+  background: radial-gradient(circle, hsl(185 100% 45%) 0%, transparent 70%);
+  top: -50%;
+  left: -25%;
+}
+
+:root:not(.dark) .aurora-bg::after {
+  background: radial-gradient(circle, hsl(270 80% 60%) 0%, transparent 70%);
+  bottom: -50%;
+  right: -25%;
 }
 
 @keyframes aurora {

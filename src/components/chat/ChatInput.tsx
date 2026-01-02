@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Mic, MicOff, Plus, X, Loader2 } from 'lucide-react';
+import { Send, Mic, MicOff, Plus, X, Loader2, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -95,17 +95,21 @@ export const ChatInput = ({ onSend, isLoading, disabled }: ChatInputProps) => {
       };
 
       recognition.onresult = (event: SpeechRecognitionEvent) => {
-        let transcript = '';
+        let finalTranscript = '';
+        let interimTranscript = '';
+        
         for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-        setMessage(prev => {
-          // Only update if we're getting new content
-          if (event.results[event.results.length - 1].isFinal) {
-            return prev + transcript + ' ';
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript;
+          } else {
+            interimTranscript += transcript;
           }
-          return prev;
-        });
+        }
+        
+        if (finalTranscript) {
+          setMessage(prev => prev + finalTranscript + ' ');
+        }
       };
 
       recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
@@ -143,7 +147,7 @@ export const ChatInput = ({ onSend, isLoading, disabled }: ChatInputProps) => {
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 pb-4">
+    <div className="w-full max-w-4xl mx-auto px-4 pb-4 pt-2">
       {/* File Previews Above Input */}
       <AnimatePresence>
         {filePreviews.length > 0 && (
@@ -157,28 +161,31 @@ export const ChatInput = ({ onSend, isLoading, disabled }: ChatInputProps) => {
               {filePreviews.map(({ file, preview }, index) => (
                 <motion.div
                   key={index}
-                  initial={{ opacity: 0, scale: 0.9 }}
+                  initial={{ opacity: 0, scale: 0.8 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
                   className="relative group"
                 >
                   {preview ? (
-                    <div className="w-20 h-20 rounded-lg overflow-hidden border border-border">
+                    <div className="w-16 h-16 rounded-lg overflow-hidden border border-border bg-secondary">
                       <img src={preview} alt={file.name} className="w-full h-full object-cover" />
                     </div>
                   ) : (
-                    <div className="w-20 h-20 rounded-lg bg-secondary flex items-center justify-center border border-border">
-                      <span className="text-xs text-muted-foreground truncate px-1 text-center">
-                        {file.name.slice(0, 10)}...
+                    <div className="w-16 h-16 rounded-lg bg-secondary flex flex-col items-center justify-center border border-border p-1">
+                      <FileText className="h-5 w-5 text-muted-foreground mb-0.5" />
+                      <span className="text-[10px] text-muted-foreground truncate w-full text-center">
+                        {file.name.slice(0, 8)}
                       </span>
                     </div>
                   )}
-                  <button
+                  <motion.button
                     onClick={() => removeFile(index)}
-                    className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center shadow-lg"
                   >
                     <X className="h-3 w-3" />
-                  </button>
+                  </motion.button>
                 </motion.div>
               ))}
             </div>
@@ -187,17 +194,19 @@ export const ChatInput = ({ onSend, isLoading, disabled }: ChatInputProps) => {
       </AnimatePresence>
 
       {/* Input Bar - ChatGPT Style */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-end gap-2">
         {/* Attachment Button - Round */}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={disabled}
-          className="h-12 w-12 rounded-full bg-secondary hover:bg-secondary/80 flex-shrink-0"
-        >
-          <Plus className="h-5 w-5" />
-        </Button>
+        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled}
+            className="h-10 w-10 rounded-full bg-secondary hover:bg-secondary/80 flex-shrink-0"
+          >
+            <Plus className="h-5 w-5" />
+          </Button>
+        </motion.div>
         <input
           ref={fileInputRef}
           type="file"
@@ -208,7 +217,7 @@ export const ChatInput = ({ onSend, isLoading, disabled }: ChatInputProps) => {
         />
 
         {/* Main Input Container */}
-        <div className="flex-1 flex items-center bg-secondary rounded-full px-4">
+        <div className="flex-1 flex items-end bg-secondary rounded-3xl px-4 py-1 min-h-[48px]">
           <textarea
             ref={textareaRef}
             value={message}
@@ -220,46 +229,50 @@ export const ChatInput = ({ onSend, isLoading, disabled }: ChatInputProps) => {
             className={cn(
               "flex-1 resize-none bg-transparent border-0 outline-none",
               "text-foreground placeholder:text-muted-foreground",
-              "min-h-[48px] max-h-[200px] py-3 px-1",
-              "focus:ring-0"
+              "min-h-[40px] max-h-[200px] py-2 px-1",
+              "focus:ring-0 text-sm"
             )}
           />
 
           {/* Voice Input */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggleRecording}
-            disabled={disabled || isTranscribing}
-            className={cn(
-              "h-8 w-8 rounded-full flex-shrink-0 transition-colors",
-              isRecording && "text-destructive bg-destructive/10 animate-pulse"
-            )}
-          >
-            {isTranscribing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : isRecording ? (
-              <MicOff className="h-4 w-4" />
-            ) : (
-              <Mic className="h-4 w-4 text-muted-foreground" />
-            )}
-          </Button>
+          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleRecording}
+              disabled={disabled || isTranscribing}
+              className={cn(
+                "h-8 w-8 rounded-full flex-shrink-0 mb-1 transition-colors",
+                isRecording && "text-destructive bg-destructive/10 animate-pulse"
+              )}
+            >
+              {isTranscribing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : isRecording ? (
+                <MicOff className="h-4 w-4" />
+              ) : (
+                <Mic className="h-4 w-4 text-muted-foreground" />
+              )}
+            </Button>
+          </motion.div>
         </div>
 
         {/* Send Button - Round */}
-        <Button
-          variant="xai"
-          size="icon"
-          onClick={handleSubmit}
-          disabled={(!message.trim() && files.length === 0) || isLoading || disabled}
-          className="h-12 w-12 rounded-full flex-shrink-0"
-        >
-          {isLoading ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
-          ) : (
-            <Send className="h-5 w-5" />
-          )}
-        </Button>
+        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+          <Button
+            variant="xai"
+            size="icon"
+            onClick={handleSubmit}
+            disabled={(!message.trim() && files.length === 0) || isLoading || disabled}
+            className="h-10 w-10 rounded-full flex-shrink-0"
+          >
+            {isLoading ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+          </Button>
+        </motion.div>
       </div>
 
       <p className="text-center text-xs text-muted-foreground mt-3">

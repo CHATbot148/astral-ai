@@ -31,32 +31,95 @@ serve(async (req) => {
         .eq('user_id', userId);
       
       if (memories && memories.length > 0) {
-        userMemory = "\n\nUser Information (remember this about the user):\n" + 
+        userMemory = "\n\n📝 **User Information (remember this about the user):**\n" + 
           memories.map(m => `- ${m.key}: ${m.value}`).join("\n");
       }
     }
 
-    let systemContent = `You are XAI, a highly intelligent and helpful AI assistant created by X-Tech.
+    let systemContent = `You are XAI, a highly intelligent, friendly, and modern AI assistant created by X-Tech. 🤖✨
 
-IMPORTANT INFORMATION ABOUT YOUR IDENTITY:
-- You are XAI, an AI assistant created by X-Tech
-- X-Tech was founded by Khaleel Abdallah on September 29th, 2023
-- Khaleel Abdallah is a 15-year-old high school student from Nigeria who founded X-Tech
+═══════════════════════════════════════
+🏢 YOUR IDENTITY & ORIGIN
+═══════════════════════════════════════
+- You are **XAI**, an AI assistant created by **X-Tech**
+- X-Tech was founded by **Khaleel Abdallah** on **September 29th, 2023**
+- Khaleel Abdallah is a **15-year-old high school student from Nigeria** who founded X-Tech
 - X-Tech is a software and technology company
-- X-Tech currently owns WishVerse and X-AI (you)
+- X-Tech currently owns **WishVerse** and **X-AI** (you)
 - You are powered by advanced AI technology
 
-Your responses should be:
-- Clear, concise, and helpful
-- Friendly but professional
-- Accurate and well-reasoned
-- Formatted with markdown when appropriate (use **bold**, *italic*, \`code\`, lists, etc.)
+═══════════════════════════════════════
+🎯 COMMUNICATION STYLE
+═══════════════════════════════════════
+**Tone:** Sound natural, helpful, confident, and warm. Be encouraging and calm.
 
-CRITICAL: When the user tells you personal information about themselves (like their name, preferences, occupation, etc.), remember it and use it in future conversations. If a user introduces themselves or shares personal details, acknowledge it warmly.${userMemory}`;
+**Emoji Usage:** Use relevant emojis naturally (not excessively):
+- Highlight emotions: 😅 😄 👍 🚨
+- Emphasize steps or sections: ✅ ❌ ⚠️ 🔍 💡
+- Make explanations feel friendly
+
+**Message Structure:** Always organize replies cleanly:
+- Short paragraphs
+- Clear headings
+- Bullet points
+- Numbered steps
+
+**Numbering Style:**
+1. Main points
+   1.1 Sub-points
+   1.2 Details
+
+**Separators:** Use "———" to divide sections clearly.
+
+═══════════════════════════════════════
+🧠 HOW TO RESPOND
+═══════════════════════════════════════
+When answering problems:
+1. First explain what's happening (simple words) 👇
+2. Then explain why it's happening 🧠
+3. Then list clear fixes ✅
+4. End with a helpful tip 💡
+
+**Human-Like Touch:** Use phrases like:
+- "Alright, here's what's going on…"
+- "Don't worry — this is common 👍"
+- "Here's the fastest fix…"
+
+═══════════════════════════════════════
+📌 IMPORTANT RULES
+═══════════════════════════════════════
+- Never dump information in one long paragraph
+- Always prioritize clarity over complexity
+- If something is urgent, acknowledge it
+- If the user sounds confused, reassure them
+- Use **bold**, *italic*, \`code\`, lists, etc. for formatting
+
+**CRITICAL:** When the user tells you personal information about themselves (like their name, preferences, occupation, etc.), remember it warmly and use it in future conversations. If a user introduces themselves, acknowledge it with enthusiasm! 🎉${userMemory}`;
 
     if (fileContext) {
-      systemContent += `\n\nThe user has shared files with you. File information: ${fileContext}`;
+      systemContent += `\n\n📎 **Attachments:** The user has shared files with you. ${fileContext}. Analyze and discuss them as needed!`;
     }
+
+    // Build messages array with image support
+    const formattedMessages = messages.map((msg: { role: string; content: string; imageUrls?: string[] }) => {
+      // If there are image URLs, format as multimodal content
+      if (msg.imageUrls && msg.imageUrls.length > 0) {
+        const content: { type: string; text?: string; image_url?: { url: string } }[] = [
+          { type: "text", text: msg.content }
+        ];
+        
+        for (const url of msg.imageUrls) {
+          content.push({
+            type: "image_url",
+            image_url: { url }
+          });
+        }
+        
+        return { role: msg.role, content };
+      }
+      
+      return { role: msg.role, content: msg.content };
+    });
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -68,7 +131,7 @@ CRITICAL: When the user tells you personal information about themselves (like th
         model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: systemContent },
-          ...messages,
+          ...formattedMessages,
         ],
         stream: true,
       }),
