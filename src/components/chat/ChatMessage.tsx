@@ -1,5 +1,5 @@
-import { motion } from 'framer-motion';
-import { Copy, Check } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Copy, Check, ThumbsUp, ThumbsDown, Heart, Sparkles, FileText } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -14,14 +14,30 @@ interface ChatMessageProps {
   userName?: string | null;
 }
 
+type Reaction = 'like' | 'dislike' | 'love' | 'sparkle' | null;
+
+const reactionIcons = {
+  like: ThumbsUp,
+  dislike: ThumbsDown,
+  love: Heart,
+  sparkle: Sparkles,
+};
+
 export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, userName }: ChatMessageProps) => {
   const [copied, setCopied] = useState(false);
+  const [reaction, setReaction] = useState<Reaction>(null);
+  const [showReactions, setShowReactions] = useState(false);
   const isUser = role === 'user';
 
   const copyToClipboard = async () => {
     await navigator.clipboard.writeText(content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const toggleReaction = (r: Reaction) => {
+    setReaction(prev => prev === r ? null : r);
+    setShowReactions(false);
   };
 
   // Simple markdown-like formatting
@@ -60,19 +76,26 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
       });
   };
 
+  const isImageUrl = (url: string) => {
+    return url.match(/\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$/i) || url.includes('supabase') && url.includes('storage');
+  };
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
+      initial={{ opacity: 0, y: 20, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.3, ease: 'easeOut' }}
       className={cn(
-        "flex gap-4 px-4 py-6 group",
+        "flex gap-3 px-4 py-4 group",
         isUser ? "flex-row-reverse" : "flex-row",
-        isUser ? "bg-transparent" : "bg-muted/30"
+        isUser ? "bg-transparent" : "bg-muted/20"
       )}
     >
       {/* Avatar */}
-      <div
+      <motion.div
+        initial={{ scale: 0 }}
+        animate={{ scale: 1 }}
+        transition={{ delay: 0.1, type: 'spring', stiffness: 200 }}
         className={cn(
           "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden",
           isUser
@@ -91,7 +114,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
         ) : (
           <img src={xaiLogo} alt="XAI" className="w-full h-full object-cover" />
         )}
-      </div>
+      </motion.div>
 
       {/* Content */}
       <div className={cn("flex-1 min-w-0 space-y-2", isUser ? "text-right" : "text-left")}>
@@ -122,35 +145,63 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
 
         {/* File Attachments */}
         {fileUrls && fileUrls.length > 0 && (
-          <div className={cn("flex flex-wrap gap-2", isUser ? "justify-end" : "justify-start")}>
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className={cn("flex flex-wrap gap-2 my-2", isUser ? "justify-end" : "justify-start")}
+          >
             {fileUrls.map((url, index) => (
-              <div key={index} className="w-32 h-32 rounded-lg overflow-hidden border border-border">
-                <img 
-                  src={url} 
-                  alt={`Attachment ${index + 1}`} 
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                  }}
-                />
-              </div>
+              <motion.div 
+                key={index} 
+                className="relative"
+                whileHover={{ scale: 1.02 }}
+              >
+                {isImageUrl(url) ? (
+                  <div className="w-48 max-w-full rounded-lg overflow-hidden border border-border bg-secondary">
+                    <img 
+                      src={url} 
+                      alt={`Attachment ${index + 1}`} 
+                      className="w-full h-auto max-h-64 object-contain"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        target.style.display = 'none';
+                        target.parentElement!.innerHTML = '<div class="p-4 text-sm text-muted-foreground">Image failed to load</div>';
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <a 
+                    href={url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-secondary border border-border hover:bg-secondary/80 transition-colors"
+                  >
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm">View Attachment</span>
+                  </a>
+                )}
+              </motion.div>
             ))}
-          </div>
+          </motion.div>
         )}
 
-        <div className={cn(
-          "text-foreground leading-relaxed whitespace-pre-wrap inline-block max-w-[85%]",
-          isUser && "bg-secondary rounded-2xl rounded-tr-sm px-4 py-2"
-        )}>
+        <motion.div 
+          className={cn(
+            "text-foreground leading-relaxed whitespace-pre-wrap inline-block max-w-[85%]",
+            isUser && "bg-secondary rounded-2xl rounded-tr-sm px-4 py-2"
+          )}
+          layout
+        >
           {formatContent(content)}
-        </div>
+        </motion.div>
 
-        {/* Actions */}
+        {/* Actions & Reactions */}
         {!isUser && !isStreaming && content && (
           <div className={cn(
-            "flex items-center gap-2 pt-2 opacity-0 group-hover:opacity-100 transition-opacity",
+            "flex items-center gap-1 pt-2 opacity-0 group-hover:opacity-100 transition-opacity",
             isUser ? "justify-end" : "justify-start"
           )}>
+            {/* Copy Button */}
             <Button
               variant="ghost"
               size="sm"
@@ -169,7 +220,71 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
                 </>
               )}
             </Button>
+
+            {/* Reaction Button */}
+            <div className="relative">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowReactions(!showReactions)}
+                className={cn(
+                  "h-7 px-2 text-xs",
+                  reaction ? "text-xai-cyan" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {reaction ? (
+                  (() => {
+                    const Icon = reactionIcons[reaction];
+                    return <Icon className="h-3 w-3" />;
+                  })()
+                ) : (
+                  <ThumbsUp className="h-3 w-3" />
+                )}
+              </Button>
+              
+              {/* Reaction Picker */}
+              <AnimatePresence>
+                {showReactions && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                    className="absolute bottom-full left-0 mb-1 flex gap-1 p-1.5 rounded-lg bg-popover border border-border shadow-lg"
+                  >
+                    {(Object.keys(reactionIcons) as Reaction[]).filter(Boolean).map((r) => {
+                      const Icon = reactionIcons[r!];
+                      return (
+                        <motion.button
+                          key={r}
+                          whileHover={{ scale: 1.2 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={() => toggleReaction(r)}
+                          className={cn(
+                            "p-1.5 rounded-full transition-colors",
+                            reaction === r ? "bg-xai-cyan/20 text-xai-cyan" : "hover:bg-secondary text-muted-foreground"
+                          )}
+                        >
+                          <Icon className="h-4 w-4" />
+                        </motion.button>
+                      );
+                    })}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
+        )}
+
+        {/* Read receipt for user messages */}
+        {isUser && !isStreaming && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex items-center gap-1 justify-end text-xs text-muted-foreground mt-1"
+          >
+            <Check className="h-3 w-3" />
+            <span>Sent</span>
+          </motion.div>
         )}
       </div>
     </motion.div>

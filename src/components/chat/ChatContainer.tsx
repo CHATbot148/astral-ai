@@ -14,6 +14,19 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import xaiLogo from '@/assets/xai-logo.png';
 
+// Memory extraction patterns
+const MEMORY_PATTERNS = [
+  { pattern: /my name is (\w+)/i, key: 'name' },
+  { pattern: /i(?:'m| am) called (\w+)/i, key: 'name' },
+  { pattern: /call me (\w+)/i, key: 'preferred_name' },
+  { pattern: /i(?:'m| am) (?:a |an )?(\w+ ?\w*) (?:developer|engineer|designer|student|teacher|doctor|professional)/i, key: 'profession' },
+  { pattern: /i work (?:at|for) (.+?)(?:\.|,|$)/i, key: 'workplace' },
+  { pattern: /i(?:'m| am) from (.+?)(?:\.|,|$)/i, key: 'location' },
+  { pattern: /i(?:'m| am) (\d+) years old/i, key: 'age' },
+  { pattern: /i love (.+?)(?:\.|,|$)/i, key: 'interests' },
+  { pattern: /my favorite (.+?) is (.+?)(?:\.|,|$)/i, key: 'favorite_$1' },
+];
+
 export const ChatContainer = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
@@ -57,6 +70,44 @@ export const ChatContainer = () => {
     if (data) setProfile(data);
   };
 
+  const extractAndSaveMemory = async (content: string) => {
+    if (!user) return;
+
+    for (const { pattern, key } of MEMORY_PATTERNS) {
+      const match = content.match(pattern);
+      if (match) {
+        let memoryKey = key;
+        let memoryValue = match[1];
+        
+        // Handle special case for "favorite X is Y"
+        if (key.startsWith('favorite_') && match[2]) {
+          memoryKey = `favorite_${match[1].toLowerCase().replace(/\s+/g, '_')}`;
+          memoryValue = match[2];
+        }
+
+        try {
+          // Upsert the memory
+          const { error } = await supabase
+            .from('user_memory')
+            .upsert({
+              user_id: user.id,
+              key: memoryKey,
+              value: memoryValue.trim(),
+              updated_at: new Date().toISOString(),
+            }, {
+              onConflict: 'user_id,key'
+            });
+
+          if (!error) {
+            console.log(`Memory saved: ${memoryKey} = ${memoryValue}`);
+          }
+        } catch (error) {
+          console.error('Failed to save memory:', error);
+        }
+      }
+    }
+  };
+
   const uploadFiles = async (files: File[]): Promise<string[]> => {
     if (!user) return [];
     
@@ -94,12 +145,30 @@ export const ChatContainer = () => {
         fileUrls = await uploadFiles(files);
       }
 
+      // Extract and save memory from user message
+      await extractAndSaveMemory(content);
+
       await addMessage(convId, 'user', content, fileUrls.length > 0 ? fileUrls : undefined);
 
-      const apiMessages = [
-        ...messages.map(m => ({ role: m.role, content: m.content })),
-        { role: 'user' as const, content }
-      ];
+      // Build messages with image URLs for the API
+      const apiMessages = messages.map(m => ({
+        role: m.role,
+        content: m.content,
+        imageUrls: m.file_urls?.filter(url => 
+          url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) || 
+          (url.includes('supabase') && url.includes('storage'))
+        )
+      }));
+      
+      // Add current message
+      apiMessages.push({
+        role: 'user' as const,
+        content,
+        imageUrls: fileUrls.filter(url => 
+          url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) || 
+          (url.includes('supabase') && url.includes('storage'))
+        )
+      });
 
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
         method: 'POST',
@@ -109,7 +178,10 @@ export const ChatContainer = () => {
         },
         body: JSON.stringify({
           messages: apiMessages,
-          fileContext: fileUrls.length > 0 ? `User uploaded ${fileUrls.length} file(s)` : undefined,
+          fileContext: fileUrls.length > 0 ? `User uploaded ${fileUrls.length} file(s): ${fileUrls.map(url => {
+            const isImage = url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i);
+            return isImage ? 'image' : 'document';
+          }).join(', ')}` : undefined,
           userId: user?.id,
         }),
       });
@@ -204,7 +276,11 @@ export const ChatContainer = () => {
       />
 
       <main className="flex-1 flex flex-col min-w-0">
-        <header className="h-14 border-b border-border flex items-center px-4 gap-4 bg-background/50 backdrop-blur-sm">
+        <motion.header 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="h-14 border-b border-border flex items-center px-4 gap-4 bg-background/50 backdrop-blur-sm"
+        >
           <Button
             variant="ghost"
             size="icon"
@@ -215,34 +291,51 @@ export const ChatContainer = () => {
           </Button>
           
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full overflow-hidden">
+            <motion.div 
+              className="w-6 h-6 rounded-full overflow-hidden"
+              whileHover={{ scale: 1.1 }}
+            >
               <img src={xaiLogo} alt="XAI" className="w-full h-full object-cover" />
-            </div>
+            </motion.div>
             <span className="font-display font-semibold">
               {currentConversation?.title || 'New Chat'}
             </span>
           </div>
-        </header>
+        </motion.header>
 
         <ScrollArea ref={scrollRef} className="flex-1">
-          {displayMessages.length === 0 ? (
-            <WelcomeScreen onSuggestionClick={handleSend} />
-          ) : (
-            <div className="max-w-4xl mx-auto">
-              {displayMessages.map((msg) => (
-                <ChatMessage
-                  key={msg.id}
-                  role={msg.role}
-                  content={msg.content}
-                  isStreaming={msg.id === 'streaming'}
-                  fileUrls={msg.file_urls}
-                  userAvatar={profile?.avatar_url}
-                  userName={profile?.full_name}
-                />
-              ))}
-              {isLoading && !streamingContent && <TypingIndicator />}
-            </div>
-          )}
+          <AnimatePresence mode="wait">
+            {displayMessages.length === 0 ? (
+              <motion.div
+                key="welcome"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <WelcomeScreen onSuggestionClick={handleSend} />
+              </motion.div>
+            ) : (
+              <motion.div 
+                key="messages"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="max-w-4xl mx-auto"
+              >
+                {displayMessages.map((msg, index) => (
+                  <ChatMessage
+                    key={msg.id}
+                    role={msg.role}
+                    content={msg.content}
+                    isStreaming={msg.id === 'streaming'}
+                    fileUrls={msg.file_urls}
+                    userAvatar={profile?.avatar_url}
+                    userName={profile?.full_name}
+                  />
+                ))}
+                {isLoading && !streamingContent && <TypingIndicator />}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </ScrollArea>
 
         <ChatInput onSend={handleSend} isLoading={isLoading} disabled={!user} />
