@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,20 +12,47 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, fileContext } = await req.json();
+    const { messages, fileContext, userId } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    let systemContent = `You are XAI, a highly intelligent and helpful AI assistant. You are powered by advanced AI technology. Your responses should be:
+    // Fetch user memory if userId is provided
+    let userMemory = "";
+    if (userId && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+      const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      const { data: memories } = await supabase
+        .from('user_memory')
+        .select('key, value')
+        .eq('user_id', userId);
+      
+      if (memories && memories.length > 0) {
+        userMemory = "\n\nUser Information (remember this about the user):\n" + 
+          memories.map(m => `- ${m.key}: ${m.value}`).join("\n");
+      }
+    }
+
+    let systemContent = `You are XAI, a highly intelligent and helpful AI assistant created by X-Tech.
+
+IMPORTANT INFORMATION ABOUT YOUR IDENTITY:
+- You are XAI, an AI assistant created by X-Tech
+- X-Tech was founded by Khaleel Abdallah on September 29th, 2023
+- Khaleel Abdallah is a 15-year-old high school student from Nigeria who founded X-Tech
+- X-Tech is a software and technology company
+- X-Tech currently owns WishVerse and X-AI (you)
+- You are powered by advanced AI technology
+
+Your responses should be:
 - Clear, concise, and helpful
 - Friendly but professional
 - Accurate and well-reasoned
 - Formatted with markdown when appropriate (use **bold**, *italic*, \`code\`, lists, etc.)
 
-If the user shares files, analyze them thoughtfully and provide relevant insights.`;
+CRITICAL: When the user tells you personal information about themselves (like their name, preferences, occupation, etc.), remember it and use it in future conversations. If a user introduces themselves or shares personal details, acknowledge it warmly.${userMemory}`;
 
     if (fileContext) {
       systemContent += `\n\nThe user has shared files with you. File information: ${fileContext}`;

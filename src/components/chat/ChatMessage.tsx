@@ -1,16 +1,20 @@
 import { motion } from 'framer-motion';
-import { User, Sparkles, Copy, Check } from 'lucide-react';
+import { Copy, Check } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import xaiLogo from '@/assets/xai-logo.png';
 
 interface ChatMessageProps {
   role: 'user' | 'assistant';
   content: string;
   isStreaming?: boolean;
+  fileUrls?: string[] | null;
+  userAvatar?: string | null;
+  userName?: string | null;
 }
 
-export const ChatMessage = ({ role, content, isStreaming }: ChatMessageProps) => {
+export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, userName }: ChatMessageProps) => {
   const [copied, setCopied] = useState(false);
   const isUser = role === 'user';
 
@@ -63,30 +67,37 @@ export const ChatMessage = ({ role, content, isStreaming }: ChatMessageProps) =>
       transition={{ duration: 0.3 }}
       className={cn(
         "flex gap-4 px-4 py-6 group",
+        isUser ? "flex-row-reverse" : "flex-row",
         isUser ? "bg-transparent" : "bg-muted/30"
       )}
     >
       {/* Avatar */}
       <div
         className={cn(
-          "w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0",
+          "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden",
           isUser
             ? "bg-secondary"
             : "bg-gradient-to-br from-xai-cyan to-xai-purple xai-glow"
         )}
       >
         {isUser ? (
-          <User className="h-4 w-4 text-foreground" />
+          userAvatar ? (
+            <img src={userAvatar} alt="User" className="w-full h-full object-cover" />
+          ) : (
+            <span className="text-xs font-semibold">
+              {userName?.[0]?.toUpperCase() || 'U'}
+            </span>
+          )
         ) : (
-          <Sparkles className="h-4 w-4 text-primary-foreground" />
+          <img src={xaiLogo} alt="XAI" className="w-full h-full object-cover" />
         )}
       </div>
 
       {/* Content */}
-      <div className="flex-1 min-w-0 space-y-2">
-        <div className="flex items-center gap-2">
+      <div className={cn("flex-1 min-w-0 space-y-2", isUser ? "text-right" : "text-left")}>
+        <div className={cn("flex items-center gap-2", isUser ? "justify-end" : "justify-start")}>
           <span className="font-semibold text-sm">
-            {isUser ? 'You' : 'XAI'}
+            {isUser ? (userName || 'You') : 'XAI'}
           </span>
           {isStreaming && (
             <span className="flex gap-1">
@@ -109,13 +120,37 @@ export const ChatMessage = ({ role, content, isStreaming }: ChatMessageProps) =>
           )}
         </div>
 
-        <div className="text-foreground leading-relaxed whitespace-pre-wrap">
+        {/* File Attachments */}
+        {fileUrls && fileUrls.length > 0 && (
+          <div className={cn("flex flex-wrap gap-2", isUser ? "justify-end" : "justify-start")}>
+            {fileUrls.map((url, index) => (
+              <div key={index} className="w-32 h-32 rounded-lg overflow-hidden border border-border">
+                <img 
+                  src={url} 
+                  alt={`Attachment ${index + 1}`} 
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className={cn(
+          "text-foreground leading-relaxed whitespace-pre-wrap inline-block max-w-[85%]",
+          isUser && "bg-secondary rounded-2xl rounded-tr-sm px-4 py-2"
+        )}>
           {formatContent(content)}
         </div>
 
         {/* Actions */}
         {!isUser && !isStreaming && content && (
-          <div className="flex items-center gap-2 pt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className={cn(
+            "flex items-center gap-2 pt-2 opacity-0 group-hover:opacity-100 transition-opacity",
+            isUser ? "justify-end" : "justify-start"
+          )}>
             <Button
               variant="ghost"
               size="sm"

@@ -230,8 +230,7 @@ const Auth = () => {
 
             <Button
               type="submit"
-              variant="xai"
-              className="w-full"
+              className="w-full bg-gradient-to-r from-xai-cyan to-xai-purple text-primary-foreground hover:opacity-90"
               disabled={loading}
             >
               {loading ? (

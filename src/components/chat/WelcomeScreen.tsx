@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
-import { Sparkles, Zap, Code, Image, FileText, Brain } from 'lucide-react';
+import { Code, Brain, FileText, Zap } from 'lucide-react';
+import xaiLogo from '@/assets/xai-logo.png';
 
 interface WelcomeScreenProps {
   onSuggestionClick: (suggestion: string) => void;
@@ -39,11 +40,11 @@ export const WelcomeScreen = ({ onSuggestionClick }: WelcomeScreenProps) => {
         className="mb-8"
       >
         <div className="relative">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-xai-cyan to-xai-purple flex items-center justify-center xai-glow xai-float">
-            <Sparkles className="h-10 w-10 text-primary-foreground" />
+          <div className="w-24 h-24 rounded-full overflow-hidden xai-glow xai-float">
+            <img src={xaiLogo} alt="XAI" className="w-full h-full object-cover" />
           </div>
           <motion.div
-            className="absolute -inset-4 rounded-3xl bg-gradient-to-br from-xai-cyan/20 to-xai-purple/20 blur-xl -z-10"
+            className="absolute -inset-4 rounded-full bg-gradient-to-br from-xai-cyan/20 to-xai-purple/20 blur-xl -z-10"
             animate={{ scale: [1, 1.1, 1], opacity: [0.5, 0.8, 0.5] }}
             transition={{ duration: 3, repeat: Infinity }}
           />
@@ -66,7 +67,7 @@ export const WelcomeScreen = ({ onSuggestionClick }: WelcomeScreenProps) => {
         transition={{ delay: 0.3 }}
         className="text-lg text-muted-foreground text-center max-w-md mb-12"
       >
-        Your intelligent AI assistant powered by cutting-edge technology.
+        Your intelligent AI assistant by X-Tech.
         How can I help you today?
       </motion.p>
 
