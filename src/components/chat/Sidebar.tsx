@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, MessageSquare, Trash2, Edit2, ChevronLeft, Search, Check, X } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, Pencil, ChevronLeft, Search, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -73,6 +73,11 @@ export const Sidebar = ({
   const cancelEdit = () => {
     setEditingId(null);
     setEditTitle('');
+  };
+
+  const handleDelete = (convId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    onDeleteConversation(convId);
   };
 
   return (
@@ -217,28 +222,23 @@ export const Sidebar = ({
                       )}
                     </div>
                     
-                    {/* Actions - Always visible on right side */}
+                    {/* Edit and Delete icons - Always visible */}
                     {!editingId && (
-                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
                           onClick={(e) => startEditing(conv, e)}
+                          className="p-1.5 rounded hover:bg-secondary/80 transition-colors"
+                          title="Rename chat"
                         >
-                          <Edit2 className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onDeleteConversation(conv.id);
-                          }}
+                          <Pencil className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                        </button>
+                        <button
+                          onClick={(e) => handleDelete(conv.id, e)}
+                          className="p-1.5 rounded hover:bg-destructive/20 transition-colors"
+                          title="Delete chat"
                         >
                           <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-                        </Button>
+                        </button>
                       </div>
                     )}
                   </div>
