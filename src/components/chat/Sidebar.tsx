@@ -52,6 +52,11 @@ export const Sidebar = ({
     return date.toLocaleDateString();
   };
 
+  // Truncate title to 15 chars max
+  const truncateTitle = (title: string) => {
+    return title.length > 15 ? title.slice(0, 15) + '...' : title;
+  };
+
   const filteredConversations = conversations.filter(conv =>
     conv.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -59,12 +64,13 @@ export const Sidebar = ({
   const startEditing = (conv: Conversation, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingId(conv.id);
-    setEditTitle(conv.title);
+    setEditTitle(conv.title.slice(0, 15)); // Limit to 15 chars
   };
 
   const saveEdit = () => {
     if (editingId && editTitle.trim()) {
-      onRenameConversation(editingId, editTitle.trim());
+      // Enforce 15 char limit
+      onRenameConversation(editingId, editTitle.trim().slice(0, 15));
     }
     setEditingId(null);
     setEditTitle('');
@@ -113,9 +119,9 @@ export const Sidebar = ({
             animate={{ opacity: 1 }}
           >
             <div className="w-8 h-8 rounded-full overflow-hidden xai-glow">
-              <img src={xaiLogo} alt="XAI" className="w-full h-full object-cover" />
+              <img src={xaiLogo} alt="X-AI" className="w-full h-full object-cover" />
             </div>
-            <span className="font-display font-semibold text-lg xai-gradient-text">XAI</span>
+            <span className="font-display font-semibold text-lg xai-gradient-text">X-AI</span>
           </motion.div>
           
           <Button
@@ -169,7 +175,7 @@ export const Sidebar = ({
                   <div
                     onClick={() => !editingId && onSelectConversation(conv)}
                     className={cn(
-                      "w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-left transition-all duration-200 group cursor-pointer",
+                      "w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-left transition-all duration-200 group/item cursor-pointer",
                       currentConversation?.id === conv.id
                         ? "bg-sidebar-accent text-sidebar-accent-foreground"
                         : "text-sidebar-foreground hover:bg-sidebar-accent/50"
@@ -177,17 +183,18 @@ export const Sidebar = ({
                   >
                     <MessageSquare className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
                     
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 overflow-hidden">
                       {editingId === conv.id ? (
                         <div className="flex items-center gap-1">
                           <Input
                             value={editTitle}
-                            onChange={(e) => setEditTitle(e.target.value)}
+                            onChange={(e) => setEditTitle(e.target.value.slice(0, 15))}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') saveEdit();
                               if (e.key === 'Escape') cancelEdit();
                             }}
                             className="h-6 text-sm px-1"
+                            maxLength={15}
                             autoFocus
                             onClick={(e) => e.stopPropagation()}
                           />
@@ -216,7 +223,7 @@ export const Sidebar = ({
                         </div>
                       ) : (
                         <>
-                          <p className="text-sm font-medium truncate">{conv.title}</p>
+                          <p className="text-sm font-medium truncate">{truncateTitle(conv.title)}</p>
                           <p className="text-xs text-muted-foreground">{formatDate(conv.updated_at)}</p>
                         </>
                       )}
@@ -224,7 +231,7 @@ export const Sidebar = ({
                     
                     {/* Edit and Delete icons - Always visible */}
                     {!editingId && (
-                      <div className="flex items-center gap-1 flex-shrink-0">
+                      <div className="flex items-center gap-0.5 flex-shrink-0 opacity-60 group-hover/item:opacity-100 transition-opacity">
                         <button
                           onClick={(e) => startEditing(conv, e)}
                           className="p-1.5 rounded hover:bg-secondary/80 transition-colors"
