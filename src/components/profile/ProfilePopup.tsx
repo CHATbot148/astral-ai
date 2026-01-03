@@ -29,33 +29,50 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   const [deletePassword, setDeletePassword] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSavingName, setIsSavingName] = useState(false);
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  const [cropperImage, setCropperImage] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
-  // Reset name when profile changes
+  // Reset state when popup opens/closes
   useEffect(() => {
-    if (profile?.full_name) {
+    if (isOpen && profile?.full_name) {
       setName(profile.full_name);
     }
-  }, [profile?.full_name]);
+    if (!isOpen) {
+      setSelectedImage(null);
+      setShowDeleteConfirm(false);
+      setDeletePassword('');
+    }
+  }, [isOpen, profile?.full_name]);
 
   const handleAvatarSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        toast({ title: 'Please select an image file', variant: 'destructive' });
+        return;
+      }
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast({ title: 'Image must be less than 5MB', variant: 'destructive' });
+        return;
+      }
+      
       const reader = new FileReader();
       reader.onload = (e) => {
-        setCropperImage(e.target?.result as string);
+        setSelectedImage(e.target?.result as string);
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const handleCropConfirm = async () => {
-    if (!cropperImage || !user) return;
+  const handleAvatarUpload = async () => {
+    if (!selectedImage || !user) return;
     
+    setIsUploadingAvatar(true);
     try {
       // Convert base64 to blob
-      const response = await fetch(cropperImage);
+      const response = await fetch(selectedImage);
       const blob = await response.blob();
       
       const fileName = `${user.id}/avatar-${Date.now()}.png`;
@@ -80,15 +97,17 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
 
       if (updateError) throw updateError;
 
-      setAvatarPreview(cropperImage);
-      setCropperImage(null);
+      setSelectedImage(null);
       onProfileUpdate();
-      toast({ title: 'Avatar updated successfully ✨' });
+      toast({ title: 'Avatar updated successfully!' });
     } catch (error) {
+      console.error('Avatar upload error:', error);
       toast({ 
         title: 'Failed to update avatar', 
         variant: 'destructive' 
       });
+    } finally {
+      setIsUploadingAvatar(false);
     }
   };
 
@@ -105,7 +124,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       if (error) throw error;
       
       onProfileUpdate();
-      toast({ title: 'Name updated successfully ✨' });
+      toast({ title: 'Name updated successfully!' });
     } catch (error) {
       toast({ 
         title: 'Failed to update name', 
@@ -166,30 +185,30 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
     { value: 'system' as const, icon: Monitor, label: 'System' },
   ];
 
-  const avatarUrl = avatarPreview || profile?.avatar_url;
+  const displayAvatar = selectedImage || profile?.avatar_url;
 
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={onClose}
           />
           
-          {/* Popup - centered with fixed positioning */}
+          {/* Popup - centered */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="relative z-10 w-full max-w-md max-h-[90vh] overflow-y-auto"
+            className="relative z-10 w-full max-w-md"
           >
-            <div className="xai-gradient-border rounded-xl bg-card p-6">
+            <div className="xai-gradient-border rounded-xl bg-card p-6 max-h-[85vh] overflow-y-auto">
               {/* Header */}
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-display font-semibold">Profile Settings</h2>
@@ -198,64 +217,13 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
                 </Button>
               </div>
 
-              {/* Avatar Cropper Modal */}
-              <AnimatePresence>
-                {cropperImage && (
-                  <motion.div 
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="fixed inset-0 bg-background/90 z-[60] flex items-center justify-center p-4"
-                  >
-                    <motion.div 
-                      initial={{ scale: 0.9 }}
-                      animate={{ scale: 1 }}
-                      exit={{ scale: 0.9 }}
-                      className="bg-card rounded-xl p-6 max-w-sm w-full"
-                    >
-                      <h3 className="text-lg font-semibold mb-4">Crop Avatar</h3>
-                      <div className="relative w-48 h-48 mx-auto rounded-full overflow-hidden border-2 border-xai-cyan">
-                        <img 
-                          src={cropperImage} 
-                          alt="Preview" 
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <p className="text-sm text-muted-foreground text-center mt-4">
-                        Your avatar will be cropped as a circle
-                      </p>
-                      <div className="flex gap-3 mt-6">
-                        <Button 
-                          variant="outline" 
-                          className="flex-1"
-                          onClick={() => setCropperImage(null)}
-                        >
-                          Cancel
-                        </Button>
-                        <Button 
-                          variant="xai" 
-                          className="flex-1"
-                          onClick={handleCropConfirm}
-                        >
-                          Confirm
-                        </Button>
-                      </div>
-                    </motion.div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
               {/* Avatar Section */}
               <div className="flex flex-col items-center mb-6">
-                <motion.div 
-                  className="relative group"
-                  whileHover={{ scale: 1.05 }}
-                  transition={{ type: 'spring', stiffness: 300 }}
-                >
+                <div className="relative group mb-3">
                   <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-xai-cyan bg-secondary flex items-center justify-center">
-                    {avatarUrl ? (
+                    {displayAvatar ? (
                       <img 
-                        src={avatarUrl} 
+                        src={displayAvatar} 
                         alt="Avatar" 
                         className="w-full h-full object-cover"
                       />
@@ -265,9 +233,9 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
                   </div>
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="absolute inset-0 rounded-full bg-background/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                    className="absolute inset-0 rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
                   >
-                    <Camera className="h-6 w-6" />
+                    <Camera className="h-6 w-6 text-white" />
                   </button>
                   <input
                     ref={fileInputRef}
@@ -276,7 +244,32 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
                     onChange={handleAvatarSelect}
                     className="hidden"
                   />
-                </motion.div>
+                </div>
+                
+                {/* Show confirm button when image is selected */}
+                {selectedImage && (
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => setSelectedImage(null)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button 
+                      variant="xai" 
+                      size="sm"
+                      onClick={handleAvatarUpload}
+                      disabled={isUploadingAvatar}
+                    >
+                      {isUploadingAvatar ? 'Uploading...' : 'Save Avatar'}
+                    </Button>
+                  </div>
+                )}
+                
+                {!selectedImage && (
+                  <p className="text-xs text-muted-foreground">Click to change avatar</p>
+                )}
               </div>
 
               {/* Email (read-only) */}
