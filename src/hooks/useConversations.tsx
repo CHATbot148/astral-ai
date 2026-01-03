@@ -78,7 +78,8 @@ export const useConversations = () => {
     if (!user) return null;
 
     try {
-      const title = firstMessage?.slice(0, 50) || 'New Chat';
+      // Limit title to 15 characters
+      const title = firstMessage?.slice(0, 15) || 'New Chat';
       const { data, error } = await supabase
         .from('conversations')
         .insert({ user_id: user.id, title })
@@ -123,10 +124,10 @@ export const useConversations = () => {
       if (role === 'user') {
         const updates: { updated_at: string; title?: string } = { updated_at: new Date().toISOString() };
         
-        // Update title to first message if it's still "New Chat"
+        // Update title to first message if it's still "New Chat" - limit to 15 chars
         const conv = conversations.find(c => c.id === conversationId);
         if (conv?.title === 'New Chat') {
-          updates.title = content.slice(0, 50);
+          updates.title = content.slice(0, 15);
         }
 
         await supabase
@@ -184,19 +185,21 @@ export const useConversations = () => {
 
   const renameConversation = async (conversationId: string, newTitle: string) => {
     try {
+      // Enforce 15 char limit
+      const truncatedTitle = newTitle.slice(0, 15);
       const { error } = await supabase
         .from('conversations')
-        .update({ title: newTitle })
+        .update({ title: truncatedTitle })
         .eq('id', conversationId);
 
       if (error) throw error;
 
       setConversations(prev => prev.map(c => 
-        c.id === conversationId ? { ...c, title: newTitle } : c
+        c.id === conversationId ? { ...c, title: truncatedTitle } : c
       ));
       
       if (currentConversation?.id === conversationId) {
-        setCurrentConversation(prev => prev ? { ...prev, title: newTitle } : null);
+        setCurrentConversation(prev => prev ? { ...prev, title: truncatedTitle } : null);
       }
     } catch (error) {
       console.error('Error renaming conversation:', error);

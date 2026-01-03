@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, LogOut, Trash2, Camera, Sun, Moon, Monitor, Check, User } from 'lucide-react';
+import { X, LogOut, Trash2, Camera, Sun, Moon, Monitor, Check, User, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
@@ -30,6 +30,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSavingName, setIsSavingName] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
   // Reset state when popup opens/closes
@@ -39,6 +40,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
     }
     if (!isOpen) {
       setSelectedImage(null);
+      setSelectedFile(null);
       setShowDeleteConfirm(false);
       setDeletePassword('');
     }
@@ -58,6 +60,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
         return;
       }
       
+      setSelectedFile(file);
       const reader = new FileReader();
       reader.onload = (e) => {
         setSelectedImage(e.target?.result as string);
@@ -67,20 +70,16 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   };
 
   const handleAvatarUpload = async () => {
-    if (!selectedImage || !user) return;
+    if (!selectedFile || !user) return;
     
     setIsUploadingAvatar(true);
     try {
-      // Convert base64 to blob
-      const response = await fetch(selectedImage);
-      const blob = await response.blob();
-      
-      const fileName = `${user.id}/avatar-${Date.now()}.png`;
+      const fileName = `${user.id}/avatar-${Date.now()}.${selectedFile.name.split('.').pop()}`;
       
       // Upload to storage
       const { error: uploadError } = await supabase.storage
         .from('chat-files')
-        .upload(fileName, blob, { upsert: true });
+        .upload(fileName, selectedFile, { upsert: true });
 
       if (uploadError) throw uploadError;
 
@@ -98,6 +97,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       if (updateError) throw updateError;
 
       setSelectedImage(null);
+      setSelectedFile(null);
       onProfileUpdate();
       toast({ title: 'Avatar updated successfully!' });
     } catch (error) {
@@ -185,6 +185,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
     { value: 'system' as const, icon: Monitor, label: 'System' },
   ];
 
+  // Show selected image preview or current avatar
   const displayAvatar = selectedImage || profile?.avatar_url;
 
   return (
@@ -226,6 +227,9 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
                         src={displayAvatar} 
                         alt="Avatar" 
                         className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
                       />
                     ) : (
                       <User className="h-10 w-10 text-muted-foreground" />
@@ -252,7 +256,10 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
                     <Button 
                       variant="outline" 
                       size="sm"
-                      onClick={() => setSelectedImage(null)}
+                      onClick={() => {
+                        setSelectedImage(null);
+                        setSelectedFile(null);
+                      }}
                     >
                       Cancel
                     </Button>
@@ -262,7 +269,12 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
                       onClick={handleAvatarUpload}
                       disabled={isUploadingAvatar}
                     >
-                      {isUploadingAvatar ? 'Uploading...' : 'Save Avatar'}
+                      {isUploadingAvatar ? (
+                        <>
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          Uploading...
+                        </>
+                      ) : 'Save Avatar'}
                     </Button>
                   </div>
                 )}

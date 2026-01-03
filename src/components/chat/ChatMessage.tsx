@@ -1,8 +1,9 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { Copy, Check, ThumbsUp, ThumbsDown, Heart, Sparkles, FileText } from 'lucide-react';
+import { Copy, Check, ThumbsUp, ThumbsDown, Heart, Sparkles, FileText, Volume2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { AudioPlayer } from './AudioPlayer';
 import xaiLogo from '@/assets/xai-logo.png';
 
 interface ChatMessageProps {
@@ -27,6 +28,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
   const [copied, setCopied] = useState(false);
   const [reaction, setReaction] = useState<Reaction>(null);
   const [showReactions, setShowReactions] = useState(false);
+  const [showAudioPlayer, setShowAudioPlayer] = useState(false);
   const isUser = role === 'user';
 
   const copyToClipboard = async () => {
@@ -77,7 +79,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
   };
 
   const isImageUrl = (url: string) => {
-    return url.match(/\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$/i) || url.includes('supabase') && url.includes('storage');
+    return url.match(/\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$/i) || (url.includes('supabase') && url.includes('storage'));
   };
 
   return (
@@ -112,7 +114,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
             </span>
           )
         ) : (
-          <img src={xaiLogo} alt="XAI" className="w-full h-full object-cover" />
+          <img src={xaiLogo} alt="X-AI" className="w-full h-full object-cover" />
         )}
       </motion.div>
 
@@ -120,7 +122,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
       <div className={cn("flex-1 min-w-0 space-y-2", isUser ? "text-right" : "text-left")}>
         <div className={cn("flex items-center gap-2", isUser ? "justify-end" : "justify-start")}>
           <span className="font-semibold text-sm">
-            {isUser ? (userName || 'You') : 'XAI'}
+            {isUser ? (userName || 'You') : 'X-AI'}
           </span>
           {isStreaming && (
             <span className="flex gap-1">
@@ -195,12 +197,33 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
           {formatContent(content)}
         </motion.div>
 
+        {/* Audio Player */}
+        <AnimatePresence>
+          {showAudioPlayer && !isUser && !isStreaming && content && (
+            <AudioPlayer text={content} onClose={() => setShowAudioPlayer(false)} />
+          )}
+        </AnimatePresence>
+
         {/* Actions & Reactions */}
         {!isUser && !isStreaming && content && (
           <div className={cn(
             "flex items-center gap-1 pt-2 opacity-0 group-hover:opacity-100 transition-opacity",
             isUser ? "justify-end" : "justify-start"
           )}>
+            {/* Listen Button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowAudioPlayer(!showAudioPlayer)}
+              className={cn(
+                "h-7 px-2 text-xs",
+                showAudioPlayer ? "text-xai-cyan" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Volume2 className="h-3 w-3 mr-1" />
+              Listen
+            </Button>
+
             {/* Copy Button */}
             <Button
               variant="ghost"

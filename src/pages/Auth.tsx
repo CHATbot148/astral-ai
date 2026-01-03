@@ -120,8 +120,8 @@ const Auth = () => {
         description: error.message,
         variant: 'destructive',
       });
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
@@ -289,8 +289,8 @@ const Auth = () => {
         </motion.div>
       </div>
 
-      {/* Right side - Branding */}
-      <div className="hidden lg:flex w-1/2 relative bg-background overflow-hidden items-center justify-center">
+      {/* Right side - Branding - Show on tablets and larger */}
+      <div className="hidden md:flex w-1/2 relative bg-background overflow-hidden items-center justify-center">
         {/* Background pattern */}
         <div className="absolute inset-0 auth-bg-pattern" />
         
@@ -302,7 +302,7 @@ const Auth = () => {
             transition={{ delay: 0.3, duration: 0.5 }}
             className="relative"
           >
-            <div className="w-48 h-48 rounded-full overflow-hidden xai-glow opacity-20">
+            <div className="w-32 md:w-40 lg:w-48 h-32 md:h-40 lg:h-48 rounded-full overflow-hidden xai-glow opacity-20">
               <img src={xaiLogo} alt="X-AI" className="w-full h-full object-cover" />
             </div>
             <motion.div
@@ -316,7 +316,7 @@ const Auth = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.5 }}
-            className="mt-8 text-2xl font-display font-semibold text-muted-foreground/50"
+            className="mt-6 md:mt-8 text-lg md:text-xl lg:text-2xl font-display font-semibold text-muted-foreground/50"
           >
             Made by X-Tech
           </motion.p>

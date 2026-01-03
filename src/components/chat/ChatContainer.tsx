@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu } from 'lucide-react';
+import { Menu, ImagePlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ChatMessage } from './ChatMessage';
@@ -27,11 +27,21 @@ const MEMORY_PATTERNS = [
   { pattern: /my favorite (.+?) is (.+?)(?:\.|,|$)/i, key: 'favorite_$1' },
 ];
 
+// Image generation detection patterns
+const IMAGE_GENERATION_PATTERNS = [
+  /generate (?:an? )?image (?:of |showing |with )?(.+)/i,
+  /create (?:an? )?image (?:of |showing |with )?(.+)/i,
+  /make (?:me )?(?:an? )?(?:image|picture|photo) (?:of |showing |with )?(.+)/i,
+  /draw (?:me )?(?:an? )?(?:image|picture) (?:of |showing |with )?(.+)/i,
+  /(?:can you |please )?(?:generate|create|make|draw) (?:an? )?(?:image|picture|photo) (?:of |showing |with |for )?(.+)/i,
+];
+
 export const ChatContainer = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [profile, setProfile] = useState<{ full_name: string | null; avatar_url: string | null } | null>(null);
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const { user } = useAuth();
@@ -47,6 +57,15 @@ export const ChatContainer = () => {
     renameConversation,
     startNewChat,
   } = useConversations();
+
+  // Update document title based on current conversation
+  useEffect(() => {
+    if (currentConversation?.title) {
+      document.title = `${currentConversation.title.slice(0, 15)} | X-AI`;
+    } else {
+      document.title = 'X-AI | Intelligent Assistant';
+    }
+  }, [currentConversation]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -108,6 +127,40 @@ export const ChatContainer = () => {
     }
   };
 
+  const detectImageGenerationRequest = (content: string): string | null => {
+    for (const pattern of IMAGE_GENERATION_PATTERNS) {
+      const match = content.match(pattern);
+      if (match && match[1]) {
+        return match[1].trim();
+      }
+    }
+    return null;
+  };
+
+  const generateImage = async (prompt: string): Promise<string | null> => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ prompt }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Image generation failed');
+      }
+
+      const data = await response.json();
+      return data.image;
+    } catch (error) {
+      console.error('Image generation error:', error);
+      return null;
+    }
+  };
+
   const uploadFiles = async (files: File[]): Promise<string[]> => {
     if (!user) return [];
     
@@ -135,7 +188,8 @@ export const ChatContainer = () => {
     try {
       let convId = currentConversation?.id;
       if (!convId) {
-        const newConv = await createConversation(content);
+        // Limit initial title to 15 chars
+        const newConv = await createConversation(content.slice(0, 15));
         if (!newConv) throw new Error('Failed to create conversation');
         convId = newConv.id;
       }
@@ -149,6 +203,28 @@ export const ChatContainer = () => {
       await extractAndSaveMemory(content);
 
       await addMessage(convId, 'user', content, fileUrls.length > 0 ? fileUrls : undefined);
+
+      // Check if this is an image generation request
+      const imagePrompt = detectImageGenerationRequest(content);
+      
+      if (imagePrompt) {
+        setIsGeneratingImage(true);
+        setStreamingContent('🎨 Generating your image...');
+        
+        const generatedImage = await generateImage(imagePrompt);
+        
+        if (generatedImage) {
+          // Add assistant message with the generated image
+          await addMessage(convId, 'assistant', `Here's the image I generated for "${imagePrompt}":`, [generatedImage]);
+        } else {
+          await addMessage(convId, 'assistant', "I'm sorry, I couldn't generate that image. Please try again with a different prompt.");
+        }
+        
+        setStreamingContent('');
+        setIsGeneratingImage(false);
+        setIsLoading(false);
+        return;
+      }
 
       // Build messages with image URLs for the API
       const apiMessages = messages.map(m => ({
@@ -243,6 +319,7 @@ export const ChatContainer = () => {
       });
     } finally {
       setIsLoading(false);
+      setIsGeneratingImage(false);
     }
   };
 
@@ -295,10 +372,10 @@ export const ChatContainer = () => {
               className="w-6 h-6 rounded-full overflow-hidden"
               whileHover={{ scale: 1.1 }}
             >
-              <img src={xaiLogo} alt="XAI" className="w-full h-full object-cover" />
+              <img src={xaiLogo} alt="X-AI" className="w-full h-full object-cover" />
             </motion.div>
             <span className="font-display font-semibold">
-              {currentConversation?.title || 'New Chat'}
+              {currentConversation?.title ? currentConversation.title.slice(0, 15) : 'New Chat'}
             </span>
           </div>
         </motion.header>

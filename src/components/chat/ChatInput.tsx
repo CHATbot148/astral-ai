@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Mic, MicOff, Plus, X, Loader2, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { VoiceVisualizer } from './VoiceVisualizer';
 import { cn } from '@/lib/utils';
 
 interface ChatInputProps {
@@ -193,6 +194,23 @@ export const ChatInput = ({ onSend, isLoading, disabled }: ChatInputProps) => {
         )}
       </AnimatePresence>
 
+      {/* Voice Visualizer */}
+      <AnimatePresence>
+        {isRecording && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mb-3 flex justify-center"
+          >
+            <div className="px-6 py-3 rounded-2xl bg-gradient-to-r from-xai-cyan/10 to-xai-purple/10 border border-xai-cyan/30">
+              <VoiceVisualizer isActive={isRecording} />
+              <p className="text-xs text-center text-muted-foreground mt-2">Listening...</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Input Bar - ChatGPT Style */}
       <div className="flex items-end gap-2">
         {/* Attachment Button - Round */}
@@ -223,7 +241,7 @@ export const ChatInput = ({ onSend, isLoading, disabled }: ChatInputProps) => {
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Message XAI..."
+            placeholder="Message X-AI..."
             disabled={disabled || isLoading}
             rows={1}
             className={cn(
@@ -276,7 +294,7 @@ export const ChatInput = ({ onSend, isLoading, disabled }: ChatInputProps) => {
       </div>
 
       <p className="text-center text-xs text-muted-foreground mt-3">
-        XAI can make mistakes. Consider checking important information.
+        X-AI can make mistakes. Consider checking important information.
       </p>
     </div>
   );
