@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu } from 'lucide-react';
+import { Menu, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ChatMessage } from './ChatMessage';
@@ -13,6 +13,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { makeStorageRef, resolveFileUrl } from '@/lib/storageRef';
+import { cn } from '@/lib/utils';
 import xaiLogo from '@/assets/xai-logo.png';
 
 // Memory extraction patterns
@@ -43,7 +44,9 @@ export const ChatContainer = () => {
   const [streamingContent, setStreamingContent] = useState('');
   const [profile, setProfile] = useState<{ full_name: string | null; avatar_url: string | null } | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLElement | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -71,9 +74,26 @@ export const ChatContainer = () => {
   useEffect(() => {
     const root = scrollRef.current;
     const viewport = root?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null;
-    if (viewport) {
+    if (!viewport) return;
+
+    viewportRef.current = viewport;
+
+    const scrollToBottom = () => {
       viewport.scrollTop = viewport.scrollHeight;
-    }
+    };
+
+    const updateAffordance = () => {
+      const distance = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+      setShowScrollToBottom(distance > 200);
+    };
+
+    // On new content, keep pinned to bottom unless user scrolled away
+    updateAffordance();
+    if (!showScrollToBottom) scrollToBottom();
+
+    viewport.addEventListener('scroll', updateAffordance, { passive: true });
+    return () => viewport.removeEventListener('scroll', updateAffordance);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, streamingContent]);
 
   useEffect(() => {
@@ -150,22 +170,12 @@ export const ChatContainer = () => {
 
   const generateImage = async (prompt: string): Promise<string | null> => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
-        body: JSON.stringify({ prompt }),
+      const { data, error } = await supabase.functions.invoke('generate-image', {
+        body: { prompt },
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Image generation failed');
-      }
-
-      const data = await response.json();
-      return data.image;
+      if (error) throw error;
+      return (data as any)?.image ?? null;
     } catch (error) {
       console.error('Image generation error:', error);
       return null;
@@ -381,32 +391,18 @@ export const ChatContainer = () => {
       />
 
       <main className="flex-1 flex flex-col min-w-0">
-        <motion.header 
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="h-14 border-b border-border flex items-center px-4 gap-4 bg-background/50 backdrop-blur-sm"
-        >
+        {/* Floating sidebar button (replaces chat header) */}
+        <div className="absolute top-3 left-3 z-20">
           <Button
-            variant="ghost"
+            variant="secondary"
             size="icon"
             onClick={() => setSidebarOpen(true)}
-            className={sidebarOpen ? 'lg:hidden' : ''}
+            className={cn("rounded-full", sidebarOpen ? 'lg:hidden' : '')}
+            aria-label="Open sidebar"
           >
             <Menu className="h-5 w-5" />
           </Button>
-          
-          <div className="flex items-center gap-2">
-            <motion.div 
-              className="w-6 h-6 rounded-full overflow-hidden"
-              whileHover={{ scale: 1.1 }}
-            >
-              <img src={xaiLogo} alt="X-AI" className="w-full h-full object-cover" />
-            </motion.div>
-            <span className="font-display font-semibold">
-              {currentConversation?.title ? currentConversation.title.slice(0, 15) : 'New Chat'}
-            </span>
-          </div>
-        </motion.header>
+        </div>
 
         <ScrollArea ref={scrollRef} className="flex-1">
           <AnimatePresence mode="wait">
@@ -442,6 +438,31 @@ export const ChatContainer = () => {
             )}
           </AnimatePresence>
         </ScrollArea>
+
+        {/* Scroll-to-bottom affordance */}
+        <AnimatePresence>
+          {showScrollToBottom && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 10 }}
+              className="fixed right-4 bottom-24 z-30"
+            >
+              <Button
+                variant="secondary"
+                size="icon"
+                className="rounded-full shadow-lg"
+                onClick={() => {
+                  const viewport = viewportRef.current;
+                  if (viewport) viewport.scrollTop = viewport.scrollHeight;
+                }}
+                aria-label="Scroll to bottom"
+              >
+                <ArrowDown className="h-5 w-5" />
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <ChatInput onSend={handleSend} isLoading={isLoading} disabled={!user} />
       </main>
