@@ -11,7 +11,7 @@ export const TypingIndicator = () => {
     >
       {/* Avatar */}
       <div className="w-8 h-8 rounded-full overflow-hidden bg-gradient-to-br from-xai-cyan to-xai-purple xai-glow flex-shrink-0">
-        <img src={xaiLogo} alt="XAI" className="w-full h-full object-cover" />
+        <img src={xaiLogo} alt="X-AI" className="w-full h-full object-cover" />
       </div>
 
       {/* Typing Dots */}

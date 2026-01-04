@@ -1,9 +1,10 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Copy, Check, ThumbsUp, ThumbsDown, Heart, Sparkles, FileText, Volume2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { AudioPlayer } from './AudioPlayer';
+import { resolveFileUrl } from '@/lib/storageRef';
 import xaiLogo from '@/assets/xai-logo.png';
 
 interface ChatMessageProps {
@@ -29,6 +30,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
   const [reaction, setReaction] = useState<Reaction>(null);
   const [showReactions, setShowReactions] = useState(false);
   const [showAudioPlayer, setShowAudioPlayer] = useState(false);
+  const [resolvedFiles, setResolvedFiles] = useState<string[]>([]);
   const isUser = role === 'user';
 
   const copyToClipboard = async () => {
@@ -78,11 +80,34 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
       });
   };
 
-  const isImageUrl = (url: string) => {
+  const isImageLike = (url: string) => {
+    if (url.startsWith('data:image/')) return true;
+    if (url.startsWith('storage:')) return url.match(/\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$/i);
     return url.match(/\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$/i) || (url.includes('supabase') && url.includes('storage'));
   };
 
-  return (
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      if (!fileUrls?.length) {
+        setResolvedFiles([]);
+        return;
+      }
+
+      const resolved = await Promise.all(
+        fileUrls.map((u) => resolveFileUrl(u, { expiresIn: 60 * 60 * 24 * 7 }))
+      );
+      if (!cancelled) setResolvedFiles(resolved);
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [fileUrls]);
+
     <motion.div
       initial={{ opacity: 0, y: 20, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -146,19 +171,19 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
         </div>
 
         {/* File Attachments */}
-        {fileUrls && fileUrls.length > 0 && (
+        {resolvedFiles.length > 0 && (
           <motion.div 
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             className={cn("flex flex-wrap gap-2 my-2", isUser ? "justify-end" : "justify-start")}
           >
-            {fileUrls.map((url, index) => (
+            {resolvedFiles.map((url, index) => (
               <motion.div 
                 key={index} 
                 className="relative"
                 whileHover={{ scale: 1.02 }}
               >
-                {isImageUrl(url) ? (
+                {isImageLike(url) ? (
                   <div className="w-48 max-w-full rounded-lg overflow-hidden border border-border bg-secondary">
                     <img 
                       src={url} 

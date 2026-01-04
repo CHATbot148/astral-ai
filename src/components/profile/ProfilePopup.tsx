@@ -48,50 +48,46 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
 
   const handleAvatarSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    // allow selecting the same file twice
+    e.currentTarget.value = '';
+
     if (file) {
-      // Validate file type
       if (!file.type.startsWith('image/')) {
         toast({ title: 'Please select an image file', variant: 'destructive' });
         return;
       }
-      // Validate file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
         toast({ title: 'Image must be less than 5MB', variant: 'destructive' });
         return;
       }
-      
+
       setSelectedFile(file);
       const reader = new FileReader();
-      reader.onload = (e) => {
-        setSelectedImage(e.target?.result as string);
-      };
+      reader.onload = (ev) => setSelectedImage(ev.target?.result as string);
       reader.readAsDataURL(file);
     }
   };
 
   const handleAvatarUpload = async () => {
     if (!selectedFile || !user) return;
-    
+
     setIsUploadingAvatar(true);
     try {
-      const fileName = `${user.id}/avatar-${Date.now()}.${selectedFile.name.split('.').pop()}`;
-      
-      // Upload to storage
+      const ext = selectedFile.name.split('.').pop() || 'png';
+      const fileName = `${user.id}/avatar-${Date.now()}.${ext}`;
+
       const { error: uploadError } = await supabase.storage
         .from('chat-files')
         .upload(fileName, selectedFile, { upsert: true });
 
       if (uploadError) throw uploadError;
 
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from('chat-files')
-        .getPublicUrl(fileName);
+      // Store a storage reference (we'll resolve to signed URL for display)
+      const storageRef = `storage:chat-files/${fileName}`;
 
-      // Update profile
       const { error: updateError } = await supabase
         .from('profiles')
-        .update({ avatar_url: urlData.publicUrl })
+        .update({ avatar_url: storageRef })
         .eq('user_id', user.id);
 
       if (updateError) throw updateError;
@@ -102,9 +98,9 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       toast({ title: 'Avatar updated successfully!' });
     } catch (error) {
       console.error('Avatar upload error:', error);
-      toast({ 
-        title: 'Failed to update avatar', 
-        variant: 'destructive' 
+      toast({
+        title: 'Failed to update avatar',
+        variant: 'destructive',
       });
     } finally {
       setIsUploadingAvatar(false);
@@ -209,8 +205,8 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
             className="relative z-10 w-full max-w-md"
           >
-            <div className="xai-gradient-border rounded-xl bg-card p-6 max-h-[85vh] overflow-y-auto">
-              {/* Header */}
+            <div className="xai-gradient-border rounded-xl max-h-[85vh] overflow-hidden">
+              <div className="xai-gradient-border-content rounded-xl bg-card p-6 max-h-[85vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-display font-semibold">Profile Settings</h2>
                 <Button variant="ghost" size="icon" onClick={onClose}>
@@ -227,9 +223,6 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
                         src={displayAvatar} 
                         alt="Avatar" 
                         className="w-full h-full object-cover"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
                       />
                     ) : (
                       <User className="h-10 w-10 text-muted-foreground" />
@@ -403,9 +396,10 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
                 )}
               </div>
             </div>
-          </motion.div>
-        </div>
-      )}
+          </div>
+        </motion.div>
+      </div>
+    )}
     </AnimatePresence>
   );
 };

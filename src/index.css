@@ -156,27 +156,15 @@
   }
 
   .xai-gradient-border {
-    position: relative;
-    background: hsl(var(--card));
+    /* iOS-friendly gradient border (no mask-composite) */
+    background: var(--xai-gradient);
+    padding: 1px;
     border-radius: var(--radius);
   }
 
-  .xai-gradient-border::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    padding: 1px;
-    border-radius: inherit;
-    background: var(--xai-gradient);
-    -webkit-mask: 
-      linear-gradient(#fff 0 0) content-box, 
-      linear-gradient(#fff 0 0);
-    mask: 
-      linear-gradient(#fff 0 0) content-box, 
-      linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    pointer-events: none;
+  .xai-gradient-border-content {
+    background: hsl(var(--card));
+    border-radius: calc(var(--radius) - 1px);
   }
 
   .xai-pulse {
