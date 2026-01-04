@@ -218,9 +218,20 @@ export const ChatContainer = () => {
       
       if (imagePrompt) {
         setIsGeneratingImage(true);
-        setStreamingContent('🎨 Generating your image...');
+        // Show animated generating state
+        const generatingMessages = [
+          '🎨 Generating image...',
+          '🎨 Creating your image...',
+          '🎨 Almost there...',
+        ];
+        let msgIndex = 0;
+        const interval = setInterval(() => {
+          msgIndex = (msgIndex + 1) % generatingMessages.length;
+          setStreamingContent(generatingMessages[msgIndex]);
+        }, 1500);
         
         const generatedImage = await generateImage(imagePrompt);
+        clearInterval(interval);
         
         if (generatedImage) {
           // Add assistant message with the generated image

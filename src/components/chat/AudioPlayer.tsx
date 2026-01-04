@@ -30,6 +30,9 @@ export const AudioPlayer = ({ text, onClose }: AudioPlayerProps) => {
     setIsLoading(true);
     setError(null);
 
+    // Get selected voice from localStorage
+    const voiceId = localStorage.getItem('xai-tts-voice') || 'JBFqnCBsd6RMkjVDRZzb';
+
     try {
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/text-to-speech`,
@@ -40,7 +43,7 @@ export const AudioPlayer = ({ text, onClose }: AudioPlayerProps) => {
             apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
             Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           },
-          body: JSON.stringify({ text }),
+          body: JSON.stringify({ text, voiceId }),
         }
       );
 

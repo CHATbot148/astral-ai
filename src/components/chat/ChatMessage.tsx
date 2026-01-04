@@ -1,10 +1,12 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { Copy, Check, ThumbsUp, ThumbsDown, Heart, Sparkles, FileText, Volume2 } from 'lucide-react';
+import { Copy, Check, ThumbsUp, ThumbsDown, Heart, Sparkles, FileText, Volume2, Download } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { AudioPlayer } from './AudioPlayer';
+import { ImagePreviewModal } from './ImagePreviewModal';
 import { resolveFileUrl } from '@/lib/storageRef';
+import { useToast } from '@/hooks/use-toast';
 import xaiLogo from '@/assets/xai-logo.png';
 
 interface ChatMessageProps {
@@ -31,6 +33,8 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
   const [showReactions, setShowReactions] = useState(false);
   const [showAudioPlayer, setShowAudioPlayer] = useState(false);
   const [resolvedFiles, setResolvedFiles] = useState<string[]>([]);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const { toast } = useToast();
   const isUser = role === 'user';
 
   const copyToClipboard = async () => {
@@ -171,7 +175,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
           )}
         </div>
 
-        {/* File Attachments */}
+        {/* File Attachments / Generated Images */}
         {resolvedFiles.length > 0 && (
           <motion.div 
             initial={{ opacity: 0, scale: 0.9 }}
@@ -181,21 +185,66 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
             {resolvedFiles.map((url, index) => (
               <motion.div 
                 key={index} 
-                className="relative"
+                className="relative group/img"
                 whileHover={{ scale: 1.02 }}
               >
                 {isImageLike(url) ? (
-                  <div className="w-48 max-w-full rounded-lg overflow-hidden border border-border bg-secondary">
+                  <div 
+                    className="w-64 max-w-full rounded-lg overflow-hidden border border-border bg-secondary cursor-pointer relative"
+                    onClick={() => setPreviewImage(url)}
+                  >
                     <img 
                       src={url} 
-                      alt={`Attachment ${index + 1}`} 
-                      className="w-full h-auto max-h-64 object-contain"
+                      alt={`${!isUser ? 'Generated image' : 'Attachment'} ${index + 1}`} 
+                      className="w-full h-auto max-h-72 object-contain"
                       onError={(e) => {
                         const target = e.currentTarget;
                         target.style.display = 'none';
                         target.parentElement!.innerHTML = '<div class="p-4 text-sm text-muted-foreground">Image failed to load</div>';
                       }}
                     />
+                    {/* Overlay with actions for generated images */}
+                    {!isUser && (
+                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="gap-1"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPreviewImage(url);
+                          }}
+                        >
+                          View
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="gap-1"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            try {
+                              const response = await fetch(url);
+                              const blob = await response.blob();
+                              const blobUrl = URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = blobUrl;
+                              a.download = `x-ai-image-${Date.now()}.png`;
+                              document.body.appendChild(a);
+                              a.click();
+                              document.body.removeChild(a);
+                              URL.revokeObjectURL(blobUrl);
+                              toast({ title: 'Image saved!' });
+                            } catch {
+                              toast({ title: 'Failed to save', variant: 'destructive' });
+                            }
+                          }}
+                        >
+                          <Download className="h-3 w-3" />
+                          Save
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <a 
@@ -212,6 +261,13 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
             ))}
           </motion.div>
         )}
+
+        {/* Image Preview Modal */}
+        <ImagePreviewModal 
+          isOpen={!!previewImage} 
+          imageUrl={previewImage || ''} 
+          onClose={() => setPreviewImage(null)} 
+        />
 
         <motion.div 
           className={cn(
