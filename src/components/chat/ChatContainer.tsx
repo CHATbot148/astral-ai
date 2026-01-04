@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, ImagePlus } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ChatMessage } from './ChatMessage';
@@ -8,10 +8,11 @@ import { ChatInput } from './ChatInput';
 import { WelcomeScreen } from './WelcomeScreen';
 import { Sidebar } from './Sidebar';
 import { TypingIndicator } from './TypingIndicator';
-import { useConversations, Message } from '@/hooks/useConversations';
+import { useConversations } from '@/hooks/useConversations';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { makeStorageRef, resolveFileUrl } from '@/lib/storageRef';
 import xaiLogo from '@/assets/xai-logo.png';
 
 // Memory extraction patterns
@@ -68,8 +69,10 @@ export const ChatContainer = () => {
   }, [currentConversation]);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    const root = scrollRef.current;
+    const viewport = root?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null;
+    if (viewport) {
+      viewport.scrollTop = viewport.scrollHeight;
     }
   }, [messages, streamingContent]);
 
@@ -81,12 +84,20 @@ export const ChatContainer = () => {
 
   const fetchProfile = async () => {
     if (!user) return;
+
     const { data } = await supabase
       .from('profiles')
       .select('full_name, avatar_url')
       .eq('user_id', user.id)
       .single();
-    if (data) setProfile(data);
+
+    if (!data) return;
+
+    const resolvedAvatar = data.avatar_url
+      ? await resolveFileUrl(data.avatar_url, { expiresIn: 60 * 60 * 24 * 7 })
+      : null;
+
+    setProfile({ ...data, avatar_url: resolvedAvatar });
   };
 
   const extractAndSaveMemory = async (content: string) => {
@@ -163,20 +174,18 @@ export const ChatContainer = () => {
 
   const uploadFiles = async (files: File[]): Promise<string[]> => {
     if (!user) return [];
-    
-    const urls: string[] = [];
+
+    const refs: string[] = [];
     for (const file of files) {
       const fileName = `${user.id}/${Date.now()}-${file.name}`;
-      const { error } = await supabase.storage
-        .from('chat-files')
-        .upload(fileName, file);
+      const { error } = await supabase.storage.from('chat-files').upload(fileName, file);
 
       if (!error) {
-        const { data } = supabase.storage.from('chat-files').getPublicUrl(fileName);
-        urls.push(data.publicUrl);
+        refs.push(makeStorageRef('chat-files', fileName));
       }
     }
-    return urls;
+
+    return refs;
   };
 
   const handleSend = async (content: string, files?: File[]) => {
@@ -226,24 +235,32 @@ export const ChatContainer = () => {
         return;
       }
 
-      // Build messages with image URLs for the API
-      const apiMessages = messages.map(m => ({
-        role: m.role,
-        content: m.content,
-        imageUrls: m.file_urls?.filter(url => 
-          url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) || 
-          (url.includes('supabase') && url.includes('storage'))
-        )
-      }));
-      
-      // Add current message
+      // Build messages for the API (only user images, resolved to signed URLs)
+      const resolveUrls = async (urls?: string[] | null) => {
+        if (!urls?.length) return [];
+        return Promise.all(urls.map((u) => resolveFileUrl(u, { expiresIn: 60 * 60 }))); // 1h
+      };
+
+      const apiMessages = await Promise.all(
+        messages.map(async (m) => ({
+          role: m.role,
+          content: m.content,
+          imageUrls:
+            m.role === 'user'
+              ? (await resolveUrls(m.file_urls)).filter((url) =>
+                  url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) || url.startsWith('data:image/')
+                )
+              : [],
+        }))
+      );
+
+      // Add current message (user)
       apiMessages.push({
         role: 'user' as const,
         content,
-        imageUrls: fileUrls.filter(url => 
-          url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) || 
-          (url.includes('supabase') && url.includes('storage'))
-        )
+        imageUrls: (await resolveUrls(fileUrls)).filter((url) =>
+          url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) || url.startsWith('data:image/')
+        ),
       });
 
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
