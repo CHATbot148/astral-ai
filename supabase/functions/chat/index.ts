@@ -13,12 +13,12 @@ serve(async (req) => {
 
   try {
     const { messages, fileContext, userId } = await req.json();
-    const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    
-    if (!MISTRAL_API_KEY) {
-      throw new Error("MISTRAL_API_KEY is not configured");
+
+    if (!LOVABLE_API_KEY) {
+      throw new Error("LOVABLE_API_KEY is not configured");
     }
 
     // Fetch user memory if userId is provided
@@ -26,13 +26,14 @@ serve(async (req) => {
     if (userId && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
       const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
       const { data: memories } = await supabase
-        .from('user_memory')
-        .select('key, value')
-        .eq('user_id', userId);
-      
+        .from("user_memory")
+        .select("key, value")
+        .eq("user_id", userId);
+
       if (memories && memories.length > 0) {
-        userMemory = "\n\nUser Information (remember this about the user):\n" + 
-          memories.map(m => `- ${m.key}: ${m.value}`).join("\n");
+        userMemory =
+          "\n\nUser Information (remember this about the user):\n" +
+          memories.map((m) => `- ${m.key}: ${m.value}`).join("\n");
       }
     }
 
@@ -57,62 +58,68 @@ Be natural, helpful, and conversational. Don't be overly formal.${userMemory}`;
       systemContent += `\n\nAttachments: The user has shared files with you. ${fileContext}. Analyze and discuss them as needed.`;
     }
 
-    // Build messages array with image support for Mistral
-    const formattedMessages = messages.map((msg: { role: string; content: string; imageUrls?: string[] }) => {
-      // If there are image URLs, format as multimodal content for Mistral
-      if (msg.imageUrls && msg.imageUrls.length > 0) {
-        const content: { type: string; text?: string; image_url?: string }[] = [
-          { type: "text", text: msg.content }
-        ];
-        
-        for (const url of msg.imageUrls) {
-          content.push({
-            type: "image_url",
-            image_url: url
-          });
-        }
-        
-        return { role: msg.role, content };
-      }
-      
-      return { role: msg.role, content: msg.content };
-    });
+    // Check if any message has images - use multimodal model if so
+    const hasImages = messages.some(
+      (msg: { imageUrls?: string[] }) => msg.imageUrls && msg.imageUrls.length > 0
+    );
 
-    const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
+    // Build messages array with image support for multimodal
+    const formattedMessages = messages.map(
+      (msg: { role: string; content: string; imageUrls?: string[] }) => {
+        if (msg.imageUrls && msg.imageUrls.length > 0) {
+          const content: Array<
+            { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }
+          > = [{ type: "text", text: msg.content }];
+
+          for (const url of msg.imageUrls) {
+            content.push({
+              type: "image_url",
+              image_url: { url },
+            });
+          }
+
+          return { role: msg.role, content };
+        }
+
+        return { role: msg.role, content: msg.content };
+      }
+    );
+
+    // Use Gemini Flash for multimodal, GPT-5-mini for text-only (both via Lovable AI gateway)
+    const model = hasImages ? "google/gemini-2.5-flash" : "openai/gpt-5-mini";
+
+    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${MISTRAL_API_KEY}`,
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "mistral-large-latest",
-        messages: [
-          { role: "system", content: systemContent },
-          ...formattedMessages,
-        ],
+        model,
+        messages: [{ role: "system", content: systemContent }, ...formattedMessages],
         stream: true,
       }),
     });
 
     if (!response.ok) {
       if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment." }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (response.status === 402 || response.status === 401) {
-        return new Response(JSON.stringify({ error: "API key issue. Please check your Mistral API key." }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment." }),
+          {
+            status: 429,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
       }
       const errorText = await response.text();
-      console.error("Mistral API error:", response.status, errorText);
-      return new Response(JSON.stringify({ error: "AI service temporarily unavailable" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      console.error("AI API error:", response.status, errorText);
+      return new Response(
+        JSON.stringify({ error: "AI service temporarily unavailable" }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     return new Response(response.body, {
@@ -120,9 +127,12 @@ Be natural, helpful, and conversational. Don't be overly formal.${userMemory}`;
     });
   } catch (error) {
     console.error("Chat error:", error);
-    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   }
 });
