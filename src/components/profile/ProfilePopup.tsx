@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, LogOut, Trash2, Camera, Sun, Moon, Monitor, Check, User, Loader2 } from 'lucide-react';
+import { X, LogOut, Trash2, Camera, Sun, Moon, Monitor, Check, User, Loader2, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
@@ -32,9 +32,11 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
-  const [selectedVoice, setSelectedVoice] = useState(() => 
+  const [selectedVoice, setSelectedVoice] = useState(() =>
     localStorage.getItem('xai-tts-voice') || 'JBFqnCBsd6RMkjVDRZzb'
   );
+  const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Reset state when popup opens/closes
   useEffect(() => {
@@ -135,11 +137,8 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   };
 
   const handleDeleteAccount = async () => {
-    if (!deletePassword) {
-      toast({ 
-        title: 'Please enter your password', 
-        variant: 'destructive' 
-      });
+    if (!deletePassword || !user?.email) {
+      toast({ title: 'Please enter your password', variant: 'destructive' });
       return;
     }
 
@@ -147,26 +146,27 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
     try {
       // Verify password by attempting to sign in
       const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: user?.email || '',
+        email: user.email,
         password: deletePassword,
       });
 
       if (signInError) {
-        toast({ 
-          title: 'Incorrect password', 
-          variant: 'destructive' 
-        });
-        setIsDeleting(false);
+        toast({ title: 'Incorrect password', variant: 'destructive' });
         return;
       }
 
-      // Delete user data (RLS will handle cascade)
+      const { error } = await supabase.functions.invoke('delete-account', { body: {} });
+      if (error) throw error;
+
       await signOut();
-      toast({ title: 'Account data cleared. Contact support to fully delete your account.' });
+      onClose();
+      toast({ title: 'Account deleted' });
     } catch (error) {
-      toast({ 
-        title: 'Failed to delete account', 
-        variant: 'destructive' 
+      console.error('Delete account error:', error);
+      toast({
+        title: 'Failed to delete account',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive',
       });
     } finally {
       setIsDeleting(false);
@@ -176,6 +176,44 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   const handleLogout = async () => {
     await signOut();
     onClose();
+  };
+
+  const playVoiceSample = async (voiceId: string) => {
+    try {
+      setPreviewingVoiceId(voiceId);
+      previewAudioRef.current?.pause();
+
+      const sampleText = "Hi, I'm X-AI";
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/text-to-speech`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ text: sampleText, voiceId }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error((err as any)?.error || 'Failed to play sample');
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      previewAudioRef.current = audio;
+
+      audio.addEventListener('ended', () => {
+        URL.revokeObjectURL(url);
+      });
+
+      await audio.play();
+    } catch (e) {
+      toast({ title: 'Voice sample failed', variant: 'destructive' });
+    } finally {
+      setPreviewingVoiceId(null);
+    }
   };
 
   const themes = [
@@ -362,16 +400,37 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
                       }}
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
-                      className={`flex flex-col items-start p-2.5 rounded-lg border transition-all text-left ${
+                      className={`flex items-center justify-between gap-2 p-2.5 rounded-lg border transition-all text-left ${
                         selectedVoice === voice.id 
                           ? 'border-xai-cyan bg-xai-cyan/10' 
                           : 'border-border hover:border-xai-cyan/50'
                       }`}
                     >
-                      <span className={`text-sm font-medium ${selectedVoice === voice.id ? 'text-xai-cyan' : ''}`}>
-                        {voice.name}
-                      </span>
-                      <span className="text-xs text-muted-foreground">{voice.desc}</span>
+                      <div className="min-w-0">
+                        <span className={`block text-sm font-medium ${selectedVoice === voice.id ? 'text-xai-cyan' : ''}`}>
+                          {voice.name}
+                        </span>
+                        <span className="block text-xs text-muted-foreground">{voice.desc}</span>
+                      </div>
+
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 rounded-full"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          playVoiceSample(voice.id);
+                        }}
+                        disabled={previewingVoiceId === voice.id}
+                        aria-label={`Play sample for ${voice.name}`}
+                      >
+                        {previewingVoiceId === voice.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Volume2 className="h-4 w-4" />
+                        )}
+                      </Button>
                     </motion.button>
                   ))}
                 </div>

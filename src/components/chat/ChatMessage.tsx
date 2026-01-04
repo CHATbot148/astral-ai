@@ -189,23 +189,33 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
                 whileHover={{ scale: 1.02 }}
               >
                 {isImageLike(url) ? (
-                  <div 
-                    className="w-64 max-w-full rounded-lg overflow-hidden border border-border bg-secondary cursor-pointer relative"
-                    onClick={() => setPreviewImage(url)}
-                  >
-                    <img 
-                      src={url} 
-                      alt={`${!isUser ? 'Generated image' : 'Attachment'} ${index + 1}`} 
-                      className="w-full h-auto max-h-72 object-contain"
-                      onError={(e) => {
-                        const target = e.currentTarget;
-                        target.style.display = 'none';
-                        target.parentElement!.innerHTML = '<div class="p-4 text-sm text-muted-foreground">Image failed to load</div>';
-                      }}
-                    />
-                    {/* Overlay with actions for generated images */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      className={cn(
+                        "rounded-lg overflow-hidden border border-border bg-secondary cursor-pointer",
+                        isUser ? "w-20 h-20" : "w-64 max-w-full"
+                      )}
+                      onClick={() => setPreviewImage(url)}
+                    >
+                      <img
+                        src={url}
+                        alt={`${!isUser ? 'Generated image' : 'Attachment'} ${index + 1}`}
+                        className={cn(
+                          "w-full h-full",
+                          isUser ? "object-cover" : "object-contain max-h-72"
+                        )}
+                        onError={(e) => {
+                          const target = e.currentTarget;
+                          target.style.display = 'none';
+                          target.parentElement!.innerHTML = '<div class="p-4 text-sm text-muted-foreground">Image failed to load</div>';
+                        }}
+                      />
+                    </button>
+
+                    {/* Overlay actions for generated images */}
                     {!isUser && (
-                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                      <div className="absolute inset-0 bg-black/50 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-2 rounded-lg">
                         <Button
                           size="sm"
                           variant="secondary"
