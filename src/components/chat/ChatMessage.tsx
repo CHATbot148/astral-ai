@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Copy, Check, ThumbsUp, ThumbsDown, Heart, Sparkles, FileText, Volume2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { AudioPlayer } from './AudioPlayer';
@@ -108,6 +108,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
     };
   }, [fileUrls]);
 
+  return (
     <motion.div
       initial={{ opacity: 0, y: 20, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}

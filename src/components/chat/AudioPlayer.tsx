@@ -112,9 +112,9 @@ export const AudioPlayer = ({ text, onClose }: AudioPlayerProps) => {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 10 }}
-      className="flex items-center gap-2 px-3 py-2 rounded-xl bg-secondary border border-border"
+      className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl bg-secondary border border-border max-w-full overflow-hidden"
     >
-      {!audioUrl && !isLoading && (
+      {!audioUrl && !isLoading && !error && (
         <Button
           variant="ghost"
           size="sm"
@@ -128,27 +128,27 @@ export const AudioPlayer = ({ text, onClose }: AudioPlayerProps) => {
 
       {isLoading && (
         <div className="flex items-center gap-2 px-2">
-          <Loader2 className="h-4 w-4 animate-spin text-xai-cyan" />
-          <span className="text-sm text-muted-foreground">Generating audio...</span>
+          <Loader2 className="h-4 w-4 animate-spin text-xai-cyan flex-shrink-0" />
+          <span className="text-sm text-muted-foreground truncate">Generating...</span>
         </div>
       )}
 
       {error && (
-        <div className="flex items-center gap-2 px-2 text-destructive text-sm">
+        <div className="flex items-center gap-2 px-2 text-destructive text-xs truncate max-w-[200px]">
           {error}
         </div>
       )}
 
       {audioUrl && !isLoading && (
-        <>
+        <div className="flex items-center gap-1.5 flex-1 min-w-0">
           {/* Rewind 10s */}
           <motion.button
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             onClick={() => skip(-10)}
-            className="p-1.5 rounded-full hover:bg-background transition-colors"
+            className="p-1 rounded-full hover:bg-background transition-colors flex-shrink-0"
           >
-            <RotateCcw className="h-4 w-4 text-muted-foreground" />
+            <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
           </motion.button>
 
           {/* Play/Pause */}
@@ -156,12 +156,12 @@ export const AudioPlayer = ({ text, onClose }: AudioPlayerProps) => {
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             onClick={togglePlayPause}
-            className="p-2 rounded-full bg-xai-cyan text-background"
+            className="p-1.5 rounded-full bg-xai-cyan text-background flex-shrink-0"
           >
             {isPlaying ? (
-              <Pause className="h-4 w-4" />
+              <Pause className="h-3.5 w-3.5" />
             ) : (
-              <Play className="h-4 w-4 ml-0.5" />
+              <Play className="h-3.5 w-3.5 ml-0.5" />
             )}
           </motion.button>
 
@@ -170,14 +170,14 @@ export const AudioPlayer = ({ text, onClose }: AudioPlayerProps) => {
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             onClick={() => skip(10)}
-            className="p-1.5 rounded-full hover:bg-background transition-colors"
+            className="p-1 rounded-full hover:bg-background transition-colors flex-shrink-0"
           >
-            <RotateCw className="h-4 w-4 text-muted-foreground" />
+            <RotateCw className="h-3.5 w-3.5 text-muted-foreground" />
           </motion.button>
 
           {/* Progress bar */}
-          <div className="flex-1 min-w-[100px] mx-2">
-            <div className="relative h-1.5 bg-background rounded-full overflow-hidden">
+          <div className="flex-1 min-w-[60px] mx-1">
+            <div className="relative h-1 bg-background rounded-full overflow-hidden">
               <motion.div
                 className="absolute inset-y-0 left-0 bg-gradient-to-r from-xai-cyan to-xai-purple rounded-full"
                 style={{ width: `${progress}%` }}
@@ -186,10 +186,10 @@ export const AudioPlayer = ({ text, onClose }: AudioPlayerProps) => {
           </div>
 
           {/* Time */}
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            {formatTime(currentTime)} / {formatTime(duration)}
+          <span className="text-[10px] text-muted-foreground whitespace-nowrap flex-shrink-0">
+            {formatTime(currentTime)}/{formatTime(duration)}
           </span>
-        </>
+        </div>
       )}
 
       {/* Close button */}
@@ -197,7 +197,7 @@ export const AudioPlayer = ({ text, onClose }: AudioPlayerProps) => {
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.9 }}
         onClick={onClose}
-        className="p-1 rounded-full hover:bg-background transition-colors ml-1"
+        className="p-1 rounded-full hover:bg-background transition-colors flex-shrink-0"
       >
         <X className="h-3.5 w-3.5 text-muted-foreground" />
       </motion.button>
