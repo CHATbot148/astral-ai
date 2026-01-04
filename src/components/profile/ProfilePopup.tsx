@@ -32,6 +32,9 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [selectedVoice, setSelectedVoice] = useState(() => 
+    localStorage.getItem('xai-tts-voice') || 'JBFqnCBsd6RMkjVDRZzb'
+  );
 
   // Reset state when popup opens/closes
   useEffect(() => {
@@ -179,6 +182,16 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
     { value: 'light' as const, icon: Sun, label: 'Light' },
     { value: 'dark' as const, icon: Moon, label: 'Dark' },
     { value: 'system' as const, icon: Monitor, label: 'System' },
+  ];
+
+  // Voice options for TTS
+  const voiceOptions = [
+    { id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George', desc: 'Male, British' },
+    { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah', desc: 'Female, American' },
+    { id: 'FGY2WhTYpPnrIDTdsKH5', name: 'Laura', desc: 'Female, American' },
+    { id: 'TX3LPaxmHKxFdv7VOQHJ', name: 'Liam', desc: 'Male, American' },
+    { id: 'pFZP5JQG7iQjIQuC4Bku', name: 'Lily', desc: 'Female, British' },
+    { id: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel', desc: 'Male, British' },
   ];
 
   // Show selected image preview or current avatar
@@ -331,6 +344,34 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
                           <Check className="h-3 w-3 text-xai-cyan" />
                         </motion.div>
                       )}
+                    </motion.button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Voice Selection */}
+              <div className="mb-6">
+                <label className="text-sm text-muted-foreground mb-3 block">Voice for Text-to-Speech</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {voiceOptions.map((voice) => (
+                    <motion.button
+                      key={voice.id}
+                      onClick={() => {
+                        setSelectedVoice(voice.id);
+                        localStorage.setItem('xai-tts-voice', voice.id);
+                      }}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      className={`flex flex-col items-start p-2.5 rounded-lg border transition-all text-left ${
+                        selectedVoice === voice.id 
+                          ? 'border-xai-cyan bg-xai-cyan/10' 
+                          : 'border-border hover:border-xai-cyan/50'
+                      }`}
+                    >
+                      <span className={`text-sm font-medium ${selectedVoice === voice.id ? 'text-xai-cyan' : ''}`}>
+                        {voice.name}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{voice.desc}</span>
                     </motion.button>
                   ))}
                 </div>
