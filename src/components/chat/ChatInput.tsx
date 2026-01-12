@@ -4,6 +4,7 @@ import { Send, Mic, MicOff, Plus, X, Loader2, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { VoiceVisualizer } from './VoiceVisualizer';
 import { cn } from '@/lib/utils';
+import { useMicVisualizer } from '@/hooks/useMicVisualizer';
 
 interface ChatInputProps {
   onSend: (message: string, files?: File[]) => void;
@@ -20,6 +21,8 @@ export const ChatInput = ({ onSend, isLoading, disabled }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+
+  const { levels } = useMicVisualizer({ enabled: isRecording, bars: 12 });
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -66,18 +69,18 @@ export const ChatInput = ({ onSend, isLoading, disabled }: ChatInputProps) => {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      setFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+      setFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
     }
   };
 
   const removeFile = (index: number) => {
-    setFiles(prev => prev.filter((_, i) => i !== index));
+    setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   const startRecording = () => {
     try {
       const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-      
+
       if (!SpeechRecognitionAPI) {
         console.error('Speech recognition not supported');
         return;
@@ -85,7 +88,7 @@ export const ChatInput = ({ onSend, isLoading, disabled }: ChatInputProps) => {
 
       const recognition = new SpeechRecognitionAPI();
       recognitionRef.current = recognition;
-      
+
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = 'en-US';
@@ -97,19 +100,16 @@ export const ChatInput = ({ onSend, isLoading, disabled }: ChatInputProps) => {
 
       recognition.onresult = (event: SpeechRecognitionEvent) => {
         let finalTranscript = '';
-        let interimTranscript = '';
-        
+
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const transcript = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
             finalTranscript += transcript;
-          } else {
-            interimTranscript += transcript;
           }
         }
-        
+
         if (finalTranscript) {
-          setMessage(prev => prev + finalTranscript + ' ');
+          setMessage((prev) => prev + finalTranscript + ' ');
         }
       };
 
@@ -194,122 +194,101 @@ export const ChatInput = ({ onSend, isLoading, disabled }: ChatInputProps) => {
         )}
       </AnimatePresence>
 
-      {/* Voice Visualizer */}
-      <AnimatePresence>
-        {isRecording && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="mb-3 flex justify-center"
+      {/* Input Bar */}
+      <div className="flex items-end gap-2">
+        {/* Attachment Button */}
+        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled || isRecording}
+            className="h-10 w-10 rounded-full bg-secondary hover:bg-secondary/80 flex-shrink-0"
           >
-            <div className="px-6 py-3 rounded-2xl bg-gradient-to-r from-xai-cyan/10 to-xai-purple/10 border border-xai-cyan/30">
-              <VoiceVisualizer isActive={isRecording} />
-              <p className="text-xs text-center text-muted-foreground mt-2">Listening...</p>
+            <Plus className="h-5 w-5" />
+          </Button>
+        </motion.div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          onChange={handleFileChange}
+          className="hidden"
+          accept="image/*,.pdf,.doc,.docx,.txt"
+        />
+
+        {/* Main Input Container / Voice Recording Bar */}
+        {isRecording ? (
+          <div className="flex-1 flex items-center bg-secondary rounded-3xl px-3 py-1 min-h-[48px] overflow-hidden">
+            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={stopRecording}
+                className="h-10 w-10 rounded-full text-destructive bg-destructive/10"
+              >
+                <MicOff className="h-5 w-5" />
+              </Button>
+            </motion.div>
+
+            <div className="flex-1 flex flex-col items-center justify-center px-2 min-w-0">
+              <VoiceVisualizer isActive={true} levels={levels} className="w-full max-w-[260px]" />
+              <p className="text-[11px] text-muted-foreground mt-1">Listening… tap stop to finish</p>
             </div>
-          </motion.div>
+          </div>
+        ) : (
+          <div className="flex-1 flex items-end bg-secondary rounded-3xl px-4 py-1 min-h-[48px]">
+            <textarea
+              ref={textareaRef}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Message X-AI..."
+              disabled={disabled || isLoading}
+              rows={1}
+              className={cn(
+                'flex-1 resize-none bg-transparent border-0 outline-none',
+                'text-foreground placeholder:text-muted-foreground',
+                'min-h-[40px] max-h-[200px] py-2 px-1',
+                'focus:ring-0 text-sm'
+              )}
+            />
+
+            {/* Voice Input */}
+            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleRecording}
+                disabled={disabled || isTranscribing}
+                className={cn(
+                  'h-8 w-8 rounded-full flex-shrink-0 mb-1 transition-colors',
+                  isRecording && 'text-destructive bg-destructive/10 animate-pulse'
+                )}
+              >
+                {isTranscribing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Mic className="h-4 w-4 text-muted-foreground" />
+                )}
+              </Button>
+            </motion.div>
+          </div>
         )}
-      </AnimatePresence>
 
-       {/* Input Bar - ChatGPT Style */}
-       <div className="flex items-end gap-2">
-         {/* Attachment Button - Round */}
-         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-           <Button
-             variant="ghost"
-             size="icon"
-             onClick={() => fileInputRef.current?.click()}
-             disabled={disabled || isRecording}
-             className="h-10 w-10 rounded-full bg-secondary hover:bg-secondary/80 flex-shrink-0"
-           >
-             <Plus className="h-5 w-5" />
-           </Button>
-         </motion.div>
-         <input
-           ref={fileInputRef}
-           type="file"
-           multiple
-           onChange={handleFileChange}
-           className="hidden"
-           accept="image/*,.pdf,.doc,.docx,.txt"
-         />
-
-         {/* Main Input Container / Voice Recording Bar */}
-         {isRecording ? (
-           <div className="flex-1 flex items-center bg-secondary rounded-3xl px-3 py-1 min-h-[48px] overflow-hidden">
-             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-               <Button
-                 variant="ghost"
-                 size="icon"
-                 onClick={stopRecording}
-                 className="h-10 w-10 rounded-full text-destructive bg-destructive/10"
-               >
-                 <MicOff className="h-5 w-5" />
-               </Button>
-             </motion.div>
-
-             <div className="flex-1 flex flex-col items-center justify-center px-2 min-w-0">
-               <VoiceVisualizer isActive={true} className="w-full max-w-[260px]" />
-               <p className="text-[11px] text-muted-foreground mt-1">Listening… tap stop to finish</p>
-             </div>
-           </div>
-         ) : (
-           <div className="flex-1 flex items-end bg-secondary rounded-3xl px-4 py-1 min-h-[48px]">
-             <textarea
-               ref={textareaRef}
-               value={message}
-               onChange={(e) => setMessage(e.target.value)}
-               onKeyDown={handleKeyDown}
-               placeholder="Message X-AI..."
-               disabled={disabled || isLoading}
-               rows={1}
-               className={cn(
-                 "flex-1 resize-none bg-transparent border-0 outline-none",
-                 "text-foreground placeholder:text-muted-foreground",
-                 "min-h-[40px] max-h-[200px] py-2 px-1",
-                 "focus:ring-0 text-sm"
-               )}
-             />
-
-             {/* Voice Input */}
-             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-               <Button
-                 variant="ghost"
-                 size="icon"
-                 onClick={toggleRecording}
-                 disabled={disabled || isTranscribing}
-                 className={cn(
-                   "h-8 w-8 rounded-full flex-shrink-0 mb-1 transition-colors",
-                   isRecording && "text-destructive bg-destructive/10 animate-pulse"
-                 )}
-               >
-                 {isTranscribing ? (
-                   <Loader2 className="h-4 w-4 animate-spin" />
-                 ) : (
-                   <Mic className="h-4 w-4 text-muted-foreground" />
-                 )}
-               </Button>
-             </motion.div>
-           </div>
-         )}
-
-         {/* Send Button - Round */}
-         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-           <Button
-             variant="xai"
-             size="icon"
-             onClick={handleSubmit}
-             disabled={isRecording || (!message.trim() && files.length === 0) || isLoading || disabled}
-             className="h-10 w-10 rounded-full flex-shrink-0"
-           >
-             {isLoading ? (
-               <Loader2 className="h-5 w-5 animate-spin" />
-             ) : (
-               <Send className="h-4 w-4" />
-             )}
-           </Button>
-         </motion.div>
-       </div>
+        {/* Send Button */}
+        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+          <Button
+            variant="xai"
+            size="icon"
+            onClick={handleSubmit}
+            disabled={isRecording || (!message.trim() && files.length === 0) || isLoading || disabled}
+            className="h-10 w-10 rounded-full flex-shrink-0"
+          >
+            {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-4 w-4" />}
+          </Button>
+        </motion.div>
+      </div>
 
       <p className="text-center text-xs text-muted-foreground mt-3">
         X-AI can make mistakes. Consider checking important information.
