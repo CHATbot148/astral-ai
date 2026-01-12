@@ -12,13 +12,28 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, fileContext, userId } = await req.json();
+    const { messages, fileContext, userId: _userId, timeZone, clientTimeISO } = await req.json();
     const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    // Fetch user memory if userId is provided
+    // Always derive user id from the JWT (prevents cross-account memory bleed)
+    const authHeader = req.headers.get("Authorization") || "";
+    const jwt = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+
+    let userId = "";
+    if (jwt && SUPABASE_URL && SUPABASE_ANON_KEY) {
+      const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        global: { headers: { Authorization: `Bearer ${jwt}` } },
+        auth: { persistSession: false },
+      });
+      const { data } = await userClient.auth.getUser();
+      if (data?.user?.id) userId = data.user.id;
+    }
+
+    // Fetch user memory (service role)
     let userMemory = "";
     if (userId && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
       const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -34,6 +49,20 @@ serve(async (req) => {
       }
     }
 
+
+    // Current time context (helps prevent "living in 2023" answers)
+    let timeContext = "";
+    try {
+      const tz = typeof timeZone === "string" && timeZone ? timeZone : undefined;
+      const now = clientTimeISO ? new Date(clientTimeISO) : new Date();
+      const display = tz
+        ? now.toLocaleString("en-US", { timeZone: tz, weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })
+        : now.toUTCString();
+      timeContext = `\n\nCurrent date/time for the user${tz ? ` (${tz})` : ""}: ${display}. Always use this as the "today" reference.`;
+    } catch {
+      // ignore
+    }
+
     // X-AI identity system prompt
     let systemContent = `You are X-AI, an intelligent AI assistant created by X-Tech.
 
@@ -46,10 +75,9 @@ About X-Tech:
 About You (X-AI):
 - You are X-AI, the AI assistant product of X-Tech
 - You are helpful, friendly, and conversational
-- You can generate images when users ask (e.g., "generate an image of...", "create an image of...", "make me a picture of...")
-- When users want to generate images, acknowledge that you can do this and the image will be generated for them
 
-Be natural, helpful, and conversational. Don't be overly formal.${userMemory}`;
+Be natural, helpful, and conversational. Don't be overly formal.${timeContext}${userMemory}`;
+
 
     if (fileContext) {
       systemContent += `\n\nAttachments: The user has shared files with you. ${fileContext}. Analyze and discuss them as needed.`;

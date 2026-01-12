@@ -74,19 +74,12 @@ serve(async (req) => {
       console.error("Storage cleanup failed:", e);
     }
 
-    // Delete DB rows (public schema)
-    await admin.from("messages").delete().in(
-      "conversation_id",
-      admin.from("conversations").select("id").eq("user_id", userId) as any
-    );
-
-    // Safer: do in two steps
+    // Delete DB rows (public schema) — do in safe steps
     const { data: convs } = await admin.from("conversations").select("id").eq("user_id", userId);
     const convIds = (convs || []).map((c: any) => c.id);
     if (convIds.length) {
       await admin.from("messages").delete().in("conversation_id", convIds);
     }
-
     await admin.from("user_memory").delete().eq("user_id", userId);
     await admin.from("conversations").delete().eq("user_id", userId);
     await admin.from("profiles").delete().eq("user_id", userId);

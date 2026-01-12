@@ -292,11 +292,18 @@ export const ChatContainer = () => {
         },
         body: JSON.stringify({
           messages: apiMessages,
-          fileContext: fileUrls.length > 0 ? `User uploaded ${fileUrls.length} file(s): ${fileUrls.map(url => {
-            const isImage = url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i);
-            return isImage ? 'image' : 'document';
-          }).join(', ')}` : undefined,
+          fileContext:
+            fileUrls.length > 0
+              ? `User uploaded ${fileUrls.length} file(s): ${fileUrls
+                  .map((url) => {
+                    const isImage = url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i);
+                    return isImage ? 'image' : 'document';
+                  })
+                  .join(', ')}`
+              : undefined,
           userId: user?.id,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          clientTimeISO: new Date().toISOString(),
         }),
       });
 
