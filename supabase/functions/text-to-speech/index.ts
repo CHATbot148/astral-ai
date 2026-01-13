@@ -5,68 +5,81 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Voice options using Web Speech API compatible voice names
+// We'll use Google Cloud TTS via their free tier or browser native
+const VOICE_MAP: Record<string, { name: string; lang: string; pitch: number; rate: number }> = {
+  "george": { name: "George", lang: "en-GB", pitch: 0.9, rate: 1.0 },
+  "sarah": { name: "Sarah", lang: "en-US", pitch: 1.1, rate: 1.0 },
+  "laura": { name: "Laura", lang: "en-US", pitch: 1.0, rate: 0.95 },
+  "liam": { name: "Liam", lang: "en-US", pitch: 0.85, rate: 1.0 },
+  "lily": { name: "Lily", lang: "en-GB", pitch: 1.15, rate: 1.0 },
+  "daniel": { name: "Daniel", lang: "en-GB", pitch: 0.8, rate: 0.95 },
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { text, voiceId = "JBFqnCBsd6RMkjVDRZzb" } = await req.json(); // George voice
-    const ELEVENLABS_API_KEY = Deno.env.get("ELEVENLABS_API_KEY");
-
-    if (!ELEVENLABS_API_KEY) {
-      throw new Error("ELEVENLABS_API_KEY is not configured");
-    }
+    const { text, voiceId = "george" } = await req.json();
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!text) {
       throw new Error("Text is required");
     }
 
-    // Limit text length for TTS
-    const truncatedText = text.slice(0, 5000);
+    // Limit text length
+    const truncatedText = text.slice(0, 4000);
+    
+    // Map voice ID to a simpler identifier
+    const voiceKey = voiceId.toLowerCase().includes("george") ? "george" :
+                     voiceId.toLowerCase().includes("sarah") ? "sarah" :
+                     voiceId.toLowerCase().includes("laura") ? "laura" :
+                     voiceId.toLowerCase().includes("liam") ? "liam" :
+                     voiceId.toLowerCase().includes("lily") ? "lily" :
+                     voiceId.toLowerCase().includes("daniel") ? "daniel" : "george";
 
-    const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
-      {
-        method: "POST",
+    const voice = VOICE_MAP[voiceKey] || VOICE_MAP["george"];
+
+    // Use Lovable AI Gateway for TTS (via a model that supports it)
+    // Since direct TTS isn't available, we'll generate SSML-like text and use browser synthesis
+    // For now, return a simple audio generation placeholder
+    
+    // Alternative: Use a free TTS service like Google's unofficial endpoint
+    const googleTTSUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${voice.lang}&client=tw-ob&q=${encodeURIComponent(truncatedText)}`;
+    
+    try {
+      const ttsResponse = await fetch(googleTTSUrl, {
         headers: {
-          "xi-api-key": ELEVENLABS_API_KEY,
-          "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         },
-        body: JSON.stringify({
-          text: truncatedText,
-          model_id: "eleven_multilingual_v2",
-          voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.75,
-            style: 0.3,
-            use_speaker_boost: true,
-          },
-        }),
-      }
-    );
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("ElevenLabs API error:", response.status, errorText);
-      
-      if (response.status === 401) {
-        throw new Error("Invalid API key. Please check your ElevenLabs API key.");
+      if (ttsResponse.ok) {
+        const audioBuffer = await ttsResponse.arrayBuffer();
+        return new Response(audioBuffer, {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "audio/mpeg",
+          },
+        });
       }
-      if (response.status === 402) {
-        throw new Error("Insufficient credits. Please add more credits to your ElevenLabs account.");
-      }
-      throw new Error("Text-to-speech generation failed");
+    } catch (e) {
+      console.log("Google TTS fallback failed, using browser synthesis signal");
     }
 
-    const audioBuffer = await response.arrayBuffer();
-
-    return new Response(audioBuffer, {
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "audio/mpeg",
-      },
-    });
+    // Return a signal for client-side synthesis
+    return new Response(
+      JSON.stringify({ 
+        useBrowserSynthesis: true,
+        text: truncatedText,
+        voice: voice,
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   } catch (error) {
     console.error("TTS error:", error);
     return new Response(
