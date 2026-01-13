@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, ArrowDown } from 'lucide-react';
+import { Menu, ArrowDown, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ChatMessage } from './ChatMessage';
@@ -47,6 +47,7 @@ export const ChatContainer = () => {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLElement | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -87,13 +88,11 @@ export const ChatContainer = () => {
       setShowScrollToBottom(distance > 200);
     };
 
-    // On new content, keep pinned to bottom unless user scrolled away
     updateAffordance();
     if (!showScrollToBottom) scrollToBottom();
 
     viewport.addEventListener('scroll', updateAffordance, { passive: true });
     return () => viewport.removeEventListener('scroll', updateAffordance);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, streamingContent]);
 
   useEffect(() => {
@@ -129,14 +128,12 @@ export const ChatContainer = () => {
         let memoryKey = key;
         let memoryValue = match[1];
         
-        // Handle special case for "favorite X is Y"
         if (key.startsWith('favorite_') && match[2]) {
           memoryKey = `favorite_${match[1].toLowerCase().replace(/\s+/g, '_')}`;
           memoryValue = match[2];
         }
 
         try {
-          // Upsert the memory
           const { error } = await supabase
             .from('user_memory')
             .upsert({
@@ -174,10 +171,23 @@ export const ChatContainer = () => {
         body: { prompt },
       });
 
-      if (error) throw error;
-      return (data as any)?.image ?? null;
+      if (error) {
+        console.error('Image generation invoke error:', error);
+        throw error;
+      }
+      
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+      
+      return data?.image ?? null;
     } catch (error) {
       console.error('Image generation error:', error);
+      toast({
+        title: 'Image generation failed',
+        description: error instanceof Error ? error.message : 'Please try again',
+        variant: 'destructive',
+      });
       return null;
     }
   };
@@ -198,16 +208,26 @@ export const ChatContainer = () => {
     return refs;
   };
 
+  const stopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsLoading(false);
+    setIsGeneratingImage(false);
+  };
+
   const handleSend = async (content: string, files?: File[]) => {
     if (!content.trim() && (!files || files.length === 0)) return;
 
     setIsLoading(true);
     setStreamingContent('');
+    abortControllerRef.current = new AbortController();
 
     try {
       let convId = currentConversation?.id;
       if (!convId) {
-        // Limit initial title to 15 chars
+        // Generate a smart title using AI later, for now use first 15 chars
         const newConv = await createConversation(content.slice(0, 15));
         if (!newConv) throw new Error('Failed to create conversation');
         convId = newConv.id;
@@ -218,9 +238,7 @@ export const ChatContainer = () => {
         fileUrls = await uploadFiles(files);
       }
 
-      // Extract and save memory from user message
       await extractAndSaveMemory(content);
-
       await addMessage(convId, 'user', content, fileUrls.length > 0 ? fileUrls : undefined);
 
       // Check if this is an image generation request
@@ -228,23 +246,11 @@ export const ChatContainer = () => {
       
       if (imagePrompt) {
         setIsGeneratingImage(true);
-        // Show animated generating state
-        const generatingMessages = [
-          '🎨 Generating image...',
-          '🎨 Creating your image...',
-          '🎨 Almost there...',
-        ];
-        let msgIndex = 0;
-        const interval = setInterval(() => {
-          msgIndex = (msgIndex + 1) % generatingMessages.length;
-          setStreamingContent(generatingMessages[msgIndex]);
-        }, 1500);
+        setStreamingContent('🎨 Generating image...');
         
         const generatedImage = await generateImage(imagePrompt);
-        clearInterval(interval);
         
         if (generatedImage) {
-          // Add assistant message with the generated image
           await addMessage(convId, 'assistant', `Here's the image I generated for "${imagePrompt}":`, [generatedImage]);
         } else {
           await addMessage(convId, 'assistant', "I'm sorry, I couldn't generate that image. Please try again with a different prompt.");
@@ -256,10 +262,10 @@ export const ChatContainer = () => {
         return;
       }
 
-      // Build messages for the API (only user images, resolved to signed URLs)
+      // Build messages for the API
       const resolveUrls = async (urls?: string[] | null) => {
         if (!urls?.length) return [];
-        return Promise.all(urls.map((u) => resolveFileUrl(u, { expiresIn: 60 * 60 }))); // 1h
+        return Promise.all(urls.map((u) => resolveFileUrl(u, { expiresIn: 60 * 60 })));
       };
 
       const apiMessages = await Promise.all(
@@ -275,7 +281,6 @@ export const ChatContainer = () => {
         }))
       );
 
-      // Add current message (user)
       apiMessages.push({
         role: 'user' as const,
         content,
@@ -305,6 +310,7 @@ export const ChatContainer = () => {
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           clientTimeISO: new Date().toISOString(),
         }),
+        signal: abortControllerRef.current?.signal,
       });
 
       if (!response.ok) {
@@ -356,6 +362,18 @@ export const ChatContainer = () => {
       }
       setStreamingContent('');
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        // User stopped generation
+        if (streamingContent) {
+          const convId = currentConversation?.id;
+          if (convId) {
+            await addMessage(convId, 'assistant', streamingContent + '... [stopped]');
+          }
+        }
+        setStreamingContent('');
+        return;
+      }
+      
       console.error('Chat error:', error);
       toast({
         title: 'Error',
@@ -365,6 +383,7 @@ export const ChatContainer = () => {
     } finally {
       setIsLoading(false);
       setIsGeneratingImage(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -398,7 +417,7 @@ export const ChatContainer = () => {
       />
 
       <main className="flex-1 flex flex-col min-w-0">
-        {/* Floating sidebar button (replaces chat header) */}
+        {/* Floating sidebar button */}
         <div className="absolute top-3 left-3 z-20">
           <Button
             variant="secondary"
@@ -429,7 +448,7 @@ export const ChatContainer = () => {
                 animate={{ opacity: 1 }}
                 className="max-w-4xl mx-auto"
               >
-                {displayMessages.map((msg, index) => (
+                {displayMessages.map((msg) => (
                   <ChatMessage
                     key={msg.id}
                     role={msg.role}
@@ -440,7 +459,23 @@ export const ChatContainer = () => {
                     userName={profile?.full_name}
                   />
                 ))}
-                {isLoading && !streamingContent && <TypingIndicator />}
+                {isLoading && !streamingContent && !isGeneratingImage && <TypingIndicator />}
+                {isGeneratingImage && (
+                  <div className="flex items-center gap-3 px-6 py-4">
+                    <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
+                      <img src={xaiLogo} alt="X-AI" className="w-full h-full object-cover" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <motion.span
+                        className="text-xai-cyan font-medium"
+                        animate={{ opacity: [1, 0.5, 1] }}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                      >
+                        🎨 Generating image...
+                      </motion.span>
+                    </div>
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -471,7 +506,12 @@ export const ChatContainer = () => {
           )}
         </AnimatePresence>
 
-        <ChatInput onSend={handleSend} isLoading={isLoading} disabled={!user} />
+        <ChatInput 
+          onSend={handleSend} 
+          isLoading={isLoading} 
+          disabled={!user}
+          onStop={isLoading ? stopGeneration : undefined}
+        />
       </main>
     </div>
   );
