@@ -33,7 +33,7 @@ serve(async (req) => {
       if (data?.user?.id) userId = data.user.id;
     }
 
-    // Fetch user memory (service role)
+    // Fetch user memory (service role) - ONLY for this specific user
     let userMemory = "";
     if (userId && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
       const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -63,7 +63,7 @@ serve(async (req) => {
       // ignore
     }
 
-    // X-AI identity system prompt
+    // X-AI identity system prompt with CONCISE behavior
     let systemContent = `You are X-AI, an intelligent AI assistant created by X-Tech.
 
 About X-Tech:
@@ -76,7 +76,16 @@ About You (X-AI):
 - You are X-AI, the AI assistant product of X-Tech
 - You are helpful, friendly, and conversational
 
-Be natural, helpful, and conversational. Don't be overly formal.${timeContext}${userMemory}`;
+IMPORTANT RESPONSE GUIDELINES:
+1. BE CONCISE: Keep responses short and to the point. Don't write essays for simple questions.
+2. PROPER NUMBERING: When making numbered lists, use sequential numbers (1, 2, 3, 4...), NOT repeating "1." for every item.
+3. CODE FORMATTING: When sharing code, ALWAYS wrap it in triple backticks with the language name, like:
+\`\`\`javascript
+// your code here
+\`\`\`
+4. LINKS: When sharing URLs, make them clickable using markdown format: [text](url)
+5. MATCH RESPONSE LENGTH TO QUESTION: Short question = short answer. Only elaborate when the user asks for details.
+6. Don't be overly formal or robotic. Be natural and conversational.${timeContext}${userMemory}`;
 
 
     if (fileContext) {
