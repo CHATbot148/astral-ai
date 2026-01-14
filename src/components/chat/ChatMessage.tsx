@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { Copy, Check, ThumbsUp, ThumbsDown, Heart, Sparkles, FileText, Volume2, Download } from 'lucide-react';
+import { Copy, Check, ThumbsUp, ThumbsDown, Heart, Sparkles, FileText, Volume2, Download, Pencil } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -16,6 +16,7 @@ interface ChatMessageProps {
   fileUrls?: string[] | null;
   userAvatar?: string | null;
   userName?: string | null;
+  onEdit?: (content: string) => void;
 }
 
 type Reaction = 'like' | 'dislike' | 'love' | 'sparkle' | null;
@@ -27,7 +28,7 @@ const reactionIcons = {
   sparkle: Sparkles,
 };
 
-export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, userName }: ChatMessageProps) => {
+export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, userName, onEdit }: ChatMessageProps) => {
   const [copied, setCopied] = useState(false);
   const [reaction, setReaction] = useState<Reaction>(null);
   const [showReactions, setShowReactions] = useState(false);
@@ -36,6 +37,19 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const { toast } = useToast();
   const isUser = role === 'user';
+
+  const copyToClipboardUser = async () => {
+    await navigator.clipboard.writeText(content);
+    setCopied(true);
+    toast({ title: 'Copied to clipboard!' });
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleEdit = () => {
+    if (onEdit) {
+      onEdit(content);
+    }
+  };
 
   const copyToClipboard = async () => {
     await navigator.clipboard.writeText(content);
@@ -390,15 +404,44 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
           </div>
         )}
 
-        {/* Read receipt for user messages */}
+        {/* Actions for user messages */}
         {isUser && !isStreaming && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="flex items-center gap-1 justify-end text-xs text-muted-foreground mt-1"
+            className="flex items-center gap-2 justify-end text-xs text-muted-foreground mt-1 opacity-0 group-hover:opacity-100 transition-opacity"
           >
-            <Check className="h-3 w-3" />
-            <span>Sent</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleEdit}
+              className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <Pencil className="h-3 w-3 mr-1" />
+              Edit
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={copyToClipboardUser}
+              className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+            >
+              {copied ? (
+                <>
+                  <Check className="h-3 w-3 mr-1" />
+                  Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3 w-3 mr-1" />
+                  Copy
+                </>
+              )}
+            </Button>
+            <span className="flex items-center gap-1">
+              <Check className="h-3 w-3" />
+              Sent
+            </span>
           </motion.div>
         )}
       </div>

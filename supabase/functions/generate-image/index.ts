@@ -21,8 +21,8 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { prompt } = await req.json();
-    if (!prompt) throw new Error("Prompt is required");
+    const { prompt, imageDataUrl } = await req.json();
+    if (!prompt && !imageDataUrl) throw new Error("Prompt or imageDataUrl is required");
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
@@ -30,7 +30,6 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) throw new Error("Backend is not configured");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
     const authHeader = req.headers.get("Authorization") || "";
     const jwt = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
@@ -45,6 +44,33 @@ serve(async (req) => {
       const { data } = await userClient.auth.getUser();
       if (data?.user?.id) userId = data.user.id;
     }
+
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+
+    // If imageDataUrl is provided (from Puter.js), just upload it
+    if (imageDataUrl) {
+      const { mime, bytes } = parseDataUrl(imageDataUrl);
+      const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
+      const path = `generated/${userId}/img-${Date.now()}.${ext}`;
+
+      const { error: upErr } = await admin.storage.from("chat-files").upload(path, bytes, {
+        contentType: mime,
+        upsert: false,
+      });
+
+      if (upErr) {
+        console.error("Upload error:", upErr);
+        throw new Error("Failed to store generated image");
+      }
+
+      const storageRef = `storage:chat-files/${path}`;
+      return new Response(JSON.stringify({ image: storageRef }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Otherwise, generate with Lovable AI Gateway
+    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
     const gatewayResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -81,18 +107,17 @@ serve(async (req) => {
     }
 
     const data = await gatewayResp.json();
-    const imageDataUrl = data.choices?.[0]?.message?.images?.[0]?.image_url?.url as string | undefined;
-    if (!imageDataUrl) {
+    const generatedImageDataUrl = data.choices?.[0]?.message?.images?.[0]?.image_url?.url as string | undefined;
+    if (!generatedImageDataUrl) {
       console.error("No image in response:", JSON.stringify(data));
       throw new Error("No image was generated");
     }
 
     // Upload to storage so we don't store giant base64 strings in DB
-    const { mime, bytes } = parseDataUrl(imageDataUrl);
+    const { mime, bytes } = parseDataUrl(generatedImageDataUrl);
     const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
     const path = `generated/${userId}/img-${Date.now()}.${ext}`;
 
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
     const { error: upErr } = await admin.storage.from("chat-files").upload(path, bytes, {
       contentType: mime,
       upsert: false,

@@ -183,8 +183,8 @@ const Auth = () => {
 
   return (
     <div className="min-h-screen flex">
-      {/* Left side - Form (1/3) */}
-      <div className="w-full lg:w-1/3 flex items-center justify-center p-6 bg-card">
+      {/* Left side - Form */}
+      <div className="w-full md:w-1/2 lg:w-1/3 flex items-center justify-center p-6 bg-card">
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -428,9 +428,9 @@ const Auth = () => {
       </div>
 
       {/* Right side - Branding (2/3) */}
-      <div className="hidden lg:flex w-2/3 relative bg-gradient-to-br from-background via-background to-xai-cyan/5 overflow-hidden items-center justify-center">
+      <div className="hidden md:flex md:w-1/2 lg:w-2/3 relative bg-gradient-to-br from-background via-background to-xai-cyan/5 overflow-hidden items-center justify-center">
         {/* Background pattern */}
-        <div className="absolute inset-0 auth-bg-pattern opacity-100" />
+        <div className="absolute inset-0 auth-bg-pattern opacity-100 dark:opacity-80" />
         
         {/* Large logo in background */}
         <div className="relative z-10 flex flex-col items-center">
