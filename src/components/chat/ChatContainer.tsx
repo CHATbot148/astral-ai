@@ -38,6 +38,17 @@ const IMAGE_GENERATION_PATTERNS = [
   /(?:can you |please )?(?:generate|create|make|draw) (?:an? )?(?:image|picture|photo) (?:of |showing |with |for )?(.+)/i,
 ];
 
+// Declare puter global type
+declare global {
+  interface Window {
+    puter?: {
+      ai: {
+        txt2img: (prompt: string, options?: { model?: string }) => Promise<HTMLImageElement>;
+      };
+    };
+  }
+}
+
 export const ChatContainer = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
@@ -45,6 +56,7 @@ export const ChatContainer = () => {
   const [profile, setProfile] = useState<{ full_name: string | null; avatar_url: string | null } | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [editingMessage, setEditingMessage] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -165,31 +177,69 @@ export const ChatContainer = () => {
     return null;
   };
 
-  const generateImage = async (prompt: string): Promise<string | null> => {
-    try {
-      const { data, error } = await supabase.functions.invoke('generate-image', {
-        body: { prompt },
-      });
-
-      if (error) {
-        console.error('Image generation invoke error:', error);
-        throw error;
-      }
-      
-      if (data?.error) {
-        throw new Error(data.error);
-      }
-      
-      return data?.image ?? null;
-    } catch (error) {
-      console.error('Image generation error:', error);
+  const generateImageWithPuter = async (prompt: string): Promise<string | null> => {
+    if (!window.puter?.ai) {
       toast({
-        title: 'Image generation failed',
-        description: error instanceof Error ? error.message : 'Please try again',
+        title: 'Image generation unavailable',
+        description: 'Puter.js is not loaded. Please refresh the page.',
         variant: 'destructive',
       });
       return null;
     }
+
+    try {
+      const imgElement = await window.puter.ai.txt2img(prompt, { 
+        model: 'stable-diffusion-3-medium' 
+      });
+      
+      // Convert image element to data URL
+      const canvas = document.createElement('canvas');
+      canvas.width = imgElement.width || 512;
+      canvas.height = imgElement.height || 512;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Failed to create canvas context');
+      
+      ctx.drawImage(imgElement, 0, 0);
+      const dataUrl = canvas.toDataURL('image/png');
+      
+      // Upload to storage
+      const { data, error } = await supabase.functions.invoke('generate-image', {
+        body: { prompt, imageDataUrl: dataUrl },
+      });
+      
+      if (error || data?.error) {
+        // Just return the data URL if upload fails
+        return dataUrl;
+      }
+      
+      return data?.image || dataUrl;
+    } catch (error) {
+      console.error('Puter image generation error:', error);
+      
+      // Fallback to edge function
+      try {
+        const { data, error: fnError } = await supabase.functions.invoke('generate-image', {
+          body: { prompt },
+        });
+
+        if (fnError) throw fnError;
+        if (data?.error) throw new Error(data.error);
+        
+        return data?.image ?? null;
+      } catch (fallbackError) {
+        console.error('Fallback image generation error:', fallbackError);
+        toast({
+          title: 'Image generation failed',
+          description: fallbackError instanceof Error ? fallbackError.message : 'Please try again',
+          variant: 'destructive',
+        });
+        return null;
+      }
+    }
+  };
+
+  const handleEditMessage = (content: string) => {
+    setEditingMessage(content);
   };
 
   const uploadFiles = async (files: File[]): Promise<string[]> => {
@@ -248,7 +298,7 @@ export const ChatContainer = () => {
         setIsGeneratingImage(true);
         setStreamingContent('🎨 Generating image...');
         
-        const generatedImage = await generateImage(imagePrompt);
+        const generatedImage = await generateImageWithPuter(imagePrompt);
         
         if (generatedImage) {
           await addMessage(convId, 'assistant', `Here's the image I generated for "${imagePrompt}":`, [generatedImage]);
@@ -457,6 +507,7 @@ export const ChatContainer = () => {
                     fileUrls={msg.file_urls}
                     userAvatar={profile?.avatar_url}
                     userName={profile?.full_name}
+                    onEdit={msg.role === 'user' ? handleEditMessage : undefined}
                   />
                 ))}
                 {isLoading && !streamingContent && !isGeneratingImage && <TypingIndicator />}
@@ -511,6 +562,8 @@ export const ChatContainer = () => {
           isLoading={isLoading} 
           disabled={!user}
           onStop={isLoading ? stopGeneration : undefined}
+          editValue={editingMessage}
+          onClearEdit={() => setEditingMessage(null)}
         />
       </main>
     </div>

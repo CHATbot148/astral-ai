@@ -12,9 +12,11 @@ interface ChatInputProps {
   isLoading: boolean;
   disabled?: boolean;
   onStop?: () => void;
+  editValue?: string | null;
+  onClearEdit?: () => void;
 }
 
-export const ChatInput = ({ onSend, isLoading, disabled, onStop }: ChatInputProps) => {
+export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onClearEdit }: ChatInputProps) => {
   const [message, setMessage] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [filePreviews, setFilePreviews] = useState<{ file: File; preview: string | null }[]>([]);
@@ -27,6 +29,15 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop }: ChatInputProp
   const { toast } = useToast();
 
   const { levels } = useMicVisualizer({ enabled: isRecording, bars: 12 });
+
+  // Handle edit value prop
+  useEffect(() => {
+    if (editValue) {
+      setMessage(editValue);
+      textareaRef.current?.focus();
+      if (onClearEdit) onClearEdit();
+    }
+  }, [editValue, onClearEdit]);
 
   useEffect(() => {
     if (textareaRef.current) {
