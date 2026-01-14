@@ -498,18 +498,26 @@ export const ChatContainer = () => {
                 animate={{ opacity: 1 }}
                 className="max-w-4xl mx-auto"
               >
-                {displayMessages.map((msg) => (
-                  <ChatMessage
-                    key={msg.id}
-                    role={msg.role}
-                    content={msg.content}
-                    isStreaming={msg.id === 'streaming'}
-                    fileUrls={msg.file_urls}
-                    userAvatar={profile?.avatar_url}
-                    userName={profile?.full_name}
-                    onEdit={msg.role === 'user' ? handleEditMessage : undefined}
-                  />
-                ))}
+                {displayMessages.map((msg, index) => {
+                  // Only allow editing last 3 user messages
+                  const userMessages = displayMessages.filter(m => m.role === 'user');
+                  const userMsgIndex = userMessages.findIndex(m => m.id === msg.id);
+                  const canEdit = msg.role === 'user' && userMsgIndex >= userMessages.length - 3;
+                  
+                  return (
+                    <ChatMessage
+                      key={msg.id}
+                      role={msg.role}
+                      content={msg.content}
+                      isStreaming={msg.id === 'streaming'}
+                      fileUrls={msg.file_urls}
+                      userAvatar={profile?.avatar_url}
+                      userName={profile?.full_name}
+                      onEdit={canEdit ? handleEditMessage : undefined}
+                      canEdit={canEdit}
+                    />
+                  );
+                })}
                 {isLoading && !streamingContent && !isGeneratingImage && <TypingIndicator />}
                 {isGeneratingImage && (
                   <div className="flex items-center gap-3 px-6 py-4">

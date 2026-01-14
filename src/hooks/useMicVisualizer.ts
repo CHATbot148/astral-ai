@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
  * Lightweight mic level meter for UI-only visualizations.
  * - Starts/stops the mic stream
  * - Produces N bar levels in [0..1]
+ * - More sensitive to show higher frequencies even with low sound levels
  */
 export function useMicVisualizer({
   enabled,
@@ -68,32 +69,42 @@ export function useMicVisualizer({
         audioCtxRef.current = ctx;
 
         const analyser = ctx.createAnalyser();
-        analyser.fftSize = 2048;
-        analyser.smoothingTimeConstant = 0.8;
+        analyser.fftSize = 256; // Smaller for faster response
+        analyser.smoothingTimeConstant = 0.3; // Less smoothing = more responsive
         analyserRef.current = analyser;
 
         const source = ctx.createMediaStreamSource(stream);
         sourceRef.current = source;
         source.connect(analyser);
 
-        const data = new Uint8Array(analyser.frequencyBinCount);
+        const freqData = new Uint8Array(analyser.frequencyBinCount);
 
         const loop = () => {
-          analyser.getByteTimeDomainData(data);
-          // RMS level [0..1]
-          let sum = 0;
-          for (let i = 0; i < data.length; i++) {
-            const v = (data[i] - 128) / 128;
-            sum += v * v;
-          }
-          const rms = Math.sqrt(sum / data.length);
-
-          // Create a pleasing bar distribution from RMS.
-          // We bias the middle bars a bit higher.
+          analyser.getByteFrequencyData(freqData);
+          
+          // Use frequency data instead of time domain for more visual response
+          // This shows activity even at low volumes
+          const binSize = Math.floor(freqData.length / barCount);
+          
           const next = Array.from({ length: barCount }, (_, i) => {
-            const midBias = 1 - Math.abs(i - (barCount - 1) / 2) / ((barCount - 1) / 2);
-            const target = rms * (0.55 + midBias * 0.75);
-            return Math.max(0.02, Math.min(1, target));
+            // Get average of frequency bins for this bar
+            let sum = 0;
+            const startBin = i * binSize;
+            const endBin = Math.min(startBin + binSize, freqData.length);
+            
+            for (let j = startBin; j < endBin; j++) {
+              sum += freqData[j];
+            }
+            
+            const avg = sum / (endBin - startBin);
+            // Normalize to 0-1 with boosted sensitivity
+            // Apply a power curve to make low levels more visible
+            const normalized = Math.pow(avg / 255, 0.6);
+            
+            // Add minimum threshold for visual feedback
+            const boosted = Math.max(0.05, normalized * 1.5);
+            
+            return Math.min(1, boosted);
           });
 
           setLevels(next);

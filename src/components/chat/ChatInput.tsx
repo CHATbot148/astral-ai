@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Mic, MicOff, Plus, X, Loader2, FileText, Square } from 'lucide-react';
+import { Send, Mic, MicOff, Plus, X, Loader2, FileText, Square, Phone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { VoiceVisualizer } from './VoiceVisualizer';
 import { cn } from '@/lib/utils';
@@ -14,9 +14,18 @@ interface ChatInputProps {
   onStop?: () => void;
   editValue?: string | null;
   onClearEdit?: () => void;
+  onStartCall?: () => void;
 }
 
-export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onClearEdit }: ChatInputProps) => {
+// Declare SpeechRecognition type
+declare global {
+  interface Window {
+    SpeechRecognition: typeof SpeechRecognition;
+    webkitSpeechRecognition: typeof SpeechRecognition;
+  }
+}
+
+export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onClearEdit, onStartCall }: ChatInputProps) => {
   const [message, setMessage] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [filePreviews, setFilePreviews] = useState<{ file: File; preview: string | null }[]>([]);
@@ -24,8 +33,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
   const [isTranscribing, setIsTranscribing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
   const { toast } = useToast();
 
   const { levels } = useMicVisualizer({ enabled: isRecording, bars: 12 });
@@ -94,59 +102,76 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
+      // Request microphone permission first
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // Use Web Speech API for real-time transcription
+      const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+      
+      if (!SpeechRecognitionAPI) {
+        toast({
+          title: 'Speech recognition not supported',
+          description: 'Please use a supported browser like Chrome',
+          variant: 'destructive',
+        });
+        return;
+      }
 
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
+      const recognition = new SpeechRecognitionAPI();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      let finalTranscript = '';
+
+      recognition.onstart = () => {
+        setIsRecording(true);
+        finalTranscript = '';
       };
 
-      mediaRecorder.onstop = async () => {
-        stream.getTracks().forEach(track => track.stop());
+      recognition.onresult = (event) => {
+        let interimTranscript = '';
         
-        if (audioChunksRef.current.length === 0) return;
-
-        setIsTranscribing(true);
-        
-        try {
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          
-          // Use browser's built-in speech recognition for transcription
-          // This is a fallback since we can't use OpenAI Whisper directly
-          const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-          
-          if (SpeechRecognitionAPI) {
-            // For now, show a message that recording was captured
-            // In production, you'd send this to a transcription service
-            toast({
-              title: 'Recording captured',
-              description: 'Voice transcription is processing...',
-            });
-            
-            // Simulate transcription delay
-            await new Promise(resolve => setTimeout(resolve, 1500));
-            
-            // Use the browser's speech recognition for real-time as fallback
-            setMessage(prev => prev + ' [Voice message recorded]');
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript + ' ';
+          } else {
+            interimTranscript += transcript;
           }
-        } catch (error) {
-          console.error('Transcription error:', error);
+        }
+        
+        // Show real-time transcript in the input
+        setMessage(finalTranscript + interimTranscript);
+      };
+
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        if (event.error !== 'aborted') {
           toast({
-            title: 'Transcription failed',
-            description: 'Please try again or type your message',
+            title: 'Transcription error',
+            description: 'Please try again',
             variant: 'destructive',
           });
-        } finally {
-          setIsTranscribing(false);
+        }
+        setIsRecording(false);
+      };
+
+      recognition.onend = () => {
+        setIsRecording(false);
+        setIsTranscribing(false);
+        
+        if (finalTranscript.trim()) {
+          setMessage(finalTranscript.trim());
+          toast({
+            title: 'Transcription complete',
+            description: 'Your voice has been transcribed',
+          });
         }
       };
 
-      mediaRecorder.start();
-      setIsRecording(true);
+      recognitionRef.current = recognition;
+      recognition.start();
     } catch (error) {
       console.error('Error starting recording:', error);
       toast({
@@ -158,8 +183,10 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
+    if (recognitionRef.current) {
+      setIsTranscribing(true);
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
     }
     setIsRecording(false);
   };
@@ -171,6 +198,8 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
       startRecording();
     }
   };
+
+  const showCallButton = !message.trim() && files.length === 0 && !isLoading && !isRecording && onStartCall;
 
   return (
     <div className="w-full max-w-4xl mx-auto px-4 pb-4 pt-2">
@@ -316,7 +345,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
           </div>
         )}
 
-        {/* Send/Stop Button */}
+        {/* Send/Stop/Call Button */}
         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
           {isLoading && onStop ? (
             <Button
@@ -327,6 +356,17 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
               aria-label="Stop generating"
             >
               <Square className="h-4 w-4" />
+            </Button>
+          ) : showCallButton ? (
+            <Button
+              variant="xai"
+              size="icon"
+              onClick={onStartCall}
+              disabled={disabled}
+              className="h-10 w-10 rounded-full flex-shrink-0"
+              aria-label="Start voice call"
+            >
+              <Phone className="h-4 w-4" />
             </Button>
           ) : (
             <Button

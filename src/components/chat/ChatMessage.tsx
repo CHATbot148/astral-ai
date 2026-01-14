@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { Copy, Check, ThumbsUp, ThumbsDown, Heart, Sparkles, FileText, Volume2, Download, Pencil } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Copy, Check, ThumbsUp, ThumbsDown, Heart, Sparkles, FileText, Volume2, Download, Pencil, ExternalLink } from 'lucide-react';
+import { useEffect, useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { AudioPlayer } from './AudioPlayer';
@@ -17,6 +17,7 @@ interface ChatMessageProps {
   userAvatar?: string | null;
   userName?: string | null;
   onEdit?: (content: string) => void;
+  canEdit?: boolean;
 }
 
 type Reaction = 'like' | 'dislike' | 'love' | 'sparkle' | null;
@@ -28,7 +29,47 @@ const reactionIcons = {
   sparkle: Sparkles,
 };
 
-export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, userName, onEdit }: ChatMessageProps) => {
+// Parse and render code blocks with syntax highlighting
+const CodeBlock = ({ language, code }: { language: string; code: string }) => {
+  const [copied, setCopied] = useState(false);
+
+  const copyCode = async () => {
+    await navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="my-3 rounded-lg overflow-hidden border border-border bg-secondary/50">
+      <div className="flex items-center justify-between px-4 py-2 bg-secondary border-b border-border">
+        <span className="text-xs font-mono text-muted-foreground">{language || 'code'}</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={copyCode}
+          className="h-6 px-2 text-xs"
+        >
+          {copied ? (
+            <>
+              <Check className="h-3 w-3 mr-1" />
+              Copied
+            </>
+          ) : (
+            <>
+              <Copy className="h-3 w-3 mr-1" />
+              Copy
+            </>
+          )}
+        </Button>
+      </div>
+      <pre className="p-4 overflow-x-auto text-sm">
+        <code className="font-mono text-foreground">{code}</code>
+      </pre>
+    </div>
+  );
+};
+
+export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, userName, onEdit, canEdit = true }: ChatMessageProps) => {
   const [copied, setCopied] = useState(false);
   const [reaction, setReaction] = useState<Reaction>(null);
   const [showReactions, setShowReactions] = useState(false);
@@ -46,7 +87,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
   };
 
   const handleEdit = () => {
-    if (onEdit) {
+    if (onEdit && canEdit) {
       onEdit(content);
     }
   };
@@ -62,40 +103,87 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
     setShowReactions(false);
   };
 
-  // Simple markdown-like formatting
-  const formatContent = (text: string) => {
-    return text
-      .split('\n')
-      .map((line, i) => {
-        // Code blocks
-        if (line.startsWith('```')) {
-          return null;
-        }
-        
-        // Bold
-        line = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-        // Italic
-        line = line.replace(/\*(.*?)\*/g, '<em>$1</em>');
-        // Inline code
-        line = line.replace(/`(.*?)`/g, '<code class="bg-muted px-1.5 py-0.5 rounded text-sm font-mono">$1</code>');
-        // Headers
-        if (line.startsWith('### ')) {
-          line = `<h3 class="text-lg font-semibold mt-4 mb-2">${line.slice(4)}</h3>`;
-        } else if (line.startsWith('## ')) {
-          line = `<h2 class="text-xl font-semibold mt-4 mb-2">${line.slice(3)}</h2>`;
-        } else if (line.startsWith('# ')) {
-          line = `<h1 class="text-2xl font-bold mt-4 mb-2">${line.slice(2)}</h1>`;
-        }
-        // Lists
-        if (line.startsWith('- ') || line.startsWith('• ')) {
-          line = `<li class="ml-4">${line.slice(2)}</li>`;
-        }
-        if (/^\d+\.\s/.test(line)) {
-          line = `<li class="ml-4 list-decimal">${line.slice(line.indexOf(' ') + 1)}</li>`;
-        }
-        
-        return <span key={i} dangerouslySetInnerHTML={{ __html: line || '<br/>' }} />;
+  // Parse content into parts (text, code blocks, links)
+  const parsedContent = useMemo(() => {
+    const parts: Array<{ type: 'text' | 'code'; content: string; language?: string }> = [];
+    const codeBlockRegex = /```(\w+)?\n?([\s\S]*?)```/g;
+    
+    let lastIndex = 0;
+    let match;
+    
+    while ((match = codeBlockRegex.exec(content)) !== null) {
+      // Add text before code block
+      if (match.index > lastIndex) {
+        parts.push({ type: 'text', content: content.slice(lastIndex, match.index) });
+      }
+      // Add code block
+      parts.push({ 
+        type: 'code', 
+        language: match[1] || 'code', 
+        content: match[2].trim() 
       });
+      lastIndex = match.index + match[0].length;
+    }
+    
+    // Add remaining text
+    if (lastIndex < content.length) {
+      parts.push({ type: 'text', content: content.slice(lastIndex) });
+    }
+    
+    return parts;
+  }, [content]);
+
+  // Format text with markdown-like features
+  const formatText = (text: string) => {
+    // Split into lines for processing
+    const lines = text.split('\n');
+    
+    return lines.map((line, lineIndex) => {
+      // Bold
+      line = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      // Italic
+      line = line.replace(/\*(.*?)\*/g, '<em>$1</em>');
+      // Inline code
+      line = line.replace(/`([^`]+)`/g, '<code class="bg-muted px-1.5 py-0.5 rounded text-sm font-mono">$1</code>');
+      
+      // Links - markdown style [text](url)
+      line = line.replace(
+        /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, 
+        '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-xai-cyan hover:underline inline-flex items-center gap-1">$1<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>'
+      );
+      
+      // Plain URLs
+      line = line.replace(
+        /(?<!\])\((https?:\/\/[^\s\)]+)\)|(?<!["\(])(https?:\/\/[^\s<]+)(?!["\)])/g,
+        (match, p1, p2) => {
+          const url = p1 || p2;
+          if (!url) return match;
+          return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-xai-cyan hover:underline inline-flex items-center gap-1">${url}<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>`;
+        }
+      );
+      
+      // Headers
+      if (line.startsWith('### ')) {
+        line = `<h3 class="text-lg font-semibold mt-4 mb-2">${line.slice(4)}</h3>`;
+      } else if (line.startsWith('## ')) {
+        line = `<h2 class="text-xl font-semibold mt-4 mb-2">${line.slice(3)}</h2>`;
+      } else if (line.startsWith('# ')) {
+        line = `<h1 class="text-2xl font-bold mt-4 mb-2">${line.slice(2)}</h1>`;
+      }
+      
+      // Unordered lists
+      if (line.startsWith('- ') || line.startsWith('• ')) {
+        line = `<li class="ml-4 list-disc">${line.slice(2)}</li>`;
+      }
+      
+      // Ordered lists (numbered)
+      const numberedMatch = line.match(/^(\d+)\.\s(.+)/);
+      if (numberedMatch) {
+        line = `<li class="ml-4 list-decimal" value="${numberedMatch[1]}">${numberedMatch[2]}</li>`;
+      }
+      
+      return <span key={lineIndex} dangerouslySetInnerHTML={{ __html: line || '<br/>' }} />;
+    });
   };
 
   const isImageLike = (url: string) => {
@@ -295,12 +383,18 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
 
         <motion.div 
           className={cn(
-            "text-foreground leading-relaxed whitespace-pre-wrap inline-block max-w-[85%]",
+            "text-foreground leading-relaxed inline-block max-w-[85%]",
             isUser && "bg-secondary rounded-2xl rounded-tr-sm px-4 py-2"
           )}
           layout
         >
-          {formatContent(content)}
+          {parsedContent.map((part, index) => 
+            part.type === 'code' ? (
+              <CodeBlock key={index} language={part.language || 'code'} code={part.content} />
+            ) : (
+              <div key={index} className="whitespace-pre-wrap">{formatText(part.content)}</div>
+            )
+          )}
         </motion.div>
 
         {/* Audio Player */}
@@ -411,15 +505,17 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
             animate={{ opacity: 1 }}
             className="flex items-center gap-2 justify-end text-xs text-muted-foreground mt-1 opacity-0 group-hover:opacity-100 transition-opacity"
           >
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleEdit}
-              className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
-            >
-              <Pencil className="h-3 w-3 mr-1" />
-              Edit
-            </Button>
+            {canEdit && onEdit && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleEdit}
+                className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <Pencil className="h-3 w-3 mr-1" />
+                Edit
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="sm"
