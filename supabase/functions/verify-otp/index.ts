@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { email, otp, password, name } = await req.json();
+    const { email, otp, password, name, newPassword, isPasswordReset } = await req.json();
     
     if (!email || !otp) {
       throw new Error("Email and OTP are required");
@@ -56,6 +56,41 @@ serve(async (req) => {
 
     // Delete the used OTP
     await supabase.from("email_otps").delete().eq("id", otpRecord.id);
+
+    // Handle password reset
+    if (isPasswordReset && newPassword) {
+      // Find user by email
+      const { data: users, error: listError } = await supabase.auth.admin.listUsers();
+      
+      if (listError) throw listError;
+      
+      const user = users.users.find(u => u.email === email);
+      
+      if (!user) {
+        return new Response(
+          JSON.stringify({ error: "No account found with this email" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Update user's password
+      const { error: updateError } = await supabase.auth.admin.updateUserById(user.id, {
+        password: newPassword,
+      });
+
+      if (updateError) {
+        console.error("Password update error:", updateError);
+        throw new Error("Failed to reset password");
+      }
+
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: "Password reset successfully",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // If password provided, create the user account
     if (password) {

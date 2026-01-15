@@ -29,9 +29,44 @@ const reactionIcons = {
   sparkle: Sparkles,
 };
 
+// Language color mapping for syntax highlighting
+const LANGUAGE_COLORS: Record<string, { bg: string; text: string; label: string }> = {
+  javascript: { bg: 'bg-yellow-500/20', text: 'text-yellow-500', label: 'JavaScript' },
+  js: { bg: 'bg-yellow-500/20', text: 'text-yellow-500', label: 'JavaScript' },
+  typescript: { bg: 'bg-blue-500/20', text: 'text-blue-500', label: 'TypeScript' },
+  ts: { bg: 'bg-blue-500/20', text: 'text-blue-500', label: 'TypeScript' },
+  tsx: { bg: 'bg-blue-500/20', text: 'text-blue-500', label: 'TSX' },
+  jsx: { bg: 'bg-cyan-500/20', text: 'text-cyan-500', label: 'JSX' },
+  python: { bg: 'bg-green-500/20', text: 'text-green-500', label: 'Python' },
+  py: { bg: 'bg-green-500/20', text: 'text-green-500', label: 'Python' },
+  html: { bg: 'bg-orange-500/20', text: 'text-orange-500', label: 'HTML' },
+  css: { bg: 'bg-pink-500/20', text: 'text-pink-500', label: 'CSS' },
+  json: { bg: 'bg-gray-500/20', text: 'text-gray-400', label: 'JSON' },
+  bash: { bg: 'bg-gray-500/20', text: 'text-gray-400', label: 'Bash' },
+  sh: { bg: 'bg-gray-500/20', text: 'text-gray-400', label: 'Shell' },
+  sql: { bg: 'bg-purple-500/20', text: 'text-purple-400', label: 'SQL' },
+  java: { bg: 'bg-red-500/20', text: 'text-red-400', label: 'Java' },
+  cpp: { bg: 'bg-blue-600/20', text: 'text-blue-400', label: 'C++' },
+  c: { bg: 'bg-blue-600/20', text: 'text-blue-400', label: 'C' },
+  go: { bg: 'bg-cyan-600/20', text: 'text-cyan-400', label: 'Go' },
+  rust: { bg: 'bg-orange-600/20', text: 'text-orange-400', label: 'Rust' },
+  ruby: { bg: 'bg-red-600/20', text: 'text-red-400', label: 'Ruby' },
+  php: { bg: 'bg-indigo-500/20', text: 'text-indigo-400', label: 'PHP' },
+  swift: { bg: 'bg-orange-500/20', text: 'text-orange-400', label: 'Swift' },
+  kotlin: { bg: 'bg-purple-600/20', text: 'text-purple-400', label: 'Kotlin' },
+  dart: { bg: 'bg-sky-500/20', text: 'text-sky-400', label: 'Dart' },
+  yaml: { bg: 'bg-red-500/20', text: 'text-red-400', label: 'YAML' },
+  yml: { bg: 'bg-red-500/20', text: 'text-red-400', label: 'YAML' },
+  markdown: { bg: 'bg-gray-500/20', text: 'text-gray-400', label: 'Markdown' },
+  md: { bg: 'bg-gray-500/20', text: 'text-gray-400', label: 'Markdown' },
+  code: { bg: 'bg-muted', text: 'text-muted-foreground', label: 'Code' },
+};
+
 // Parse and render code blocks with syntax highlighting
 const CodeBlock = ({ language, code }: { language: string; code: string }) => {
   const [copied, setCopied] = useState(false);
+  const lang = language.toLowerCase();
+  const colors = LANGUAGE_COLORS[lang] || LANGUAGE_COLORS['code'];
 
   const copyCode = async () => {
     await navigator.clipboard.writeText(code);
@@ -41,13 +76,15 @@ const CodeBlock = ({ language, code }: { language: string; code: string }) => {
 
   return (
     <div className="my-3 rounded-lg overflow-hidden border border-border bg-secondary/50">
-      <div className="flex items-center justify-between px-4 py-2 bg-secondary border-b border-border">
-        <span className="text-xs font-mono text-muted-foreground">{language || 'code'}</span>
+      <div className="flex items-center justify-between px-3 py-1.5 bg-secondary border-b border-border">
+        <span className={cn("text-xs font-mono px-2 py-0.5 rounded", colors.bg, colors.text)}>
+          {colors.label}
+        </span>
         <Button
           variant="ghost"
           size="sm"
           onClick={copyCode}
-          className="h-6 px-2 text-xs"
+          className="h-6 px-2 text-xs shrink-0"
         >
           {copied ? (
             <>
@@ -62,9 +99,11 @@ const CodeBlock = ({ language, code }: { language: string; code: string }) => {
           )}
         </Button>
       </div>
-      <pre className="p-4 overflow-x-auto text-sm">
-        <code className="font-mono text-foreground">{code}</code>
-      </pre>
+      <div className="relative">
+        <pre className="p-3 overflow-x-auto text-sm max-w-full">
+          <code className="font-mono text-foreground whitespace-pre-wrap break-words">{code}</code>
+        </pre>
+      </div>
     </div>
   );
 };
@@ -222,7 +261,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
       className={cn(
         "flex gap-3 px-4 py-4 group",
         isUser ? "flex-row-reverse" : "flex-row",
-        isUser ? "bg-transparent" : "bg-muted/20"
+        // AI messages blend with background (no extra background)
       )}
     >
       {/* Avatar */}
