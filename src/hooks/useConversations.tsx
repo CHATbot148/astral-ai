@@ -74,15 +74,31 @@ export const useConversations = () => {
     await fetchMessages(conversation.id);
   };
 
+  const generateSmartTitle = async (message: string): Promise<string> => {
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-title', {
+        body: { message },
+      });
+      
+      if (error || !data?.title) {
+        return message.slice(0, 15).trim() || 'New Chat';
+      }
+      
+      return data.title.slice(0, 15);
+    } catch {
+      return message.slice(0, 15).trim() || 'New Chat';
+    }
+  };
+
   const createConversation = async (firstMessage?: string) => {
     if (!user) return null;
 
     try {
-      // Limit title to 15 characters
-      const title = firstMessage?.slice(0, 15) || 'New Chat';
+      // Start with temporary title, will update after AI generates one
+      const tempTitle = 'New Chat';
       const { data, error } = await supabase
         .from('conversations')
-        .insert({ user_id: user.id, title })
+        .insert({ user_id: user.id, title: tempTitle })
         .select()
         .single();
 
@@ -91,6 +107,22 @@ export const useConversations = () => {
       setConversations(prev => [data, ...prev]);
       setCurrentConversation(data);
       setMessages([]);
+      
+      // Generate smart title in background
+      if (firstMessage) {
+        generateSmartTitle(firstMessage).then(async (smartTitle) => {
+          await supabase
+            .from('conversations')
+            .update({ title: smartTitle })
+            .eq('id', data.id);
+          
+          setConversations(prev => prev.map(c => 
+            c.id === data.id ? { ...c, title: smartTitle } : c
+          ));
+          setCurrentConversation(prev => prev?.id === data.id ? { ...prev, title: smartTitle } : prev);
+        });
+      }
+      
       return data;
     } catch (error) {
       console.error('Error creating conversation:', error);

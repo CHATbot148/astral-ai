@@ -17,7 +17,7 @@ serve(async (req) => {
   }
 
   try {
-    const { email, name } = await req.json();
+    const { email, name, isPasswordReset } = await req.json();
     
     if (!email) {
       throw new Error("Email is required");
@@ -55,6 +55,12 @@ serve(async (req) => {
       throw new Error("Failed to store OTP");
     }
 
+    const subject = isPasswordReset ? "Reset Your X-AI Password" : "Your X-AI Verification Code";
+    const heading = isPasswordReset ? "Reset Your Password" : "Verify Your Email";
+    const description = isPasswordReset 
+      ? "Enter this code to reset your password:" 
+      : "Enter this code to complete your sign up:";
+
     // Send email via Brevo
     const emailResponse = await fetch("https://api.brevo.com/v3/smtp/email", {
       method: "POST",
@@ -68,7 +74,7 @@ serve(async (req) => {
           email: "xtechnly@gmail.com",
         },
         to: [{ email, name: name || email }],
-        subject: "Your X-AI Verification Code",
+        subject,
         htmlContent: `
           <!DOCTYPE html>
           <html>
@@ -90,8 +96,8 @@ serve(async (req) => {
               <div class="logo">
                 <span class="logo-text">X-AI</span>
               </div>
-              <h1>Verify Your Email</h1>
-              <p style="text-align: center; color: #aaa;">Enter this code to complete your sign up:</p>
+              <h1>${heading}</h1>
+              <p style="text-align: center; color: #aaa;">${description}</p>
               <div class="otp-box">
                 <div class="otp-code">${otp}</div>
               </div>

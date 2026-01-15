@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mail, Lock, User, ArrowRight, Loader2 } from 'lucide-react';
+import { Mail, Lock, User, ArrowRight, Loader2, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
@@ -13,7 +13,7 @@ import xaiLogo from '@/assets/xai-logo.png';
 const emailSchema = z.string().email('Please enter a valid email address');
 const passwordSchema = z.string().min(6, 'Password must be at least 6 characters');
 
-type AuthStep = 'credentials' | 'verify-otp';
+type AuthStep = 'credentials' | 'verify-otp' | 'forgot-password' | 'reset-password';
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -22,9 +22,10 @@ const Auth = () => {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [otp, setOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [sendingOtp, setSendingOtp] = useState(false);
-  const [errors, setErrors] = useState<{ email?: string; password?: string; otp?: string }>({});
+  const [errors, setErrors] = useState<{ email?: string; password?: string; otp?: string; newPassword?: string }>({});
 
   const { user, signIn, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
@@ -181,6 +182,86 @@ const Auth = () => {
     await handleSendOtp();
   };
 
+  const handleForgotPassword = async () => {
+    try {
+      emailSchema.parse(email);
+    } catch (e) {
+      if (e instanceof z.ZodError) {
+        setErrors({ email: e.errors[0].message });
+        return;
+      }
+    }
+
+    setSendingOtp(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('send-otp', {
+        body: { email, isPasswordReset: true },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast({
+        title: 'Reset code sent!',
+        description: 'Check your email for the 6-digit code.',
+      });
+      setStep('reset-password');
+    } catch (error) {
+      toast({
+        title: 'Failed to send code',
+        description: error instanceof Error ? error.message : 'Please try again',
+        variant: 'destructive',
+      });
+    } finally {
+      setSendingOtp(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (otp.length !== 6) {
+      setErrors({ otp: 'Please enter the 6-digit code' });
+      return;
+    }
+
+    try {
+      passwordSchema.parse(newPassword);
+    } catch (e) {
+      if (e instanceof z.ZodError) {
+        setErrors({ newPassword: e.errors[0].message });
+        return;
+      }
+    }
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('verify-otp', {
+        body: { email, otp, newPassword, isPasswordReset: true },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast({
+        title: 'Password reset successful!',
+        description: 'You can now log in with your new password.',
+      });
+
+      setStep('credentials');
+      setIsLogin(true);
+      setOtp('');
+      setNewPassword('');
+      setPassword('');
+    } catch (error) {
+      toast({
+        title: 'Reset failed',
+        description: error instanceof Error ? error.message : 'Invalid code',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex">
       {/* Left side - Form */}
@@ -283,6 +364,18 @@ const Auth = () => {
                     )}
                   </div>
 
+                  {isLogin && (
+                    <div className="text-right">
+                      <button
+                        type="button"
+                        onClick={() => setStep('forgot-password')}
+                        className="text-sm text-xai-cyan hover:underline"
+                      >
+                        Forgot password?
+                      </button>
+                    </div>
+                  )}
+
                   <Button
                     type="submit"
                     className="w-full h-12 bg-gradient-to-r from-xai-cyan to-xai-purple text-white hover:opacity-90"
@@ -352,7 +445,7 @@ const Auth = () => {
                   </button>
                 </p>
               </motion.div>
-            ) : (
+            ) : step === 'verify-otp' ? (
               <motion.div
                 key="verify-otp"
                 initial={{ opacity: 0, x: 20 }}
@@ -414,6 +507,159 @@ const Auth = () => {
                     <button
                       type="button"
                       onClick={resendOtp}
+                      disabled={sendingOtp}
+                      className="text-xai-cyan hover:underline disabled:opacity-50"
+                    >
+                      {sendingOtp ? 'Sending...' : 'Resend code'}
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            ) : step === 'forgot-password' ? (
+              <motion.div
+                key="forgot-password"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+              >
+                <div className="mb-8">
+                  <h1 className="text-3xl font-display font-bold mb-2">
+                    Forgot Password
+                  </h1>
+                  <p className="text-muted-foreground">
+                    Enter your email to receive a password reset code
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        type="email"
+                        placeholder="Email address"
+                        value={email}
+                        onChange={(e) => {
+                          setEmail(e.target.value);
+                          setErrors(prev => ({ ...prev, email: undefined }));
+                        }}
+                        className={`pl-10 h-12 ${errors.email ? 'border-destructive' : ''}`}
+                      />
+                    </div>
+                    {errors.email && (
+                      <p className="text-sm text-destructive mt-1">{errors.email}</p>
+                    )}
+                  </div>
+
+                  <Button
+                    onClick={handleForgotPassword}
+                    className="w-full h-12 bg-gradient-to-r from-xai-cyan to-xai-purple text-white hover:opacity-90"
+                    disabled={sendingOtp}
+                  >
+                    {sendingOtp ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <>
+                        Send Reset Code
+                        <ArrowRight className="h-4 w-4 ml-2" />
+                      </>
+                    )}
+                  </Button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep('credentials');
+                      setErrors({});
+                    }}
+                    className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Back to login
+                  </button>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="reset-password"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+              >
+                <div className="mb-8">
+                  <h1 className="text-3xl font-display font-bold mb-2">
+                    Reset Password
+                  </h1>
+                  <p className="text-muted-foreground">
+                    Enter the code sent to <span className="text-foreground font-medium">{email}</span>
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <Input
+                      type="text"
+                      placeholder="Enter 6-digit code"
+                      value={otp}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                        setOtp(val);
+                        setErrors(prev => ({ ...prev, otp: undefined }));
+                      }}
+                      className={`h-14 text-center text-2xl tracking-[0.5em] font-mono ${errors.otp ? 'border-destructive' : ''}`}
+                      maxLength={6}
+                    />
+                    {errors.otp && (
+                      <p className="text-sm text-destructive mt-1">{errors.otp}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        type="password"
+                        placeholder="New password"
+                        value={newPassword}
+                        onChange={(e) => {
+                          setNewPassword(e.target.value);
+                          setErrors(prev => ({ ...prev, newPassword: undefined }));
+                        }}
+                        className={`pl-10 h-12 ${errors.newPassword ? 'border-destructive' : ''}`}
+                      />
+                    </div>
+                    {errors.newPassword && (
+                      <p className="text-sm text-destructive mt-1">{errors.newPassword}</p>
+                    )}
+                  </div>
+
+                  <Button
+                    onClick={handleResetPassword}
+                    className="w-full h-12 bg-gradient-to-r from-xai-cyan to-xai-purple text-white hover:opacity-90"
+                    disabled={loading || otp.length !== 6}
+                  >
+                    {loading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      'Reset Password'
+                    )}
+                  </Button>
+
+                  <div className="flex items-center justify-between text-sm">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStep('forgot-password');
+                        setOtp('');
+                        setNewPassword('');
+                      }}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      ← Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleForgotPassword}
                       disabled={sendingOtp}
                       className="text-xai-cyan hover:underline disabled:opacity-50"
                     >
