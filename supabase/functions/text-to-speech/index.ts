@@ -25,7 +25,7 @@ serve(async (req) => {
 
   try {
     const { text, voiceId = "george" } = await req.json();
-    const ELEVENLABS_API_KEY = Deno.env.get("ELEVENLABS_API_KEY");
+    const ELEVENLABS_API_KEY = Deno.env.get("ELEVENLABS_API_KEY") || Deno.env.get("ELEVENLABS_API_KEY2");
 
     if (!text) {
       throw new Error("Text is required");

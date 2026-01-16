@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, ArrowDown, Square } from 'lucide-react';
+import { Menu, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ChatMessage } from './ChatMessage';
@@ -8,6 +8,7 @@ import { ChatInput } from './ChatInput';
 import { WelcomeScreen } from './WelcomeScreen';
 import { Sidebar } from './Sidebar';
 import { TypingIndicator } from './TypingIndicator';
+import { VoiceCall } from './VoiceCall';
 import { useConversations } from '@/hooks/useConversations';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -55,6 +56,8 @@ export const ChatContainer = () => {
   const [streamingContent, setStreamingContent] = useState('');
   const [profile, setProfile] = useState<{ full_name: string | null; avatar_url: string | null } | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showVoiceCall, setShowVoiceCall] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [editingMessage, setEditingMessage] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -177,6 +180,25 @@ export const ChatContainer = () => {
     return null;
   };
 
+  const parseReminderRequest = (text: string): { message: string; scheduledForISO: string } | null => {
+    // Supports: "remind me to X in 10 minutes" / "set a reminder for X in 2 hours"
+    const m = text.match(/(?:remind me|set a reminder|notify me|message me)(?:\s+(?:to|about|for))?\s+(.+?)\s+in\s+(\d+)\s+(minute|minutes|hour|hours|day|days)\b/i);
+    if (!m) return null;
+
+    const message = m[1].trim();
+    const amount = Number(m[2]);
+    const unit = m[3].toLowerCase();
+    if (!message || !Number.isFinite(amount) || amount <= 0) return null;
+
+    const ms =
+      unit.startsWith('minute') ? amount * 60_000 :
+      unit.startsWith('hour') ? amount * 3_600_000 :
+      amount * 86_400_000;
+
+    const scheduledForISO = new Date(Date.now() + ms).toISOString();
+    return { message, scheduledForISO };
+  };
+
   const generateImage = async (prompt: string): Promise<string | null> => {
     // Try Puter.js first (free, user-pays model)
     if (window.puter?.ai) {
@@ -270,13 +292,14 @@ export const ChatContainer = () => {
 
     setIsLoading(true);
     setStreamingContent('');
+    setIsSearching(false);
     abortControllerRef.current = new AbortController();
 
     try {
       let convId = currentConversation?.id;
       if (!convId) {
-        // Generate a smart title using AI later, for now use first 15 chars
-        const newConv = await createConversation(content.slice(0, 15));
+        // createConversation will generate a smart title from the full first message
+        const newConv = await createConversation(content);
         if (!newConv) throw new Error('Failed to create conversation');
         convId = newConv.id;
       }
@@ -289,21 +312,56 @@ export const ChatContainer = () => {
       await extractAndSaveMemory(content);
       await addMessage(convId, 'user', content, fileUrls.length > 0 ? fileUrls : undefined);
 
+      // Lightweight reminders (no AI parsing): "in X minutes/hours/days"
+      const reminder = user ? parseReminderRequest(content) : null;
+      if (reminder && user) {
+        try {
+          const { data, error } = await supabase.functions.invoke('schedule-notification', {
+            body: {
+              userId: user.id,
+              message: reminder.message,
+              scheduledFor: reminder.scheduledForISO,
+              conversationId: convId,
+              type: 'reminder',
+            },
+          });
+
+          if (error || data?.error) throw error || new Error(data?.error);
+
+          await addMessage(
+            convId,
+            'assistant',
+            `✅ Got it — I’ll remind you about "${reminder.message}" in a bit.`
+          );
+        } catch (e) {
+          toast({
+            title: 'Reminder failed',
+            description: e instanceof Error ? e.message : 'Please try again',
+            variant: 'destructive',
+          });
+        } finally {
+          setStreamingContent('');
+          setIsGeneratingImage(false);
+          setIsLoading(false);
+        }
+        return;
+      }
+
       // Check if this is an image generation request
       const imagePrompt = detectImageGenerationRequest(content);
-      
+
       if (imagePrompt) {
         setIsGeneratingImage(true);
         setStreamingContent('🎨 Generating image...');
-        
+
         const generatedImage = await generateImage(imagePrompt);
-        
+
         if (generatedImage) {
           await addMessage(convId, 'assistant', `Here's the image I generated for "${imagePrompt}":`, [generatedImage]);
         } else {
           await addMessage(convId, 'assistant', "I'm sorry, I couldn't generate that image. Please try again with a different prompt.");
         }
-        
+
         setStreamingContent('');
         setIsGeneratingImage(false);
         setIsLoading(false);
@@ -337,11 +395,21 @@ export const ChatContainer = () => {
         ),
       });
 
+      // Detect search/media intent to show a "Searching..." animation
+      const searchIntent = /(search (?:for |the web for |online for )|look up |google |latest news|what(?:'s| is) happening)/i.test(content);
+      const imageIntent = /(show me (?:an? )?(?:image|picture|photo)|what does .+ look like)/i.test(content);
+      const videoIntent = /(show me (?:a )?video|video tutorial)/i.test(content);
+      setIsSearching(searchIntent || imageIntent || videoIntent);
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
         body: JSON.stringify({
           messages: apiMessages,
@@ -430,6 +498,7 @@ export const ChatContainer = () => {
       });
     } finally {
       setIsLoading(false);
+      setIsSearching(false);
       setIsGeneratingImage(false);
       abortControllerRef.current = null;
     }
@@ -450,6 +519,12 @@ export const ChatContainer = () => {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       <div className="aurora-bg" />
+
+      <AnimatePresence>
+        {showVoiceCall && (
+          <VoiceCall onClose={() => setShowVoiceCall(false)} />
+        )}
+      </AnimatePresence>
 
       <Sidebar
         conversations={conversations}
@@ -516,7 +591,9 @@ export const ChatContainer = () => {
                     />
                   );
                 })}
-                {isLoading && !streamingContent && !isGeneratingImage && <TypingIndicator />}
+                {isLoading && !streamingContent && !isGeneratingImage && (
+                  <TypingIndicator label={isSearching ? 'Searching the web…' : undefined} />
+                )}
                 {isGeneratingImage && (
                   <div className="flex items-center gap-3 px-6 py-4">
                     <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
@@ -570,6 +647,7 @@ export const ChatContainer = () => {
           onStop={isLoading ? stopGeneration : undefined}
           editValue={editingMessage}
           onClearEdit={() => setEditingMessage(null)}
+          onStartCall={user ? () => setShowVoiceCall(true) : undefined}
         />
       </main>
     </div>

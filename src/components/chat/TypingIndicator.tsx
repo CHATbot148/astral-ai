@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import xaiLogo from '@/assets/xai-logo.png';
 
-export const TypingIndicator = () => {
+export const TypingIndicator = ({ label }: { label?: string }) => {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -14,23 +14,27 @@ export const TypingIndicator = () => {
         <img src={xaiLogo} alt="X-AI" className="w-full h-full object-cover" />
       </div>
 
-      {/* Typing Dots */}
-      <div className="flex items-center gap-1 py-2">
-        <motion.span
-          className="w-2 h-2 rounded-full bg-xai-cyan"
-          animate={{ opacity: [0.4, 1, 0.4], scale: [0.8, 1, 0.8] }}
-          transition={{ duration: 1, repeat: Infinity, delay: 0 }}
-        />
-        <motion.span
-          className="w-2 h-2 rounded-full bg-xai-cyan"
-          animate={{ opacity: [0.4, 1, 0.4], scale: [0.8, 1, 0.8] }}
-          transition={{ duration: 1, repeat: Infinity, delay: 0.2 }}
-        />
-        <motion.span
-          className="w-2 h-2 rounded-full bg-xai-cyan"
-          animate={{ opacity: [0.4, 1, 0.4], scale: [0.8, 1, 0.8] }}
-          transition={{ duration: 1, repeat: Infinity, delay: 0.4 }}
-        />
+      <div className="flex flex-col justify-center">
+        {/* Typing Dots */}
+        <div className="flex items-center gap-1 py-1">
+          <motion.span
+            className="w-2 h-2 rounded-full bg-xai-cyan"
+            animate={{ opacity: [0.4, 1, 0.4], scale: [0.8, 1, 0.8] }}
+            transition={{ duration: 1, repeat: Infinity, delay: 0 }}
+          />
+          <motion.span
+            className="w-2 h-2 rounded-full bg-xai-cyan"
+            animate={{ opacity: [0.4, 1, 0.4], scale: [0.8, 1, 0.8] }}
+            transition={{ duration: 1, repeat: Infinity, delay: 0.2 }}
+          />
+          <motion.span
+            className="w-2 h-2 rounded-full bg-xai-cyan"
+            animate={{ opacity: [0.4, 1, 0.4], scale: [0.8, 1, 0.8] }}
+            transition={{ duration: 1, repeat: Infinity, delay: 0.4 }}
+          />
+        </div>
+
+        {label && <div className="text-xs text-muted-foreground">{label}</div>}
       </div>
     </motion.div>
   );

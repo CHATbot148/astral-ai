@@ -24,12 +24,12 @@ export function isDataImageUrl(value: string) {
 }
 
 /**
- * Resolves a storage reference or URL to a publicly accessible URL.
- * For public buckets we use getPublicUrl (no expiry).
+ * Resolves a storage reference or URL to an accessible URL.
+ * We default to a signed URL (works for private buckets). If that fails, we fall back to public URL.
  */
 export async function resolveFileUrl(
   value: string,
-  _opts?: { expiresIn?: number }
+  opts?: { expiresIn?: number }
 ): Promise<string> {
   if (!value) return value;
   if (isDataImageUrl(value)) return value;
@@ -38,6 +38,11 @@ export async function resolveFileUrl(
   const { bucket, path } = parseStorageRef(value);
   if (!bucket || !path) return value;
 
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  return data?.publicUrl ?? value;
+  const expiresIn = Math.max(60, Math.min(opts?.expiresIn ?? 60 * 60, 60 * 60 * 24 * 7));
+
+  const signed = await supabase.storage.from(bucket).createSignedUrl(path, expiresIn);
+  if (!signed.error && signed.data?.signedUrl) return signed.data.signedUrl;
+
+  const pub = supabase.storage.from(bucket).getPublicUrl(path);
+  return pub?.data?.publicUrl ?? value;
 }
