@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { VoiceVisualizer } from './VoiceVisualizer';
 import { useMicVisualizer } from '@/hooks/useMicVisualizer';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 
 interface VoiceCallProps {
@@ -58,11 +59,15 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     
     try {
       // Get AI response
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
         body: JSON.stringify({
           messages: [{ role: 'user', content: text }],
@@ -138,6 +143,9 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     const voiceId = localStorage.getItem('xai-tts-voice') || 'george';
 
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/text-to-speech`,
         {
@@ -145,7 +153,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
           headers: {
             'Content-Type': 'application/json',
             apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           },
           body: JSON.stringify({ text: text.slice(0, 2000), voiceId }),
         }

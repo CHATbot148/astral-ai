@@ -52,7 +52,7 @@ serve(async (req) => {
     if (imageDataUrl) {
       const { mime, bytes } = parseDataUrl(imageDataUrl);
       const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
-      const path = `generated/${userId}/img-${Date.now()}.${ext}`;
+      const path = `${userId}/generated/img-${Date.now()}.${ext}`;
 
       const { error: upErr } = await admin.storage.from("chat-files").upload(path, bytes, {
         contentType: mime,
@@ -94,7 +94,7 @@ serve(async (req) => {
         if (stabilityResp.ok) {
           const imageBuffer = await stabilityResp.arrayBuffer();
           const bytes = new Uint8Array(imageBuffer);
-          const path = `generated/${userId}/img-${Date.now()}.png`;
+          const path = `${userId}/generated/img-${Date.now()}.png`;
 
           const { error: upErr } = await admin.storage.from("chat-files").upload(path, bytes, {
             contentType: "image/png",
@@ -164,7 +164,7 @@ serve(async (req) => {
       // Upload to storage
       const { mime, bytes } = parseDataUrl(generatedImageDataUrl);
       const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
-      const path = `generated/${userId}/img-${Date.now()}.${ext}`;
+      const path = `${userId}/generated/img-${Date.now()}.${ext}`;
 
       const { error: upErr } = await admin.storage.from("chat-files").upload(path, bytes, {
         contentType: mime,
