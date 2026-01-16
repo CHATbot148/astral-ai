@@ -6,6 +6,39 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Intent detection patterns
+const WEB_SEARCH_PATTERNS = [
+  /search (?:for |the web for |online for )?(.+)/i,
+  /look up (.+)/i,
+  /find (?:information |info )?(?:about |on )?(.+)/i,
+  /what(?:'s| is) the latest (?:news |info )?(?:on |about )?(.+)/i,
+  /(?:can you |please )?google (.+)/i,
+  /what(?:'s| is) happening (?:with |in )?(.+)/i,
+  /(?:tell me about|what do you know about) (.+) (?:today|now|currently|recently)/i,
+];
+
+const IMAGE_FETCH_PATTERNS = [
+  /show me (?:an? )?(?:image|picture|photo)s? of (.+)/i,
+  /(?:can you |please )?(?:find|get|fetch) (?:an? )?(?:image|picture|photo)s? of (.+)/i,
+  /what does (.+) look like/i,
+  /(?:show|display) (?:me )?(.+) (?:image|picture|photo)s?/i,
+  /i want to see (.+)/i,
+];
+
+const VIDEO_FETCH_PATTERNS = [
+  /show me (?:a )?video(?:s)? (?:of |about |on )?(.+)/i,
+  /(?:find|get|fetch) (?:a )?video(?:s)? (?:of |about |on )?(.+)/i,
+  /video tutorial(?:s)? (?:on |about |for )?(.+)/i,
+  /how to (.+) video/i,
+];
+
+const REMINDER_PATTERNS = [
+  /remind me (?:to |about )?(.+) (?:at|on|in) (.+)/i,
+  /set a reminder (?:for |to )?(.+) (?:at|on|in) (.+)/i,
+  /message me (?:about )?(.+) (?:at|on|in) (.+)/i,
+  /notify me (?:about )?(.+) (?:at|on|in) (.+)/i,
+];
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -33,7 +66,7 @@ serve(async (req) => {
       if (data?.user?.id) userId = data.user.id;
     }
 
-    // Fetch user memory (service role) - ONLY for this specific user
+    // Fetch user memory (service role) - ONLY personal info for this specific user
     let userMemory = "";
     if (userId && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
       const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -44,11 +77,10 @@ serve(async (req) => {
 
       if (memories && memories.length > 0) {
         userMemory =
-          "\n\nUser Information (remember this about the user):\n" +
+          "\n\nUser Information (remember this about the user - these are facts they've shared with you):\n" +
           memories.map((m) => `- ${m.key}: ${m.value}`).join("\n");
       }
     }
-
 
     // Current time context (helps prevent "living in 2023" answers)
     let timeContext = "";
@@ -63,6 +95,79 @@ serve(async (req) => {
       // ignore
     }
 
+    // Detect special intents in the last user message
+    const lastUserMessage = messages.filter((m: { role: string }) => m.role === "user").pop();
+    const lastContent = lastUserMessage?.content || "";
+    
+    let searchContext = "";
+    let mediaContext = "";
+
+    // Check for web search intent
+    for (const pattern of WEB_SEARCH_PATTERNS) {
+      const match = lastContent.match(pattern);
+      if (match) {
+        const query = match[1].trim();
+        try {
+          const searchResults = await performWebSearch(SUPABASE_URL!, query, "web");
+          if (searchResults.length > 0) {
+            searchContext = `\n\n[Web Search Results for "${query}"]:\n` +
+              searchResults.map((r, i) => `${i + 1}. ${r.title}\n   ${r.snippet}\n   Source: ${r.url}`).join("\n\n");
+          }
+        } catch (e) {
+          console.error("Web search error:", e);
+        }
+        break;
+      }
+    }
+
+    // Check for image fetch intent
+    for (const pattern of IMAGE_FETCH_PATTERNS) {
+      const match = lastContent.match(pattern);
+      if (match) {
+        const query = match[1].trim();
+        try {
+          const imageResults = await performWebSearch(SUPABASE_URL!, query, "images");
+          if (imageResults.length > 0) {
+            mediaContext = `\n\n[Images found for "${query}" - Display these to the user]:\n` +
+              imageResults.map((r, i) => `${i + 1}. ![${r.title}](${r.imageUrl || r.url})\n   Source: ${r.source || r.url}`).join("\n\n");
+          }
+        } catch (e) {
+          console.error("Image search error:", e);
+        }
+        break;
+      }
+    }
+
+    // Check for video fetch intent
+    for (const pattern of VIDEO_FETCH_PATTERNS) {
+      const match = lastContent.match(pattern);
+      if (match) {
+        const query = match[1].trim();
+        try {
+          const videoResults = await performWebSearch(SUPABASE_URL!, query, "videos");
+          if (videoResults.length > 0) {
+            mediaContext = `\n\n[Videos found for "${query}" - Share these links with the user]:\n` +
+              videoResults.map((r, i) => `${i + 1}. [${r.title}](${r.url})${r.duration ? ` (${r.duration})` : ""}\n   Source: ${r.source || "YouTube"}`).join("\n\n");
+          }
+        } catch (e) {
+          console.error("Video search error:", e);
+        }
+        break;
+      }
+    }
+
+    // Check for reminder intent
+    for (const pattern of REMINDER_PATTERNS) {
+      const match = lastContent.match(pattern);
+      if (match && userId && SUPABASE_URL) {
+        const reminderContent = match[1].trim();
+        const timeString = match[2].trim();
+        // Let AI handle the response, but mention capability
+        searchContext += `\n\n[Reminder Request]: User wants to be reminded about "${reminderContent}" at "${timeString}". You can set reminders for users.`;
+        break;
+      }
+    }
+
     // X-AI identity system prompt with CONCISE behavior
     let systemContent = `You are X-AI, an intelligent AI assistant created by X-Tech.
 
@@ -70,11 +175,14 @@ About X-Tech:
 - X-Tech is a software and technology company founded on September 29th, 2023
 - X-Tech was founded by Khaleel Abdallah, a 15-year-old high schooler from Nigeria
 - X-Tech currently owns and operates X-AI and WishVerse
+- WishVerse is a wish-making platform where users can make wishes, share them, and have them potentially granted by the community
 - Khaleel Abdallah is the inventor of all X-Tech creations
 
 About You (X-AI):
 - You are X-AI, the AI assistant product of X-Tech
 - You are helpful, friendly, and conversational
+- You have access to real-time web search when users ask for current information
+- You can find and display images and videos from the web when users request them
 
 IMPORTANT RESPONSE GUIDELINES:
 1. BE CONCISE: Keep responses short and to the point. Don't write essays for simple questions.
@@ -85,8 +193,10 @@ IMPORTANT RESPONSE GUIDELINES:
 \`\`\`
 4. LINKS: When sharing URLs, make them clickable using markdown format: [text](url)
 5. MATCH RESPONSE LENGTH TO QUESTION: Short question = short answer. Only elaborate when the user asks for details.
-6. Don't be overly formal or robotic. Be natural and conversational.${timeContext}${userMemory}`;
-
+6. Don't be overly formal or robotic. Be natural and conversational.
+7. IMAGES: When showing images from search results, use markdown: ![description](url)
+8. VIDEOS: When showing video results, use clickable markdown links: [Video Title](url)
+9. EACH CHAT IS INDEPENDENT: Don't reference previous conversations. User's personal info (name, age, preferences) carries over, but conversation context does not.${timeContext}${userMemory}${searchContext}${mediaContext}`;
 
     if (fileContext) {
       systemContent += `\n\nAttachments: The user has shared files with you. ${fileContext}. Analyze and discuss them as needed.`;
@@ -198,3 +308,27 @@ IMPORTANT RESPONSE GUIDELINES:
     );
   }
 });
+
+// Helper function to perform web search
+async function performWebSearch(supabaseUrl: string, query: string, type: string): Promise<any[]> {
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/web-search`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")}`,
+      },
+      body: JSON.stringify({ query, type, count: 5 }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Search failed");
+    }
+
+    const data = await response.json();
+    return data.results || [];
+  } catch (error) {
+    console.error("Search helper error:", error);
+    return [];
+  }
+}

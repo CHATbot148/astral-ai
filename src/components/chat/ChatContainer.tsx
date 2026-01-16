@@ -177,64 +177,62 @@ export const ChatContainer = () => {
     return null;
   };
 
-  const generateImageWithPuter = async (prompt: string): Promise<string | null> => {
-    if (!window.puter?.ai) {
+  const generateImage = async (prompt: string): Promise<string | null> => {
+    // Try Puter.js first (free, user-pays model)
+    if (window.puter?.ai) {
+      try {
+        console.log('Attempting Puter.js image generation...');
+        const imgElement = await window.puter.ai.txt2img(prompt, { 
+          model: 'stable-diffusion-3-medium' 
+        });
+        
+        // Convert image element to data URL
+        const canvas = document.createElement('canvas');
+        canvas.width = imgElement.width || 512;
+        canvas.height = imgElement.height || 512;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Failed to create canvas context');
+        
+        ctx.drawImage(imgElement, 0, 0);
+        const dataUrl = canvas.toDataURL('image/png');
+        
+        // Upload to storage
+        const { data, error } = await supabase.functions.invoke('generate-image', {
+          body: { prompt, imageDataUrl: dataUrl },
+        });
+        
+        if (!error && data?.image) {
+          console.log('Puter.js generation successful');
+          return data.image;
+        }
+        
+        // Return data URL if storage upload fails
+        return dataUrl;
+      } catch (puterError) {
+        console.log('Puter.js failed, falling back to server:', puterError);
+      }
+    }
+
+    // Fallback to server-side generation (Stability AI / Lovable AI)
+    try {
+      console.log('Attempting server-side image generation...');
+      const { data, error } = await supabase.functions.invoke('generate-image', {
+        body: { prompt },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      
+      console.log('Server-side generation successful');
+      return data?.image ?? null;
+    } catch (serverError) {
+      console.error('Server image generation error:', serverError);
       toast({
-        title: 'Image generation unavailable',
-        description: 'Puter.js is not loaded. Please refresh the page.',
+        title: 'Image generation failed',
+        description: serverError instanceof Error ? serverError.message : 'Please try again',
         variant: 'destructive',
       });
       return null;
-    }
-
-    try {
-      const imgElement = await window.puter.ai.txt2img(prompt, { 
-        model: 'stable-diffusion-3-medium' 
-      });
-      
-      // Convert image element to data URL
-      const canvas = document.createElement('canvas');
-      canvas.width = imgElement.width || 512;
-      canvas.height = imgElement.height || 512;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Failed to create canvas context');
-      
-      ctx.drawImage(imgElement, 0, 0);
-      const dataUrl = canvas.toDataURL('image/png');
-      
-      // Upload to storage
-      const { data, error } = await supabase.functions.invoke('generate-image', {
-        body: { prompt, imageDataUrl: dataUrl },
-      });
-      
-      if (error || data?.error) {
-        // Just return the data URL if upload fails
-        return dataUrl;
-      }
-      
-      return data?.image || dataUrl;
-    } catch (error) {
-      console.error('Puter image generation error:', error);
-      
-      // Fallback to edge function
-      try {
-        const { data, error: fnError } = await supabase.functions.invoke('generate-image', {
-          body: { prompt },
-        });
-
-        if (fnError) throw fnError;
-        if (data?.error) throw new Error(data.error);
-        
-        return data?.image ?? null;
-      } catch (fallbackError) {
-        console.error('Fallback image generation error:', fallbackError);
-        toast({
-          title: 'Image generation failed',
-          description: fallbackError instanceof Error ? fallbackError.message : 'Please try again',
-          variant: 'destructive',
-        });
-        return null;
-      }
     }
   };
 
@@ -298,7 +296,7 @@ export const ChatContainer = () => {
         setIsGeneratingImage(true);
         setStreamingContent('🎨 Generating image...');
         
-        const generatedImage = await generateImageWithPuter(imagePrompt);
+        const generatedImage = await generateImage(imagePrompt);
         
         if (generatedImage) {
           await addMessage(convId, 'assistant', `Here's the image I generated for "${imagePrompt}":`, [generatedImage]);
