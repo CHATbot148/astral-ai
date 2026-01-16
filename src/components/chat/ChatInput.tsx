@@ -121,8 +121,10 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = 'en-US';
+      recognition.maxAlternatives = 1;
 
-      let finalTranscript = '';
+      // Keep accumulating transcript across multiple recognition sessions
+      let finalTranscript = message; // Start with existing message content
 
       recognition.onstart = () => {
         setIsRecording(true);
