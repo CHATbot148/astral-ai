@@ -1,332 +1,130 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { PhoneOff, Mic, MicOff, Volume2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { VoiceVisualizer } from './VoiceVisualizer';
-import { useMicVisualizer } from '@/hooks/useMicVisualizer';
-import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
-import { cn } from '@/lib/utils';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { PhoneOff, Mic, MicOff, Volume2, Settings } from "lucide-react";
+import { useConversation } from "@elevenlabs/react";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
 
 interface VoiceCallProps {
   onClose: () => void;
 }
 
-// Declare SpeechRecognition type
-declare global {
-  interface Window {
-    SpeechRecognition: typeof SpeechRecognition;
-    webkitSpeechRecognition: typeof SpeechRecognition;
-  }
-}
-
 export const VoiceCall = ({ onClose }: VoiceCallProps) => {
-  const [isListening, setIsListening] = useState(true);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [transcript, setTranscript] = useState('');
-  const [aiResponse, setAiResponse] = useState('');
-  const [callDuration, setCallDuration] = useState(0);
-  
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const callStartRef = useRef<number>(Date.now());
-  const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
-  
-  const { levels } = useMicVisualizer({ enabled: isListening && !isMuted, bars: 12 });
+  const [callStart] = useState(() => Date.now());
+  const [callDuration, setCallDuration] = useState(0);
+  const [isMuted, setIsMuted] = useState(false);
+  const [agentId, setAgentId] = useState(() => localStorage.getItem("xai-elevenlabs-agent-id") || "");
+  const [isConnecting, setIsConnecting] = useState(false);
 
-  // Update call duration
+  const wasConnectedRef = useRef(false);
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCallDuration(Math.floor((Date.now() - callStartRef.current) / 1000));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
+    const t = setInterval(() => setCallDuration(Math.floor((Date.now() - callStart) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [callStart]);
 
-  // Format duration as mm:ss
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // Send message to AI and get voice response
-  const sendToAI = useCallback(async (text: string) => {
-    if (!text.trim()) return;
-    
-    setAiResponse('');
-    
-    try {
-      // Get AI response
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData.session?.access_token;
-
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-          Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
-        body: JSON.stringify({
-          messages: [{ role: 'user', content: text }],
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          clientTimeISO: new Date().toISOString(),
-        }),
-      });
-
-      if (!response.ok) throw new Error('AI response failed');
-
-      // Read streaming response
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let fullContent = '';
-      let buffer = '';
-
-      while (reader) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        let newlineIndex: number;
-        while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
-          let line = buffer.slice(0, newlineIndex);
-          buffer = buffer.slice(newlineIndex + 1);
-
-          if (line.endsWith('\r')) line = line.slice(0, -1);
-          if (line.startsWith(':') || line.trim() === '') continue;
-          if (!line.startsWith('data: ')) continue;
-
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === '[DONE]') break;
-
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content) {
-              fullContent += content;
-              setAiResponse(fullContent);
-            }
-          } catch {
-            buffer = line + '\n' + buffer;
-            break;
-          }
-        }
+  const conversation = useConversation({
+    onConnect: () => {
+      wasConnectedRef.current = true;
+    },
+    onDisconnect: () => {
+      if (wasConnectedRef.current) {
+        toast({ title: "Call ended" });
       }
-
-      // Speak the response
-      if (fullContent) {
-        await speakResponse(fullContent);
-      }
-    } catch (error) {
-      console.error('Voice call error:', error);
+    },
+    onError: (error) => {
+      console.error("ElevenLabs conversation error:", error);
       toast({
-        title: 'Error',
-        description: 'Failed to get AI response',
-        variant: 'destructive',
+        title: "Voice call error",
+        description: "Could not connect to the voice agent.",
+        variant: "destructive",
       });
-    }
-  }, [toast]);
+    },
+  });
 
-  // Speak AI response using TTS
-  const speakResponse = async (text: string) => {
-    setIsSpeaking(true);
-    setIsListening(false);
-    
-    // Stop any current recognition
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-    }
+  const statusLabel = useMemo(() => {
+    if (isConnecting) return "Connecting…";
+    if (conversation.status === "connected") return conversation.isSpeaking ? "X-AI is speaking…" : "Listening…";
+    return "Disconnected";
+  }, [conversation.isSpeaking, conversation.status, isConnecting]);
 
-    const voiceId = localStorage.getItem('xai-tts-voice') || 'george';
-
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData.session?.access_token;
-
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/text-to-speech`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-            Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
-          body: JSON.stringify({ text: text.slice(0, 2000), voiceId }),
-        }
-      );
-
-      const contentType = response.headers.get('content-type') || '';
-      
-      if (contentType.includes('audio')) {
-        const audioBlob = await response.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-        
-        const audio = new Audio(audioUrl);
-        audioRef.current = audio;
-        
-        audio.onended = () => {
-          setIsSpeaking(false);
-          URL.revokeObjectURL(audioUrl);
-          // Resume listening after AI finishes speaking
-          startListening();
-        };
-        
-        await audio.play();
-      } else {
-        // Fallback to browser synthesis
-        const data = await response.json();
-        const utterance = new SpeechSynthesisUtterance(text.slice(0, 2000));
-        
-        utterance.onend = () => {
-          setIsSpeaking(false);
-          startListening();
-        };
-        
-        speechSynthesis.speak(utterance);
-      }
-    } catch (error) {
-      console.error('TTS error:', error);
-      // Fallback to browser synthesis
-      const utterance = new SpeechSynthesisUtterance(text.slice(0, 500));
-      utterance.onend = () => {
-        setIsSpeaking(false);
-        startListening();
-      };
-      speechSynthesis.speak(utterance);
-    }
-  };
-
-  // Start listening for user speech
-  const startListening = useCallback(() => {
-    if (isMuted) return;
-    
-    const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognitionAPI) {
+  const start = useCallback(async () => {
+    if (!agentId.trim()) {
       toast({
-        title: 'Speech recognition not supported',
-        description: 'Please use a supported browser like Chrome',
-        variant: 'destructive',
+        title: "Agent ID required",
+        description: "Open settings and paste your ElevenLabs Agent ID.",
+        variant: "destructive",
       });
       return;
     }
 
-    const recognition = new SpeechRecognitionAPI();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
+    setIsConnecting(true);
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
 
-    let finalTranscript = '';
-    let lastSpeechTime = Date.now();
+      const { data, error } = await supabase.functions.invoke("elevenlabs-conversation-token", {
+        body: { agentId: agentId.trim() },
+      });
+      if (error) throw error;
+      if (!data?.token) throw new Error("No token returned");
 
-    recognition.onstart = () => {
-      setIsListening(true);
-      setTranscript('');
-    };
+      await conversation.startSession({
+        conversationToken: data.token,
+        connectionType: "webrtc",
+      });
 
-    recognition.onresult = (event) => {
-      let interimTranscript = '';
-      lastSpeechTime = Date.now();
-      
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalTranscript += result + ' ';
-        } else {
-          interimTranscript += result;
-        }
+      if (isMuted) {
+        await conversation.setVolume({ volume: 0 });
+      } else {
+        await conversation.setVolume({ volume: 1 });
       }
-      
-      setTranscript(finalTranscript + interimTranscript);
+    } catch (e) {
+      console.error("Failed to start call:", e);
+      toast({
+        title: "Could not start call",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setIsConnecting(false);
+    }
+  }, [agentId, conversation, isMuted, toast]);
 
-      // Clear existing silence timeout
-      if (silenceTimeoutRef.current) {
-        clearTimeout(silenceTimeoutRef.current);
-      }
+  const end = useCallback(async () => {
+    try {
+      await conversation.endSession();
+    } finally {
+      onClose();
+    }
+  }, [conversation, onClose]);
 
-      // Set timeout to detect end of speech (2 seconds of silence)
-      silenceTimeoutRef.current = setTimeout(() => {
-        if (finalTranscript.trim() && Date.now() - lastSpeechTime >= 1500) {
-          recognition.stop();
-          sendToAI(finalTranscript.trim());
-          finalTranscript = '';
-        }
-      }, 2000);
-    };
+  const toggleMute = useCallback(async () => {
+    const next = !isMuted;
+    setIsMuted(next);
+    if (conversation.status === "connected") {
+      await conversation.setVolume({ volume: next ? 0 : 1 });
+    }
+  }, [conversation, isMuted]);
 
-    recognition.onerror = (event) => {
-      console.error('Recognition error:', event.error);
-      if (event.error !== 'aborted' && event.error !== 'no-speech') {
-        setTimeout(startListening, 1000);
-      }
-    };
+  const saveAgentId = () => {
+    localStorage.setItem("xai-elevenlabs-agent-id", agentId.trim());
+    toast({ title: "Saved" });
+  };
 
-    recognition.onend = () => {
-      // Don't restart if speaking or muted
-      if (!isSpeaking && !isMuted) {
-        // If there's pending transcript, send it
-        if (finalTranscript.trim()) {
-          sendToAI(finalTranscript.trim());
-          finalTranscript = '';
-        }
-      }
-    };
-
-    recognitionRef.current = recognition;
-    recognition.start();
-  }, [isMuted, isSpeaking, sendToAI, toast]);
-
-  // Initialize listening on mount
   useEffect(() => {
-    startListening();
-    
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
-      if (audioRef.current) {
-        audioRef.current.pause();
-      }
-      if (silenceTimeoutRef.current) {
-        clearTimeout(silenceTimeoutRef.current);
-      }
-      speechSynthesis.cancel();
-    };
-  }, [startListening]);
-
-  // Toggle mute
-  const toggleMute = () => {
-    if (isMuted) {
-      setIsMuted(false);
-      if (!isSpeaking) {
-        startListening();
-      }
-    } else {
-      setIsMuted(true);
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
-      setIsListening(false);
-    }
-  };
-
-  // End call
-  const endCall = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-    }
-    if (audioRef.current) {
-      audioRef.current.pause();
-    }
-    if (silenceTimeoutRef.current) {
-      clearTimeout(silenceTimeoutRef.current);
-    }
-    speechSynthesis.cancel();
-    onClose();
-  };
+    // auto-start when modal opens
+    start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <motion.div
@@ -335,26 +133,24 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       exit={{ opacity: 0, scale: 0.95 }}
       className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm"
     >
-      <div className="flex flex-col items-center gap-6 p-8 max-w-md w-full">
-        {/* Call Status */}
+      <div className="flex flex-col items-center gap-6 p-6 sm:p-8 max-w-md w-full">
         <div className="text-center">
           <h2 className="text-2xl font-bold text-foreground mb-1">X-AI Call</h2>
           <p className="text-muted-foreground">{formatDuration(callDuration)}</p>
         </div>
 
-        {/* Avatar/Visualizer */}
+        {/* Agent status */}
         <div className="relative w-32 h-32 rounded-full bg-gradient-to-br from-xai-cyan to-xai-purple flex items-center justify-center">
-          {isSpeaking ? (
+          {conversation.isSpeaking ? (
             <Volume2 className="h-12 w-12 text-white animate-pulse" />
-          ) : isListening ? (
+          ) : conversation.status === "connected" ? (
             <Mic className="h-12 w-12 text-white" />
           ) : (
             <MicOff className="h-12 w-12 text-white/50" />
           )}
-          
-          {/* Pulse animation when active */}
+
           <AnimatePresence>
-            {(isListening || isSpeaking) && (
+            {conversation.status === "connected" && (
               <motion.div
                 initial={{ scale: 1, opacity: 0.5 }}
                 animate={{ scale: 1.5, opacity: 0 }}
@@ -365,55 +161,64 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
           </AnimatePresence>
         </div>
 
-        {/* Voice Visualizer */}
-        <div className="w-full max-w-xs">
-          <VoiceVisualizer isActive={isListening && !isMuted} levels={levels} />
-        </div>
-
-        {/* Status Text */}
         <div className="text-center min-h-[60px]">
-          {isSpeaking ? (
-            <p className="text-sm text-xai-cyan">X-AI is speaking...</p>
-          ) : isListening && !isMuted ? (
-            <p className="text-sm text-muted-foreground">
-              {transcript || 'Listening...'}
-            </p>
-          ) : isMuted ? (
-            <p className="text-sm text-muted-foreground">Muted</p>
-          ) : null}
-          
-          {aiResponse && !isSpeaking && (
-            <p className="text-xs text-muted-foreground mt-2 line-clamp-2">
-              {aiResponse.slice(0, 100)}...
+          <p className={cn("text-sm", conversation.isSpeaking ? "text-xai-cyan" : "text-muted-foreground")}>
+            {statusLabel}
+          </p>
+          {conversation.status !== "connected" && (
+            <p className="text-xs text-muted-foreground mt-1">
+              On iPhone, keep the phone off silent mode and raise media volume.
             </p>
           )}
         </div>
 
+        {/* Settings */}
+        <div className="w-full rounded-xl border border-border bg-card/50 p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Settings className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Voice Agent</span>
+          </div>
+          <div className="flex gap-2">
+            <input
+              value={agentId}
+              onChange={(e) => setAgentId(e.target.value)}
+              placeholder="ElevenLabs Agent ID"
+              className="flex-1 h-9 rounded-md border border-border bg-background px-3 text-sm outline-none"
+            />
+            <Button variant="secondary" onClick={saveAgentId} className="h-9">
+              Save
+            </Button>
+          </div>
+        </div>
+
         {/* Controls */}
         <div className="flex items-center gap-4">
-          {/* Mute Button */}
           <Button
             variant="secondary"
             size="icon"
             onClick={toggleMute}
-            className={cn(
-              "h-14 w-14 rounded-full",
-              isMuted && "bg-destructive/20 text-destructive"
-            )}
+            className={cn("h-14 w-14 rounded-full", isMuted && "bg-destructive/20 text-destructive")}
+            aria-label={isMuted ? "Unmute" : "Mute"}
           >
             {isMuted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
           </Button>
 
-          {/* End Call Button */}
           <Button
             variant="destructive"
             size="icon"
-            onClick={endCall}
+            onClick={end}
             className="h-16 w-16 rounded-full"
+            aria-label="End call"
           >
             <PhoneOff className="h-7 w-7" />
           </Button>
         </div>
+
+        {conversation.status !== "connected" && (
+          <Button variant="xai" onClick={start} disabled={isConnecting} className="w-full">
+            {isConnecting ? "Connecting…" : "Try again"}
+          </Button>
+        )}
       </div>
     </motion.div>
   );

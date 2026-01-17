@@ -103,6 +103,7 @@ export type Database = {
           created_at: string
           full_name: string | null
           id: string
+          notifications_enabled: boolean
           updated_at: string
           user_id: string
         }
@@ -111,6 +112,7 @@ export type Database = {
           created_at?: string
           full_name?: string | null
           id?: string
+          notifications_enabled?: boolean
           updated_at?: string
           user_id: string
         }
@@ -119,6 +121,46 @@ export type Database = {
           created_at?: string
           full_name?: string | null
           id?: string
+          notifications_enabled?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      scheduled_notifications: {
+        Row: {
+          conversation_id: string | null
+          created_at: string
+          email: string | null
+          id: string
+          message: string
+          scheduled_for: string
+          status: string
+          type: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          conversation_id?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          message: string
+          scheduled_for: string
+          status?: string
+          type?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          conversation_id?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          message?: string
+          scheduled_for?: string
+          status?: string
+          type?: string
           updated_at?: string
           user_id?: string
         }
