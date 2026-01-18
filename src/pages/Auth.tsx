@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mail, Lock, User, ArrowRight, Loader2, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, User, ArrowRight, Loader2, ArrowLeft, Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
+import { useTheme } from '@/hooks/useTheme';
 import { supabase } from '@/integrations/supabase/client';
 import { z } from 'zod';
 import xaiLogo from '@/assets/xai-logo.png';
@@ -30,6 +31,7 @@ const Auth = () => {
   const { user, signIn, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { theme, setTheme } = useTheme();
 
   useEffect(() => {
     if (user) {
@@ -677,7 +679,7 @@ const Auth = () => {
       <div className="hidden md:flex md:w-1/2 lg:w-2/3 relative bg-gradient-to-br from-background via-background to-xai-cyan/5 overflow-hidden items-center justify-center">
         {/* Background pattern */}
         <div className="absolute inset-0 auth-bg-pattern opacity-100 dark:opacity-80" />
-        
+
         {/* Large logo in background */}
         <div className="relative z-10 flex flex-col items-center">
           <motion.div
@@ -695,15 +697,29 @@ const Auth = () => {
               transition={{ duration: 4, repeat: Infinity }}
             />
           </motion.div>
-          
-          <motion.p
+
+          <Button
+            type="button"
+            variant="secondary"
+            className="mt-5 gap-2"
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            aria-label="Toggle theme"
+          >
+            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+          </Button>
+
+          <motion.a
+            href="https://xtechnology.vercel.app"
+            target="_blank"
+            rel="noopener noreferrer"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.5 }}
-            className="mt-8 text-3xl md:text-4xl lg:text-5xl font-display font-bold text-foreground/80"
+            className="mt-8 text-3xl md:text-4xl lg:text-5xl font-display font-bold text-foreground/80 hover:text-foreground transition-colors"
           >
             Made by X-Tech
-          </motion.p>
+          </motion.a>
         </div>
       </div>
     </div>

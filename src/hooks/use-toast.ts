@@ -135,6 +135,26 @@ function dispatch(action: Action) {
 type Toast = Omit<ToasterToast, "id">;
 
 function toast({ ...props }: Toast) {
+  // Only show error toasts (destructive) per product requirement
+  if (props.variant && props.variant !== "destructive") {
+    const id = genId();
+    return {
+      id,
+      dismiss: () => {},
+      update: () => {},
+    };
+  }
+
+  // Default (no variant) should also be suppressed
+  if (!props.variant) {
+    const id = genId();
+    return {
+      id,
+      dismiss: () => {},
+      update: () => {},
+    };
+  }
+
   const id = genId();
 
   const update = (props: ToasterToast) =>
@@ -157,7 +177,7 @@ function toast({ ...props }: Toast) {
   });
 
   return {
-    id: id,
+    id,
     dismiss,
     update,
   };
