@@ -181,51 +181,51 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
     try {
       setPreviewingVoiceId(voiceId);
 
-      // Use browser's built-in speech synthesis for preview
-      const utterance = new SpeechSynthesisUtterance("Hi, I'm X-AI");
-      
-      // Get available voices
-      let voices = speechSynthesis.getVoices();
-      if (voices.length === 0) {
-        await new Promise(resolve => {
-          speechSynthesis.onvoiceschanged = resolve;
-          setTimeout(resolve, 500);
-        });
-        voices = speechSynthesis.getVoices();
+      // Preview via ElevenLabs TTS (not browser speech synthesis)
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/text-to-speech`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ text: "Hi, I'm X-AI", voiceId }),
+      });
+
+      if (!resp.ok) {
+        const t = await resp.text().catch(() => "");
+        throw new Error(t || `TTS request failed (${resp.status})`);
       }
 
-      // Map voice IDs to characteristics
-      const voiceConfig: Record<string, { gender: string; lang: string }> = {
-        'george': { gender: 'male', lang: 'en-GB' },
-        'sarah': { gender: 'female', lang: 'en-US' },
-        'laura': { gender: 'female', lang: 'en-US' },
-        'liam': { gender: 'male', lang: 'en-US' },
-        'lily': { gender: 'female', lang: 'en-GB' },
-        'daniel': { gender: 'male', lang: 'en-GB' },
+      const contentType = resp.headers.get("content-type") || "";
+      if (!contentType.includes("audio")) {
+        const json = await resp.json().catch(() => ({}));
+        throw new Error(json?.error || "TTS did not return audio");
+      }
+
+      const audioBlob = await resp.blob();
+      const url = URL.createObjectURL(audioBlob);
+      const audio = new Audio(url);
+
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        setPreviewingVoiceId(null);
+      };
+      audio.onerror = () => {
+        URL.revokeObjectURL(url);
+        setPreviewingVoiceId(null);
       };
 
-      const config = voiceConfig[voiceId] || voiceConfig['george'];
-      
-      // Find a matching voice
-      const matchingVoice = voices.find(v => 
-        v.lang.startsWith(config.lang.split('-')[0]) && 
-        v.name.toLowerCase().includes(config.gender === 'female' ? 'female' : 'male')
-      ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
-
-      if (matchingVoice) {
-        utterance.voice = matchingVoice;
-      }
-
-      utterance.rate = 1;
-      utterance.pitch = config.gender === 'female' ? 1.1 : 0.9;
-
-      utterance.onend = () => setPreviewingVoiceId(null);
-      utterance.onerror = () => setPreviewingVoiceId(null);
-
-      speechSynthesis.cancel();
-      speechSynthesis.speak(utterance);
+      await audio.play();
     } catch (e) {
-      toast({ title: 'Voice sample failed', variant: 'destructive' });
+      toast({
+        title: "Voice sample failed",
+        description: e instanceof Error ? e.message : "Could not preview voice",
+        variant: "destructive",
+      });
       setPreviewingVoiceId(null);
     }
   };
