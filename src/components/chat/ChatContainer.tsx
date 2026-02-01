@@ -15,6 +15,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { makeStorageRef, resolveFileUrl } from '@/lib/storageRef';
+import { getConversationMode, setConversationMode } from '@/lib/conversationMode';
 import { cn } from '@/lib/utils';
 import xaiLogo from '@/assets/xai-logo.png';
 // Memory extraction patterns
@@ -182,6 +183,12 @@ export const ChatContainer = () => {
     return null;
   };
 
+  const isImageRequestLoose = (text: string) => {
+    return /(image|picture|photo|draw|generate|create|illustration|art)/i.test(text);
+  };
+
+  const isImageOnly = getConversationMode(currentConversation?.id) === 'image';
+
   const parseReminderRequest = (text: string): { message: string; scheduledForISO: string } | null => {
     // Supports: "remind me to X in 10 minutes" / "set a reminder for X in 2 hours"
     const m = text.match(/(?:remind me|set a reminder|notify me|message me)(?:\s+(?:to|about|for))?\s+(.+?)\s+in\s+(\d+)\s+(minute|minutes|hour|hours|day|days)\b/i);
@@ -293,6 +300,34 @@ export const ChatContainer = () => {
 
   const handleSend = async (content: string, files?: File[]) => {
     if (!content.trim() && (!files || files.length === 0)) return;
+
+    // Image-only conversations: only allow image requests and open the dialog directly.
+    if (isImageOnly) {
+      const extracted = detectImageGenerationRequest(content);
+      const prompt = extracted ?? (isImageRequestLoose(content) ? content.trim() : null);
+
+      if (!prompt) {
+        toast({
+          title: 'Request an image',
+          description: 'This chat is for image generation only. Try: “generate an image of a sunset over mountains”.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      if (files?.length) {
+        toast({
+          title: 'Image-only chat',
+          description: 'Please send a text prompt (no attachments) to generate an image.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      setImageDialogPrompt(prompt);
+      setShowImageDialog(true);
+      return;
+    }
 
     setIsLoading(true);
     setStreamingContent('');
@@ -497,6 +532,25 @@ export const ChatContainer = () => {
     }
   };
 
+  const openImageDialog = (prefill?: string) => {
+    setImageDialogPrompt(prefill?.trim() || '');
+    setShowImageDialog(true);
+  };
+
+  const startNewImageChat = async () => {
+    const conv = await createConversation();
+    if (!conv) return;
+
+    // 15-char limit enforced in sidebar + renamer; keep it short.
+    await renameConversation(conv.id, 'Image Gen');
+    setConversationMode(conv.id, 'image');
+    toast({
+      title: 'Image Generator',
+      description: 'This chat only accepts image requests.',
+      variant: 'destructive',
+    });
+  };
+
   const displayMessages = [...messages];
   if (streamingContent) {
     displayMessages.push({
@@ -532,6 +586,7 @@ export const ChatContainer = () => {
         currentConversation={currentConversation}
         onSelectConversation={selectConversation}
         onNewChat={startNewChat}
+        onNewImageChat={startNewImageChat}
         onDeleteConversation={deleteConversation}
         onRenameConversation={renameConversation}
         isOpen={sidebarOpen}
@@ -649,6 +704,7 @@ export const ChatContainer = () => {
           editValue={editingMessage}
           onClearEdit={() => setEditingMessage(null)}
           onStartCall={user ? () => setShowVoiceCall(true) : undefined}
+          onOpenImageDialog={openImageDialog}
         />
       </main>
     </div>
