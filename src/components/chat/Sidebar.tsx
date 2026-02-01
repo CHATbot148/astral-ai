@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, MessageSquare, Trash2, Pencil, ChevronLeft, Search, Check, X } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, Pencil, ChevronLeft, Search, Check, X, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -25,6 +25,7 @@ interface SidebarProps {
   currentConversation: Conversation | null;
   onSelectConversation: (conv: Conversation) => void;
   onNewChat: () => void;
+  onNewImageChat: () => void;
   onDeleteConversation: (id: string) => void;
   onRenameConversation: (id: string, newTitle: string) => void;
   isOpen: boolean;
@@ -38,6 +39,7 @@ export const Sidebar = ({
   currentConversation,
   onSelectConversation,
   onNewChat,
+  onNewImageChat,
   onDeleteConversation,
   onRenameConversation,
   isOpen,
@@ -154,6 +156,15 @@ export const Sidebar = ({
           >
             <Plus className="h-4 w-4" />
             New Chat
+          </Button>
+
+          <Button
+            variant="glass"
+            className="w-full justify-start gap-2 mt-2"
+            onClick={onNewImageChat}
+          >
+            <ImageIcon className="h-4 w-4" />
+            Image Generator
           </Button>
         </div>
 

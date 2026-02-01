@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Mic, MicOff, Plus, X, Loader2, FileText, Square, Phone } from 'lucide-react';
+import { Send, Mic, MicOff, Plus, X, Loader2, FileText, Square, Phone, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { VoiceVisualizer } from './VoiceVisualizer';
 import { cn } from '@/lib/utils';
@@ -15,6 +15,7 @@ interface ChatInputProps {
   editValue?: string | null;
   onClearEdit?: () => void;
   onStartCall?: () => void;
+  onOpenImageDialog?: (prefill?: string) => void;
 }
 
 // Declare SpeechRecognition type
@@ -25,7 +26,7 @@ declare global {
   }
 }
 
-export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onClearEdit, onStartCall }: ChatInputProps) => {
+export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onClearEdit, onStartCall, onOpenImageDialog }: ChatInputProps) => {
   const [message, setMessage] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [filePreviews, setFilePreviews] = useState<{ file: File; preview: string | null }[]>([]);
@@ -81,6 +82,12 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
     setMessage('');
     setFiles([]);
     setFilePreviews([]);
+  };
+
+  const openImageDialog = () => {
+    if (!onOpenImageDialog || disabled) return;
+    const prefill = message.trim();
+    onOpenImageDialog(prefill || undefined);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -279,6 +286,24 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
             <Plus className="h-5 w-5" />
           </Button>
         </motion.div>
+
+        {/* Generate Image Button */}
+        {onOpenImageDialog && (
+          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={openImageDialog}
+              disabled={disabled || isRecording || isLoading}
+              className="h-10 w-10 rounded-full bg-secondary hover:bg-secondary/80 flex-shrink-0"
+              aria-label="Generate image"
+              title="Generate image"
+            >
+              <ImageIcon className="h-5 w-5" />
+            </Button>
+          </motion.div>
+        )}
+
         <input
           ref={fileInputRef}
           type="file"
