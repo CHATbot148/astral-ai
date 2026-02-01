@@ -9,6 +9,7 @@ import { WelcomeScreen } from './WelcomeScreen';
 import { Sidebar } from './Sidebar';
 import { TypingIndicator } from './TypingIndicator';
 import { VoiceCall } from './VoiceCall';
+import { ImageGenerateDialog, ImageGenOptions } from './ImageGenerateDialog';
 import { useConversations } from '@/hooks/useConversations';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -16,7 +17,6 @@ import { useToast } from '@/hooks/use-toast';
 import { makeStorageRef, resolveFileUrl } from '@/lib/storageRef';
 import { cn } from '@/lib/utils';
 import xaiLogo from '@/assets/xai-logo.png';
-
 // Memory extraction patterns
 const MEMORY_PATTERNS = [
   { pattern: /my name is (\w+)/i, key: 'name' },
@@ -60,6 +60,8 @@ export const ChatContainer = () => {
   const [showVoiceCall, setShowVoiceCall] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [editingMessage, setEditingMessage] = useState<string | null>(null);
+  const [showImageDialog, setShowImageDialog] = useState(false);
+  const [imageDialogPrompt, setImageDialogPrompt] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -199,62 +201,64 @@ export const ChatContainer = () => {
     return { message, scheduledForISO };
   };
 
-  const generateImage = async (prompt: string): Promise<string | null> => {
-    // Try Puter.js first (free, user-pays model)
-    if (window.puter?.ai) {
-      try {
-        console.log('Attempting Puter.js image generation...');
-        const imgElement = await window.puter.ai.txt2img(prompt, { 
-          model: 'stable-diffusion-3-medium' 
-        });
-        
-        // Convert image element to data URL
-        const canvas = document.createElement('canvas');
-        canvas.width = imgElement.width || 512;
-        canvas.height = imgElement.height || 512;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) throw new Error('Failed to create canvas context');
-        
-        ctx.drawImage(imgElement, 0, 0);
-        const dataUrl = canvas.toDataURL('image/png');
-        
-        // Upload to storage
-        const { data, error } = await supabase.functions.invoke('generate-image', {
-          body: { prompt, imageDataUrl: dataUrl },
-        });
-        
-        if (!error && data?.image) {
-          console.log('Puter.js generation successful');
-          return data.image;
-        }
-        
-        // Return data URL if storage upload fails
-        return dataUrl;
-      } catch (puterError) {
-        console.log('Puter.js failed, falling back to server:', puterError);
-      }
-    }
-
-    // Fallback to server-side generation (Stability AI / Lovable AI)
+  const generateImageWithOptions = async (opts: ImageGenOptions): Promise<string | null> => {
     try {
-      console.log('Attempting server-side image generation...');
+      console.log('Generating image with options:', opts);
       const { data, error } = await supabase.functions.invoke('generate-image', {
-        body: { prompt },
+        body: { 
+          prompt: opts.prompt,
+          style: opts.style,
+          aspectRatio: opts.aspectRatio,
+          quality: opts.quality,
+        },
       });
 
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       
-      console.log('Server-side generation successful');
+      console.log('Image generation successful:', data?.image);
       return data?.image ?? null;
     } catch (serverError) {
-      console.error('Server image generation error:', serverError);
-      toast({
-        title: 'Image generation failed',
-        description: serverError instanceof Error ? serverError.message : 'Please try again',
-        variant: 'destructive',
-      });
-      return null;
+      console.error('Image generation error:', serverError);
+      throw serverError;
+    }
+  };
+
+  const handleImageGenerate = async (opts: ImageGenOptions) => {
+    let convId = currentConversation?.id;
+    if (!convId) {
+      const newConv = await createConversation(`Generate image: ${opts.prompt}`);
+      if (!newConv) throw new Error('Failed to create conversation');
+      convId = newConv.id;
+    }
+
+    // Add user message
+    await addMessage(convId, 'user', `Generate an image: ${opts.prompt}`);
+    
+    setIsGeneratingImage(true);
+
+    try {
+      const generatedImage = await generateImageWithOptions(opts);
+
+      if (generatedImage) {
+        await addMessage(
+          convId, 
+          'assistant', 
+          `Here's your generated image for "${opts.prompt}":`, 
+          [generatedImage]
+        );
+      } else {
+        throw new Error('No image was generated');
+      }
+    } catch (error) {
+      await addMessage(
+        convId, 
+        'assistant', 
+        `I couldn't generate that image. ${error instanceof Error ? error.message : 'Please try again with a different prompt.'}`
+      );
+      throw error;
+    } finally {
+      setIsGeneratingImage(false);
     }
   };
 
@@ -347,23 +351,12 @@ export const ChatContainer = () => {
         return;
       }
 
-      // Check if this is an image generation request
+      // Check if this is an image generation request - open dialog
       const imagePrompt = detectImageGenerationRequest(content);
 
       if (imagePrompt) {
-        setIsGeneratingImage(true);
-        setStreamingContent('🎨 Generating image...');
-
-        const generatedImage = await generateImage(imagePrompt);
-
-        if (generatedImage) {
-          await addMessage(convId, 'assistant', `Here's the image I generated for "${imagePrompt}":`, [generatedImage]);
-        } else {
-          await addMessage(convId, 'assistant', "I'm sorry, I couldn't generate that image. Please try again with a different prompt.");
-        }
-
-        setStreamingContent('');
-        setIsGeneratingImage(false);
+        setImageDialogPrompt(imagePrompt);
+        setShowImageDialog(true);
         setIsLoading(false);
         return;
       }
@@ -525,6 +518,14 @@ export const ChatContainer = () => {
           <VoiceCall onClose={() => setShowVoiceCall(false)} />
         )}
       </AnimatePresence>
+
+      {/* Image Generation Dialog */}
+      <ImageGenerateDialog
+        open={showImageDialog}
+        onOpenChange={setShowImageDialog}
+        onGenerate={handleImageGenerate}
+        initialPrompt={imageDialogPrompt}
+      />
 
       <Sidebar
         conversations={conversations}
