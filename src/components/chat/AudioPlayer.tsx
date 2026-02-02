@@ -31,7 +31,8 @@ export const AudioPlayer = ({ text, onClose }: AudioPlayerProps) => {
     setIsLoading(true);
     setError(null);
 
-    const voiceId = localStorage.getItem("xai-tts-voice") || "george";
+    // Deepgram voices: asteria, luna, athena (feminine), orion, zeus, helios (masculine)
+    const voiceId = localStorage.getItem("xai-tts-voice") || "asteria";
 
     try {
       const { data: sessionData } = await supabase.auth.getSession();
