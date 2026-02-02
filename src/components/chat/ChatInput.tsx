@@ -211,7 +211,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
   const showCallButton = !message.trim() && files.length === 0 && !isLoading && !isRecording && onStartCall;
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 pb-4 pt-2">
+    <div className="w-full max-w-4xl mx-auto px-3 sm:px-4 pb-4 pt-2">
       {/* File Previews Above Input */}
       <AnimatePresence>
         {filePreviews.length > 0 && (
@@ -273,17 +273,17 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
       </AnimatePresence>
 
       {/* Input Bar */}
-      <div className="flex items-end gap-2">
-        {/* Attachment Button */}
-        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+      <div className="flex items-end gap-1.5 sm:gap-2">
+        {/* Attachment Button - hidden on very small screens when image dialog available */}
+        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="hidden sm:block">
           <Button
             variant="ghost"
             size="icon"
             onClick={() => fileInputRef.current?.click()}
             disabled={disabled || isRecording}
-            className="h-10 w-10 rounded-full bg-secondary hover:bg-secondary/80 flex-shrink-0"
+            className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-secondary hover:bg-secondary/80 flex-shrink-0"
           >
-            <Plus className="h-5 w-5" />
+            <Plus className="h-4 w-4 sm:h-5 sm:w-5" />
           </Button>
         </motion.div>
 
@@ -295,11 +295,11 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
               size="icon"
               onClick={openImageDialog}
               disabled={disabled || isRecording || isLoading}
-              className="h-10 w-10 rounded-full bg-secondary hover:bg-secondary/80 flex-shrink-0"
+              className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-secondary hover:bg-secondary/80 flex-shrink-0"
               aria-label="Generate image"
               title="Generate image"
             >
-              <ImageIcon className="h-5 w-5" />
+              <ImageIcon className="h-4 w-4 sm:h-5 sm:w-5" />
             </Button>
           </motion.div>
         )}
@@ -315,25 +315,25 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
 
         {/* Main Input Container / Voice Recording Bar */}
         {isRecording ? (
-          <div className="flex-1 flex items-center bg-secondary rounded-3xl px-3 py-1 min-h-[48px] overflow-hidden">
+          <div className="flex-1 flex items-center bg-secondary rounded-3xl px-2 sm:px-3 py-1 min-h-[44px] sm:min-h-[48px] overflow-hidden">
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={stopRecording}
-                className="h-10 w-10 rounded-full text-destructive bg-destructive/10"
+                className="h-9 w-9 sm:h-10 sm:w-10 rounded-full text-destructive bg-destructive/10"
               >
-                <MicOff className="h-5 w-5" />
+                <MicOff className="h-4 w-4 sm:h-5 sm:w-5" />
               </Button>
             </motion.div>
 
             <div className="flex-1 flex flex-col items-center justify-center px-2 min-w-0">
-              <VoiceVisualizer isActive={true} levels={levels} className="w-full max-w-[260px]" />
-              <p className="text-[11px] text-muted-foreground mt-1">Listening… tap stop to finish</p>
+              <VoiceVisualizer isActive={true} levels={levels} className="w-full max-w-[200px] sm:max-w-[260px]" />
+              <p className="text-[10px] sm:text-[11px] text-muted-foreground mt-1">Listening…</p>
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex items-end bg-secondary rounded-3xl px-4 py-1 min-h-[48px]">
+          <div className="flex-1 flex items-end bg-secondary rounded-3xl px-3 sm:px-4 py-1 min-h-[44px] sm:min-h-[48px]">
             <textarea
               ref={textareaRef}
               value={message}
@@ -345,13 +345,13 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
               className={cn(
                 'flex-1 resize-none bg-transparent border-0 outline-none',
                 'text-foreground placeholder:text-muted-foreground',
-                'min-h-[40px] max-h-[200px] py-2 px-1',
+                'min-h-[36px] sm:min-h-[40px] max-h-[120px] sm:max-h-[200px] py-2 px-1',
                 'focus:ring-0 text-sm'
               )}
             />
 
-            {/* Voice Input */}
-            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+            {/* Voice Input - hidden on small screens to save space */}
+            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="hidden sm:block">
               <Button
                 variant="ghost"
                 size="icon"
@@ -379,7 +379,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
               variant="destructive"
               size="icon"
               onClick={onStop}
-              className="h-10 w-10 rounded-full flex-shrink-0"
+              className="h-9 w-9 sm:h-10 sm:w-10 rounded-full flex-shrink-0"
               aria-label="Stop generating"
             >
               <Square className="h-4 w-4" />
@@ -390,7 +390,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
               size="icon"
               onClick={onStartCall}
               disabled={disabled}
-              className="h-10 w-10 rounded-full flex-shrink-0"
+              className="h-9 w-9 sm:h-10 sm:w-10 rounded-full flex-shrink-0"
               aria-label="Start voice call"
             >
               <Phone className="h-4 w-4" />
@@ -401,15 +401,15 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
               size="icon"
               onClick={handleSubmit}
               disabled={isRecording || (!message.trim() && files.length === 0) || isLoading || disabled}
-              className="h-10 w-10 rounded-full flex-shrink-0"
+              className="h-9 w-9 sm:h-10 sm:w-10 rounded-full flex-shrink-0"
             >
-              {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-4 w-4" />}
+              {isLoading ? <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
           )}
         </motion.div>
       </div>
 
-      <p className="text-center text-xs text-muted-foreground mt-3">
+      <p className="text-center text-[10px] sm:text-xs text-muted-foreground mt-2 sm:mt-3">
         X-AI can make mistakes. Consider checking important information.
       </p>
     </div>

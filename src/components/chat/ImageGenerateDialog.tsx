@@ -1,11 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, Sparkles, RotateCcw, Image as ImageIcon, Wand2, AlertCircle } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Loader2, Sparkles, RotateCcw, Image as ImageIcon, Wand2, AlertCircle, Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type ImageGenOptions = {
@@ -13,6 +14,7 @@ export type ImageGenOptions = {
   style: "cinematic" | "photoreal" | "anime" | "sketch" | "none";
   aspectRatio: "1:1" | "16:9" | "9:16" | "3:2" | "4:3";
   quality: "fast" | "balanced" | "high";
+  referenceImageUrl?: string;
 };
 
 interface Props {
@@ -38,11 +40,7 @@ const ASPECT_PRESETS: Array<{ value: ImageGenOptions["aspectRatio"]; label: stri
   { value: "4:3", label: "Classic", icon: "📺" },
 ];
 
-const QUALITY_PRESETS: Array<{ value: ImageGenOptions["quality"]; label: string; time: string }> = [
-  { value: "fast", label: "Fast", time: "~10s" },
-  { value: "balanced", label: "Balanced", time: "~20s" },
-  { value: "high", label: "High", time: "~40s" },
-];
+// Removed quality presets as Gemini handles this automatically
 
 const PROMPT_SUGGESTIONS = [
   "A futuristic city at sunset with flying cars",
@@ -56,11 +54,16 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   const [prompt, setPrompt] = useState(initialPrompt);
   const [style, setStyle] = useState<ImageGenOptions["style"]>("photoreal");
   const [aspectRatio, setAspectRatio] = useState<ImageGenOptions["aspectRatio"]>("1:1");
-  const [quality, setQuality] = useState<ImageGenOptions["quality"]>("balanced");
   const [isWorking, setIsWorking] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [last, setLast] = useState<ImageGenOptions | null>(null);
+  
+  // Image-to-image state
+  const [useReferenceImage, setUseReferenceImage] = useState(false);
+  const [referenceImage, setReferenceImage] = useState<string | null>(null);
+  const [referenceFile, setReferenceFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Reset prompt when initialPrompt changes
   useEffect(() => {
@@ -69,14 +72,33 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
     }
   }, [initialPrompt]);
 
-  // Progress simulation during generation
+  // Handle file selection for image-to-image
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setReferenceFile(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setReferenceImage(ev.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeReferenceImage = () => {
+    setReferenceImage(null);
+    setReferenceFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  // Progress simulation during generation (fixed ~15s for Gemini)
   useEffect(() => {
     if (!isWorking) {
       setProgress(0);
       return;
     }
 
-    const duration = quality === "fast" ? 10000 : quality === "balanced" ? 20000 : 40000;
+    const duration = 15000; // ~15s typical for Gemini flash image
     const interval = 100;
     const increment = (100 / duration) * interval * 0.9; // Cap at 90%
 
@@ -85,14 +107,15 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
     }, interval);
 
     return () => clearInterval(timer);
-  }, [isWorking, quality]);
+  }, [isWorking]);
 
   const run = async (override?: Partial<ImageGenOptions>) => {
     const opts: ImageGenOptions = {
       prompt: (override?.prompt ?? prompt).trim(),
       style: override?.style ?? style,
       aspectRatio: override?.aspectRatio ?? aspectRatio,
-      quality: override?.quality ?? quality,
+      quality: "balanced", // Fixed value, Gemini handles this
+      referenceImageUrl: useReferenceImage && referenceImage ? referenceImage : undefined,
     };
 
     if (!opts.prompt) return;
@@ -109,6 +132,8 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
         onOpenChange(false);
         setPrompt("");
         setProgress(0);
+        removeReferenceImage();
+        setUseReferenceImage(false);
       }, 500);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Generation failed");
@@ -213,28 +238,68 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
             </div>
           </div>
 
-          {/* Quality */}
-          <div className="grid gap-2">
-            <Label>Quality</Label>
-            <div className="flex gap-2">
-              {QUALITY_PRESETS.map((q) => (
-                <button
-                  key={q.value}
-                  type="button"
-                  onClick={() => setQuality(q.value)}
-                  disabled={isWorking}
-                  className={cn(
-                    "flex-1 flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg border transition-all",
-                    quality === q.value
-                      ? "border-xai-cyan bg-xai-cyan/10"
-                      : "border-border bg-secondary/50 hover:border-xai-cyan/50"
-                  )}
-                >
-                  <span className="text-sm font-medium">{q.label}</span>
-                  <span className="text-xs text-muted-foreground">{q.time}</span>
-                </button>
-              ))}
+          {/* Image-to-Image Toggle */}
+          <div className="grid gap-3">
+            <div className="flex items-center justify-between">
+              <Label className="flex items-center gap-2">
+                <Upload className="h-4 w-4" />
+                Image-to-Image Variation
+              </Label>
+              <Switch
+                checked={useReferenceImage}
+                onCheckedChange={setUseReferenceImage}
+                disabled={isWorking}
+              />
             </div>
+            
+            <AnimatePresence>
+              {useReferenceImage && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="space-y-2"
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
+                  
+                  {referenceImage ? (
+                    <div className="relative inline-block">
+                      <img 
+                        src={referenceImage} 
+                        alt="Reference" 
+                        className="h-24 w-24 object-cover rounded-lg border border-border"
+                      />
+                      <button
+                        type="button"
+                        onClick={removeReferenceImage}
+                        className="absolute -top-2 -right-2 p-1 rounded-full bg-destructive text-destructive-foreground shadow-md"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isWorking}
+                      className="w-full gap-2"
+                    >
+                      <Upload className="h-4 w-4" />
+                      Upload Reference Image
+                    </Button>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Upload an image to create variations based on it
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Progress Bar */}

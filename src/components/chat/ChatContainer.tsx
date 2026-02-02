@@ -216,7 +216,7 @@ export const ChatContainer = () => {
           prompt: opts.prompt,
           style: opts.style,
           aspectRatio: opts.aspectRatio,
-          quality: opts.quality,
+          referenceImageUrl: opts.referenceImageUrl,
         },
       });
 
