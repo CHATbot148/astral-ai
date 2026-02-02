@@ -5,16 +5,16 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Deepgram Aura voices - 3 feminine, 3 masculine
 const VOICE_MAP: Record<string, string> = {
-  george: "JBFqnCBsd6RMkjVDRZzb",
-  sarah: "EXAVITQu4vr4xnSDxMaL",
-  laura: "FGY2WhTYpPnrIDTdsKH5",
-  liam: "TX3LPaxmHKxFdv7VOQHJ",
-  lily: "pFZP5JQG7iQjIQuC4Bku",
-  daniel: "onwK4e9ZLuTAKqWW03F9",
-  roger: "CwhRBWXzGAHq8TQ4Fs17",
-  alice: "Xb7hH8MSUJpSbSDYk0k2",
-  charlie: "IKne3meq5aSn9XLyUdCD",
+  // Feminine voices
+  asteria: "aura-asteria-en",
+  luna: "aura-luna-en",
+  athena: "aura-athena-en",
+  // Masculine voices
+  orion: "aura-orion-en",
+  zeus: "aura-zeus-en",
+  helios: "aura-helios-en",
 };
 
 serve(async (req) => {
@@ -23,46 +23,40 @@ serve(async (req) => {
   }
 
   try {
-    const { text, voiceId = "george" } = await req.json();
+    const { text, voiceId = "asteria" } = await req.json();
 
-    const ELEVENLABS_API_KEY2 = Deno.env.get("ELEVENLABS_API_KEY2");
-    if (!ELEVENLABS_API_KEY2) {
-      throw new Error("ELEVENLABS_API_KEY2 is not configured");
+    const DEEPGRAM_API_KEY = Deno.env.get("DEEPGRAM_API_KEY");
+    if (!DEEPGRAM_API_KEY) {
+      throw new Error("DEEPGRAM_API_KEY is not configured");
     }
 
     if (!text) throw new Error("Text is required");
 
-    const truncatedText = String(text).slice(0, 4000);
+    const truncatedText = String(text).slice(0, 2000);
 
+    // Find the voice model
     const voiceKey =
-      Object.keys(VOICE_MAP).find((k) => String(voiceId).toLowerCase().includes(k)) || "george";
-    const elevenVoiceId = VOICE_MAP[voiceKey] || VOICE_MAP.george;
+      Object.keys(VOICE_MAP).find((k) => String(voiceId).toLowerCase().includes(k)) || "asteria";
+    const deepgramVoiceModel = VOICE_MAP[voiceKey] || VOICE_MAP.asteria;
+
+    console.log(`Using Deepgram voice: ${deepgramVoiceModel}`);
 
     const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${elevenVoiceId}?output_format=mp3_44100_128`,
+      `https://api.deepgram.com/v1/speak?model=${deepgramVoiceModel}&encoding=mp3`,
       {
         method: "POST",
         headers: {
-          "xi-api-key": ELEVENLABS_API_KEY2,
+          Authorization: `Token ${DEEPGRAM_API_KEY}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          text: truncatedText,
-          model_id: "eleven_turbo_v2_5",
-          voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.75,
-            style: 0.3,
-            use_speaker_boost: true,
-          },
-        }),
+        body: JSON.stringify({ text: truncatedText }),
       }
     );
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error("ElevenLabs TTS error:", response.status, errText);
-      throw new Error("ElevenLabs TTS failed");
+      console.error("Deepgram TTS error:", response.status, errText);
+      throw new Error(`Deepgram TTS failed: ${response.status}`);
     }
 
     const audioBuffer = await response.arrayBuffer();
