@@ -6,6 +6,7 @@ import { VoiceVisualizer } from './VoiceVisualizer';
 import { cn } from '@/lib/utils';
 import { useMicVisualizer } from '@/hooks/useMicVisualizer';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ChatInputProps {
   onSend: (message: string, files?: File[]) => void;
@@ -34,7 +35,8 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
   const [isTranscribing, setIsTranscribing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   const { toast } = useToast();
 
   const { levels } = useMicVisualizer({ enabled: isRecording, bars: 12 });
@@ -107,97 +109,127 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // Deepgram-based recording for STT
   const startRecording = async () => {
     try {
-      // Request microphone permission first
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      // Use Web Speech API for real-time transcription
-      const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-      
-      if (!SpeechRecognitionAPI) {
-        toast({
-          title: 'Speech recognition not supported',
-          description: 'Please use a supported browser like Chrome',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      const recognition = new SpeechRecognitionAPI();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = 'en-US';
-      recognition.maxAlternatives = 1;
-
-      // Keep accumulating transcript across multiple recognition sessions
-      let finalTranscript = message; // Start with existing message content
-
-      recognition.onstart = () => {
-        setIsRecording(true);
-        finalTranscript = '';
-      };
-
-      recognition.onresult = (event) => {
-        let interimTranscript = '';
-        
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            finalTranscript += transcript + ' ';
-          } else {
-            interimTranscript += transcript;
-          }
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
         }
-        
-        // Show real-time transcript in the input
-        setMessage(finalTranscript + interimTranscript);
+      });
+
+      // Check for supported MIME types
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm") 
+        ? "audio/webm" 
+        : MediaRecorder.isTypeSupported("audio/mp4") 
+          ? "audio/mp4" 
+          : "";
+
+      const options = mimeType ? { mimeType } : undefined;
+      const mediaRecorder = new MediaRecorder(stream, options);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
       };
 
-      recognition.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
-        if (event.error !== 'aborted') {
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach(track => track.stop());
+        
+        if (audioChunksRef.current.length === 0) {
+          setIsRecording(false);
+          return;
+        }
+
+        setIsTranscribing(true);
+        
+        try {
+          const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || "audio/webm" });
+          
+          // Convert to base64
+          const arrayBuffer = await audioBlob.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuffer);
+          let binary = "";
+          for (let i = 0; i < bytes.length; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          const base64Audio = btoa(binary);
+
+          const { data: sessionData } = await supabase.auth.getSession();
+          const accessToken = sessionData.session?.access_token;
+
+          const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/speech-to-text`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+              Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            },
+            body: JSON.stringify({ audio: base64Audio }),
+          });
+
+          if (!response.ok) {
+            throw new Error("Transcription failed");
+          }
+
+          const { transcript, error } = await response.json();
+          
+          if (error) throw new Error(error);
+          
+          if (transcript && transcript.trim()) {
+            setMessage(prev => prev ? `${prev} ${transcript}` : transcript);
+          }
+        } catch (error) {
+          console.error("Transcription error:", error);
           toast({
-            title: 'Transcription error',
+            title: 'Transcription failed',
             description: 'Please try again',
             variant: 'destructive',
           });
-        }
-        setIsRecording(false);
-      };
-
-      recognition.onend = () => {
-        setIsRecording(false);
-        setIsTranscribing(false);
-        
-        if (finalTranscript.trim()) {
-          setMessage(finalTranscript.trim());
-          toast({
-            title: 'Transcription complete',
-            description: 'Your voice has been transcribed',
-          });
+        } finally {
+          setIsTranscribing(false);
+          setIsRecording(false);
         }
       };
 
-      recognitionRef.current = recognition;
-      recognition.start();
+      mediaRecorder.onerror = () => {
+        stream.getTracks().forEach(track => track.stop());
+        setIsRecording(false);
+        toast({
+          title: 'Recording failed',
+          variant: 'destructive',
+        });
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
     } catch (error) {
       console.error('Error starting recording:', error);
+      
+      let errorMessage = 'Please allow microphone access to use voice input';
+      if (error instanceof Error) {
+        if (error.name === "NotAllowedError") {
+          errorMessage = "Microphone access denied. Please check browser settings.";
+        }
+      }
+      
       toast({
         title: 'Microphone access denied',
-        description: 'Please allow microphone access to use voice input',
+        description: errorMessage,
         variant: 'destructive',
       });
     }
   };
 
   const stopRecording = () => {
-    if (recognitionRef.current) {
-      setIsTranscribing(true);
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      mediaRecorderRef.current.stop();
     }
-    setIsRecording(false);
   };
 
   const toggleRecording = () => {
@@ -272,34 +304,21 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
         )}
       </AnimatePresence>
 
-      {/* Input Bar */}
-      <div className="flex items-end gap-1.5 sm:gap-2">
-        {/* Attachment Button - hidden on very small screens when image dialog available */}
-        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="hidden sm:block">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={disabled || isRecording}
-            className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-secondary hover:bg-secondary/80 flex-shrink-0"
-          >
-            <Plus className="h-4 w-4 sm:h-5 sm:w-5" />
-          </Button>
-        </motion.div>
-
+      {/* Input Bar - Mobile-optimized layout */}
+      <div className="flex items-end gap-1">
         {/* Generate Image Button */}
         {onOpenImageDialog && (
-          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-shrink-0">
             <Button
               variant="ghost"
               size="icon"
               onClick={openImageDialog}
               disabled={disabled || isRecording || isLoading}
-              className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-secondary hover:bg-secondary/80 flex-shrink-0"
+              className="h-9 w-9 rounded-full bg-secondary hover:bg-secondary/80"
               aria-label="Generate image"
               title="Generate image"
             >
-              <ImageIcon className="h-4 w-4 sm:h-5 sm:w-5" />
+              <ImageIcon className="h-4 w-4" />
             </Button>
           </motion.div>
         )}
@@ -315,25 +334,38 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
 
         {/* Main Input Container / Voice Recording Bar */}
         {isRecording ? (
-          <div className="flex-1 flex items-center bg-secondary rounded-3xl px-2 sm:px-3 py-1 min-h-[44px] sm:min-h-[48px] overflow-hidden">
+          <div className="flex-1 flex items-center bg-secondary rounded-3xl px-2 py-1 min-h-[44px] overflow-hidden">
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={stopRecording}
-                className="h-9 w-9 sm:h-10 sm:w-10 rounded-full text-destructive bg-destructive/10"
+                className="h-8 w-8 rounded-full text-destructive bg-destructive/10"
               >
-                <MicOff className="h-4 w-4 sm:h-5 sm:w-5" />
+                <MicOff className="h-4 w-4" />
               </Button>
             </motion.div>
 
             <div className="flex-1 flex flex-col items-center justify-center px-2 min-w-0">
-              <VoiceVisualizer isActive={true} levels={levels} className="w-full max-w-[200px] sm:max-w-[260px]" />
-              <p className="text-[10px] sm:text-[11px] text-muted-foreground mt-1">Listening…</p>
+              <VoiceVisualizer isActive={true} levels={levels} className="w-full max-w-[200px]" />
+              <p className="text-[10px] text-muted-foreground mt-1">Listening…</p>
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex items-end bg-secondary rounded-3xl px-3 sm:px-4 py-1 min-h-[44px] sm:min-h-[48px]">
+          <div className="flex-1 flex items-end bg-secondary rounded-3xl px-2 sm:px-3 py-1 min-h-[44px]">
+            {/* Attachment Button inside input container */}
+            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-shrink-0 mb-1.5">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={disabled || isRecording}
+                className="h-7 w-7 rounded-full hover:bg-background/50"
+              >
+                <Plus className="h-4 w-4 text-muted-foreground" />
+              </Button>
+            </motion.div>
+
             <textarea
               ref={textareaRef}
               value={message}
@@ -345,20 +377,20 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
               className={cn(
                 'flex-1 resize-none bg-transparent border-0 outline-none',
                 'text-foreground placeholder:text-muted-foreground',
-                'min-h-[36px] sm:min-h-[40px] max-h-[120px] sm:max-h-[200px] py-2 px-1',
+                'min-h-[36px] max-h-[120px] py-2 px-1',
                 'focus:ring-0 text-sm'
               )}
             />
 
-            {/* Voice Input - hidden on small screens to save space */}
-            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="hidden sm:block">
+            {/* Voice Input Button inside input container */}
+            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-shrink-0 mb-1.5">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={toggleRecording}
                 disabled={disabled || isTranscribing}
                 className={cn(
-                  'h-8 w-8 rounded-full flex-shrink-0 mb-1 transition-colors',
+                  'h-7 w-7 rounded-full transition-colors',
                   isRecording && 'text-destructive bg-destructive/10 animate-pulse'
                 )}
               >
@@ -373,13 +405,13 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
         )}
 
         {/* Send/Stop/Call Button */}
-        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-shrink-0">
           {isLoading && onStop ? (
             <Button
               variant="destructive"
               size="icon"
               onClick={onStop}
-              className="h-9 w-9 sm:h-10 sm:w-10 rounded-full flex-shrink-0"
+              className="h-9 w-9 rounded-full"
               aria-label="Stop generating"
             >
               <Square className="h-4 w-4" />
@@ -390,7 +422,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
               size="icon"
               onClick={onStartCall}
               disabled={disabled}
-              className="h-9 w-9 sm:h-10 sm:w-10 rounded-full flex-shrink-0"
+              className="h-9 w-9 rounded-full"
               aria-label="Start voice call"
             >
               <Phone className="h-4 w-4" />
@@ -401,15 +433,15 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
               size="icon"
               onClick={handleSubmit}
               disabled={isRecording || (!message.trim() && files.length === 0) || isLoading || disabled}
-              className="h-9 w-9 sm:h-10 sm:w-10 rounded-full flex-shrink-0"
+              className="h-9 w-9 rounded-full"
             >
-              {isLoading ? <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" /> : <Send className="h-4 w-4" />}
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
           )}
         </motion.div>
       </div>
 
-      <p className="text-center text-[10px] sm:text-xs text-muted-foreground mt-2 sm:mt-3">
+      <p className="text-center text-[10px] sm:text-xs text-muted-foreground mt-2">
         X-AI can make mistakes. Consider checking important information.
       </p>
     </div>

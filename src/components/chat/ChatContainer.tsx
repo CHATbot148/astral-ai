@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, ArrowDown } from 'lucide-react';
+import { PanelLeft, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ChatMessage } from './ChatMessage';
@@ -18,6 +18,7 @@ import { makeStorageRef, resolveFileUrl } from '@/lib/storageRef';
 import { getConversationMode, setConversationMode } from '@/lib/conversationMode';
 import { cn } from '@/lib/utils';
 import xaiLogo from '@/assets/xai-logo.png';
+
 // Memory extraction patterns
 const MEMORY_PATTERNS = [
   { pattern: /my name is (\w+)/i, key: 'name' },
@@ -190,7 +191,6 @@ export const ChatContainer = () => {
   const isImageOnly = getConversationMode(currentConversation?.id) === 'image';
 
   const parseReminderRequest = (text: string): { message: string; scheduledForISO: string } | null => {
-    // Supports: "remind me to X in 10 minutes" / "set a reminder for X in 2 hours"
     const m = text.match(/(?:remind me|set a reminder|notify me|message me)(?:\s+(?:to|about|for))?\s+(.+?)\s+in\s+(\d+)\s+(minute|minutes|hour|hours|day|days)\b/i);
     if (!m) return null;
 
@@ -309,7 +309,7 @@ export const ChatContainer = () => {
       if (!prompt) {
         toast({
           title: 'Request an image',
-          description: 'This chat is for image generation only. Try: “generate an image of a sunset over mountains”.',
+          description: 'This chat is for image generation only. Try: "generate an image of a sunset over mountains".',
           variant: 'destructive',
         });
         return;
@@ -337,7 +337,6 @@ export const ChatContainer = () => {
     try {
       let convId = currentConversation?.id;
       if (!convId) {
-        // createConversation will generate a smart title from the full first message
         const newConv = await createConversation(content);
         if (!newConv) throw new Error('Failed to create conversation');
         convId = newConv.id;
@@ -351,7 +350,7 @@ export const ChatContainer = () => {
       await extractAndSaveMemory(content);
       await addMessage(convId, 'user', content, fileUrls.length > 0 ? fileUrls : undefined);
 
-      // Lightweight reminders (no AI parsing): "in X minutes/hours/days"
+      // Lightweight reminders
       const reminder = user ? parseReminderRequest(content) : null;
       if (reminder && user) {
         try {
@@ -370,7 +369,7 @@ export const ChatContainer = () => {
           await addMessage(
             convId,
             'assistant',
-            `✅ Got it — I’ll remind you about "${reminder.message}" in a bit.`
+            `✅ Got it — I'll remind you about "${reminder.message}" in a bit.`
           );
         } catch (e) {
           toast({
@@ -386,7 +385,7 @@ export const ChatContainer = () => {
         return;
       }
 
-      // Check if this is an image generation request - open dialog
+      // Check if this is an image generation request - provide guidance instead of refusing
       const imagePrompt = detectImageGenerationRequest(content);
 
       if (imagePrompt) {
@@ -394,6 +393,11 @@ export const ChatContainer = () => {
         setShowImageDialog(true);
         setIsLoading(false);
         return;
+      }
+
+      // Check if user is asking about images but not in an image chat
+      if (isImageRequestLoose(content) && !imagePrompt) {
+        // Let AI handle but add context
       }
 
       // Build messages for the API
@@ -423,7 +427,7 @@ export const ChatContainer = () => {
         ),
       });
 
-      // Detect search/media intent to show a "Searching..." animation
+      // Detect search/media intent
       const searchIntent = /(search (?:for |the web for |online for )|look up |google |latest news|what(?:'s| is) happening)/i.test(content);
       const imageIntent = /(show me (?:an? )?(?:image|picture|photo)|what does .+ look like)/i.test(content);
       const videoIntent = /(show me (?:a )?video|video tutorial)/i.test(content);
@@ -507,7 +511,6 @@ export const ChatContainer = () => {
       setStreamingContent('');
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        // User stopped generation
         if (streamingContent) {
           const convId = currentConversation?.id;
           if (convId) {
@@ -541,14 +544,8 @@ export const ChatContainer = () => {
     const conv = await createConversation();
     if (!conv) return;
 
-    // 15-char limit enforced in sidebar + renamer; keep it short.
     await renameConversation(conv.id, 'Image Gen');
     setConversationMode(conv.id, 'image');
-    toast({
-      title: 'Image Generator',
-      description: 'This chat only accepts image requests.',
-      variant: 'destructive',
-    });
   };
 
   const displayMessages = [...messages];
@@ -596,7 +593,7 @@ export const ChatContainer = () => {
       />
 
       <main className="flex-1 flex flex-col min-w-0">
-        {/* Floating sidebar button */}
+        {/* Floating sidebar button - proper sidebar icon */}
         <div className="absolute top-3 left-3 z-20">
           <Button
             variant="secondary"
@@ -605,7 +602,7 @@ export const ChatContainer = () => {
             className={cn("rounded-full", sidebarOpen ? 'lg:hidden' : '')}
             aria-label="Open sidebar"
           >
-            <Menu className="h-5 w-5" />
+            <PanelLeft className="h-5 w-5" />
           </Button>
         </div>
 

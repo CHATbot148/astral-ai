@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, MessageSquare, Trash2, Pencil, ChevronLeft, Search, Check, X, Image as ImageIcon } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, Pencil, Search, Check, X, Image as ImageIcon, PanelLeftClose } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -99,6 +99,14 @@ export const Sidebar = ({
     setConfirmDeleteId(convId);
   };
 
+  const handleSelectConversation = (conv: Conversation) => {
+    if (!editingId) {
+      onSelectConversation(conv);
+      // Auto-close sidebar on mobile after selecting a chat
+      onClose();
+    }
+  };
+
   return (
     <>
       {/* Mobile overlay */}
@@ -121,7 +129,8 @@ export const Sidebar = ({
         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
         className={cn(
           "fixed lg:relative z-50 w-[280px] h-full flex flex-col",
-          "bg-sidebar border-r border-sidebar-border"
+          "bg-sidebar border-r border-sidebar-border",
+          "top-0 left-0" // Ensure it's at the top
         )}
       >
         {/* Header */}
@@ -142,8 +151,9 @@ export const Sidebar = ({
             size="icon"
             onClick={onClose}
             className="lg:hidden"
+            aria-label="Close sidebar"
           >
-            <ChevronLeft className="h-5 w-5" />
+            <PanelLeftClose className="h-5 w-5" />
           </Button>
         </div>
 
@@ -195,7 +205,7 @@ export const Sidebar = ({
                   layout
                 >
                   <div
-                    onClick={() => !editingId && onSelectConversation(conv)}
+                    onClick={() => handleSelectConversation(conv)}
                     className={cn(
                       "w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-left transition-all duration-200 group/item cursor-pointer",
                       currentConversation?.id === conv.id

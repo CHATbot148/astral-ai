@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { PhoneOff, Mic, MicOff, Volume2, Settings, Loader2 } from "lucide-react";
+import { PhoneOff, Mic, MicOff, Volume2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -29,13 +29,14 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const [selectedVoice, setSelectedVoice] = useState(() => 
     localStorage.getItem("xai-tts-voice") || "asteria"
   );
-  const [status, setStatus] = useState<"idle" | "listening" | "processing" | "speaking">("idle");
+  const [status, setStatus] = useState<"idle" | "connecting" | "listening" | "processing" | "speaking">("idle");
   const [isConnected, setIsConnected] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const isActiveRef = useRef(true);
 
   useEffect(() => {
     const t = setInterval(() => setCallDuration(Math.floor((Date.now() - callStart) / 1000)), 1000);
@@ -49,7 +50,9 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   };
 
   const speakResponse = useCallback(async (text: string) => {
+    if (!isActiveRef.current) return;
     setStatus("speaking");
+    
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
@@ -64,7 +67,16 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         body: JSON.stringify({ text, voiceId: selectedVoice }),
       });
 
-      if (!response.ok) throw new Error("TTS failed");
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        throw new Error(errorText || "TTS failed");
+      }
+
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("audio")) {
+        const json = await response.json().catch(() => ({}));
+        throw new Error(json?.error || "TTS did not return audio");
+      }
 
       const audioBlob = await response.blob();
       const audioUrl = URL.createObjectURL(audioBlob);
@@ -73,21 +85,37 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
       audio.onended = () => {
         URL.revokeObjectURL(audioUrl);
-        setStatus("listening");
-        startListening();
+        if (isActiveRef.current && !isMuted) {
+          setStatus("listening");
+          startListening();
+        } else {
+          setStatus("idle");
+        }
+      };
+
+      audio.onerror = () => {
+        URL.revokeObjectURL(audioUrl);
+        if (isActiveRef.current && !isMuted) {
+          setStatus("listening");
+          startListening();
+        }
       };
 
       await audio.play();
     } catch (error) {
       console.error("TTS error:", error);
       toast({ title: "Speech failed", variant: "destructive" });
-      setStatus("listening");
-      startListening();
+      if (isActiveRef.current && !isMuted) {
+        setStatus("listening");
+        startListening();
+      }
     }
-  }, [selectedVoice, toast]);
+  }, [selectedVoice, toast, isMuted]);
 
   const processAudio = useCallback(async (audioBlob: Blob) => {
+    if (!isActiveRef.current) return;
     setStatus("processing");
+    
     try {
       // Convert blob to base64
       const arrayBuffer = await audioBlob.arrayBuffer();
@@ -101,7 +129,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
 
-      // Send to Deepgram STT
+      // Send to Deepgram STT via our edge function
       const sttResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/speech-to-text`, {
         method: "POST",
         headers: {
@@ -112,13 +140,20 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         body: JSON.stringify({ audio: base64Audio }),
       });
 
-      if (!sttResponse.ok) throw new Error("STT failed");
+      if (!sttResponse.ok) {
+        const errText = await sttResponse.text().catch(() => "");
+        throw new Error(errText || "STT failed");
+      }
 
-      const { transcript } = await sttResponse.json();
+      const { transcript, error: sttError } = await sttResponse.json();
+      
+      if (sttError) throw new Error(sttError);
       
       if (!transcript || transcript.trim() === "") {
-        setStatus("listening");
-        startListening();
+        if (isActiveRef.current && !isMuted) {
+          setStatus("listening");
+          startListening();
+        }
         return;
       }
 
@@ -164,81 +199,137 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         }
       }
 
-      if (fullResponse) {
+      if (fullResponse && isActiveRef.current) {
         await speakResponse(fullResponse);
-      } else {
+      } else if (isActiveRef.current && !isMuted) {
         setStatus("listening");
         startListening();
       }
     } catch (error) {
       console.error("Process error:", error);
       toast({ title: "Processing failed", variant: "destructive" });
-      setStatus("listening");
-      startListening();
+      if (isActiveRef.current && !isMuted) {
+        setStatus("listening");
+        startListening();
+      }
     }
-  }, [speakResponse, toast]);
+  }, [speakResponse, toast, isMuted]);
 
   const startListening = useCallback(() => {
-    if (!streamRef.current || isMuted) return;
+    if (!streamRef.current || isMuted || !isActiveRef.current) return;
 
     audioChunksRef.current = [];
-    const mediaRecorder = new MediaRecorder(streamRef.current, { mimeType: "audio/webm" });
-    mediaRecorderRef.current = mediaRecorder;
+    
+    // Check for supported MIME types
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm") 
+      ? "audio/webm" 
+      : MediaRecorder.isTypeSupported("audio/mp4") 
+        ? "audio/mp4" 
+        : "";
 
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        audioChunksRef.current.push(event.data);
-      }
-    };
+    const options = mimeType ? { mimeType } : undefined;
+    
+    try {
+      const mediaRecorder = new MediaRecorder(streamRef.current, options);
+      mediaRecorderRef.current = mediaRecorder;
 
-    mediaRecorder.onstop = () => {
-      if (audioChunksRef.current.length > 0) {
-        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        if (audioBlob.size > 1000) { // Only process if there's actual audio
-          processAudio(audioBlob);
-        } else {
-          setStatus("listening");
-          startListening();
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
         }
-      }
-    };
+      };
 
-    mediaRecorder.start();
-    setStatus("listening");
+      mediaRecorder.onstop = () => {
+        if (audioChunksRef.current.length > 0 && isActiveRef.current) {
+          const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || "audio/webm" });
+          if (audioBlob.size > 1000) {
+            processAudio(audioBlob);
+          } else if (isActiveRef.current && !isMuted) {
+            setStatus("listening");
+            startListening();
+          }
+        }
+      };
 
-    // Auto-stop after 5 seconds of recording
-    setTimeout(() => {
-      if (mediaRecorder.state === "recording") {
-        mediaRecorder.stop();
-      }
-    }, 5000);
-  }, [isMuted, processAudio]);
+      mediaRecorder.onerror = (e) => {
+        console.error("MediaRecorder error:", e);
+        if (isActiveRef.current && !isMuted) {
+          setTimeout(() => startListening(), 500);
+        }
+      };
+
+      mediaRecorder.start();
+      setStatus("listening");
+
+      // Auto-stop after 5 seconds of recording
+      setTimeout(() => {
+        if (mediaRecorder.state === "recording") {
+          mediaRecorder.stop();
+        }
+      }, 5000);
+    } catch (error) {
+      console.error("MediaRecorder error:", error);
+      toast({ title: "Recording failed", variant: "destructive" });
+    }
+  }, [isMuted, processAudio, toast]);
 
   const startCall = useCallback(async () => {
+    setStatus("connecting");
+    
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Request microphone with specific constraints for mobile
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        }
+      });
+      
       streamRef.current = stream;
+      isActiveRef.current = true;
       setIsConnected(true);
-      toast({ title: "Connected" });
 
-      // Start listening immediately
-      startListening();
+      // Start listening immediately after getting stream
+      setTimeout(() => {
+        if (isActiveRef.current) {
+          startListening();
+        }
+      }, 100);
     } catch (error) {
       console.error("Microphone error:", error);
-      toast({ title: "Could not access microphone", variant: "destructive" });
+      
+      let errorMessage = "Could not access microphone";
+      if (error instanceof Error) {
+        if (error.name === "NotAllowedError") {
+          errorMessage = "Microphone access denied. Please allow microphone access in your browser settings.";
+        } else if (error.name === "NotFoundError") {
+          errorMessage = "No microphone found on this device.";
+        } else if (error.name === "NotReadableError") {
+          errorMessage = "Microphone is already in use by another application.";
+        }
+      }
+      
+      toast({ title: errorMessage, variant: "destructive" });
+      setStatus("idle");
     }
   }, [startListening, toast]);
 
   const endCall = useCallback(() => {
+    isActiveRef.current = false;
+    
     if (mediaRecorderRef.current?.state === "recording") {
       mediaRecorderRef.current.stop();
     }
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
+      currentAudioRef.current = null;
     }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
     }
+    
     setIsConnected(false);
     setStatus("idle");
     onClose();
@@ -247,22 +338,29 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const toggleMute = useCallback(() => {
     const next = !isMuted;
     setIsMuted(next);
-    if (next && mediaRecorderRef.current?.state === "recording") {
-      mediaRecorderRef.current.stop();
+    
+    if (next) {
+      if (mediaRecorderRef.current?.state === "recording") {
+        mediaRecorderRef.current.stop();
+      }
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+      }
       setStatus("idle");
-    } else if (!next && isConnected) {
+    } else if (isConnected) {
       startListening();
     }
   }, [isMuted, isConnected, startListening]);
 
   const saveVoice = () => {
     localStorage.setItem("xai-tts-voice", selectedVoice);
-    toast({ title: "Voice saved" });
   };
 
   useEffect(() => {
     startCall();
+    
     return () => {
+      isActiveRef.current = false;
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
@@ -270,9 +368,11 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const statusLabel = status === "listening" ? "Listening…" : 
-                      status === "processing" ? "Processing…" : 
-                      status === "speaking" ? "Speaking…" : "Connecting…";
+  const statusLabel = 
+    status === "connecting" ? "Connecting…" :
+    status === "listening" ? "Listening…" : 
+    status === "processing" ? "Processing…" : 
+    status === "speaking" ? "Speaking…" : "Ready";
 
   return (
     <motion.div
@@ -291,9 +391,9 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         <div className="relative w-32 h-32 rounded-full bg-gradient-to-br from-xai-cyan to-xai-purple flex items-center justify-center">
           {status === "speaking" ? (
             <Volume2 className="h-12 w-12 text-white animate-pulse" />
-          ) : status === "processing" ? (
+          ) : status === "processing" || status === "connecting" ? (
             <Loader2 className="h-12 w-12 text-white animate-spin" />
-          ) : isConnected ? (
+          ) : isConnected && !isMuted ? (
             <Mic className="h-12 w-12 text-white" />
           ) : (
             <MicOff className="h-12 w-12 text-white/50" />
@@ -325,23 +425,19 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
         {/* Voice selection */}
         <div className="w-full rounded-xl border border-border bg-card/50 p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <Settings className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Voice</span>
-          </div>
           <div className="flex gap-2">
             <select
               value={selectedVoice}
-              onChange={(e) => setSelectedVoice(e.target.value)}
+              onChange={(e) => {
+                setSelectedVoice(e.target.value);
+                saveVoice();
+              }}
               className="flex-1 h-9 rounded-md border border-border bg-background px-3 text-sm outline-none"
             >
               {VOICE_OPTIONS.map((voice) => (
                 <option key={voice.id} value={voice.id}>{voice.name}</option>
               ))}
             </select>
-            <Button variant="secondary" onClick={saveVoice} className="h-9">
-              Save
-            </Button>
           </div>
         </div>
 
@@ -368,7 +464,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
           </Button>
         </div>
 
-        {!isConnected && (
+        {!isConnected && status !== "connecting" && (
           <Button variant="xai" onClick={startCall} className="w-full">
             Reconnect
           </Button>
