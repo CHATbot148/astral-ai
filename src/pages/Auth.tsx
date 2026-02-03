@@ -680,13 +680,18 @@ const Auth = () => {
         {/* Background pattern */}
         <div className="absolute inset-0 auth-bg-pattern opacity-100 dark:opacity-80" />
 
-        {/* Large logo in background */}
+        {/* Large logo in background - CLICKABLE FOR THEME TOGGLE */}
         <div className="relative z-10 flex flex-col items-center">
-          <motion.div
+          <motion.button
+            type="button"
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.3, duration: 0.5 }}
-            className="relative"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            className="relative cursor-pointer focus:outline-none"
+            aria-label="Toggle theme"
           >
             <div className="w-48 md:w-56 lg:w-64 h-48 md:h-56 lg:h-64 rounded-full overflow-hidden xai-glow">
               <img src={xaiLogo} alt="X-AI" className="w-full h-full object-cover" />
@@ -696,18 +701,7 @@ const Auth = () => {
               animate={{ scale: [1, 1.1, 1], opacity: [0.4, 0.6, 0.4] }}
               transition={{ duration: 4, repeat: Infinity }}
             />
-          </motion.div>
-
-          <Button
-            type="button"
-            variant="secondary"
-            className="mt-5 gap-2"
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            aria-label="Toggle theme"
-          >
-            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            {theme === 'dark' ? 'Light mode' : 'Dark mode'}
-          </Button>
+          </motion.button>
 
           <motion.a
             href="https://xtechnology.vercel.app"

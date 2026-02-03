@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, LogOut, Trash2, Camera, Sun, Moon, Monitor, Check, User, Loader2, Volume2 } from 'lucide-react';
+import { X, LogOut, Trash2, Camera, Sun, Moon, Monitor, Check, User, Loader2, Volume2, ChevronRight, BarChart3, Images } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
@@ -19,6 +19,8 @@ interface ProfilePopupProps {
   onProfileUpdate: () => void;
 }
 
+type Section = 'main' | 'account' | 'voice' | 'theme' | 'usage' | 'gallery';
+
 export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: ProfilePopupProps) => {
   const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
@@ -34,9 +36,10 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   const [showCropper, setShowCropper] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState(() =>
-    localStorage.getItem('xai-tts-voice') || 'george'
+    localStorage.getItem('xai-tts-voice') || 'asteria'
   );
   const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<Section>('main');
 
   // Reset state when popup opens/closes
   useEffect(() => {
@@ -48,6 +51,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       setShowCropper(false);
       setShowDeleteConfirm(false);
       setDeletePassword('');
+      setActiveSection('main');
     }
   }, [isOpen, profile?.full_name]);
 
@@ -100,7 +104,6 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
 
       setSelectedImage(null);
       onProfileUpdate();
-      toast({ title: 'Avatar updated successfully!' });
     } catch (error) {
       console.error('Avatar upload error:', error);
       toast({
@@ -125,7 +128,6 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       if (error) throw error;
       
       onProfileUpdate();
-      toast({ title: 'Name updated successfully!' });
     } catch (error) {
       toast({ 
         title: 'Failed to update name', 
@@ -159,7 +161,6 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
 
       await signOut();
       onClose();
-      toast({ title: 'Account deleted' });
     } catch (error) {
       console.error('Delete account error:', error);
       toast({
@@ -181,7 +182,6 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
     try {
       setPreviewingVoiceId(voiceId);
 
-      // Preview via ElevenLabs TTS (not browser speech synthesis)
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
 
@@ -236,17 +236,320 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
     { value: 'system' as const, icon: Monitor, label: 'System' },
   ];
 
-  // Simplified voice options using browser synthesis
   const voiceOptions = [
-    { id: 'george', name: 'George', desc: 'Male, British' },
-    { id: 'sarah', name: 'Sarah', desc: 'Female, American' },
-    { id: 'laura', name: 'Laura', desc: 'Female, American' },
-    { id: 'liam', name: 'Liam', desc: 'Male, American' },
-    { id: 'lily', name: 'Lily', desc: 'Female, British' },
-    { id: 'daniel', name: 'Daniel', desc: 'Male, British' },
+    { id: 'asteria', name: 'Asteria', desc: 'Female, Professional' },
+    { id: 'luna', name: 'Luna', desc: 'Female, Soft' },
+    { id: 'athena', name: 'Athena', desc: 'Female, Gentle' },
+    { id: 'orion', name: 'Orion', desc: 'Male, Calm' },
+    { id: 'zeus', name: 'Zeus', desc: 'Male, Deep' },
+    { id: 'helios', name: 'Helios', desc: 'Male, Warm' },
   ];
 
   const displayAvatar = profile?.avatar_url;
+
+  const menuItems = [
+    { id: 'account' as Section, icon: User, label: 'Account', desc: 'Profile, logout, delete' },
+    { id: 'voice' as Section, icon: Volume2, label: 'Voice', desc: 'Text-to-speech voice' },
+    { id: 'theme' as Section, icon: Sun, label: 'Theme', desc: 'Light, dark, or system' },
+    { id: 'usage' as Section, icon: BarChart3, label: 'Usage', desc: 'Messages and images' },
+    { id: 'gallery' as Section, icon: Images, label: 'Gallery', desc: 'Generated images' },
+  ];
+
+  const renderMainMenu = () => (
+    <div className="space-y-2">
+      {/* User Info */}
+      <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/50 mb-4">
+        <div className="relative group">
+          <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-xai-cyan bg-secondary flex items-center justify-center">
+            {displayAvatar ? (
+              <img src={displayAvatar} alt="Avatar" className="w-full h-full object-cover" />
+            ) : (
+              <User className="h-5 w-5 text-muted-foreground" />
+            )}
+          </div>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploadingAvatar}
+            className="absolute inset-0 rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center disabled:cursor-not-allowed"
+          >
+            {isUploadingAvatar ? (
+              <Loader2 className="h-4 w-4 text-white animate-spin" />
+            ) : (
+              <Camera className="h-4 w-4 text-white" />
+            )}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleAvatarSelect}
+            className="hidden"
+          />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-medium truncate">{profile?.full_name || 'User'}</p>
+          <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+        </div>
+      </div>
+
+      {/* Menu Items */}
+      {menuItems.map((item) => (
+        <motion.button
+          key={item.id}
+          onClick={() => setActiveSection(item.id)}
+          whileHover={{ x: 4 }}
+          className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-secondary/50 transition-colors text-left"
+        >
+          <item.icon className="h-5 w-5 text-muted-foreground" />
+          <div className="flex-1">
+            <p className="font-medium text-sm">{item.label}</p>
+            <p className="text-xs text-muted-foreground">{item.desc}</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        </motion.button>
+      ))}
+    </div>
+  );
+
+  const renderAccountSection = () => (
+    <div className="space-y-4">
+      {/* Name */}
+      <div>
+        <label className="text-sm text-muted-foreground mb-1.5 block">Name</label>
+        <div className="flex gap-2">
+          <Input 
+            value={name} 
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Your name"
+          />
+          <Button 
+            variant="xai" 
+            onClick={handleSaveName}
+            disabled={isSavingName || name === profile?.full_name}
+          >
+            Save
+          </Button>
+        </div>
+      </div>
+
+      {/* Email */}
+      <div>
+        <label className="text-sm text-muted-foreground mb-1.5 block">Email</label>
+        <Input value={user?.email || ''} disabled className="bg-secondary/50" />
+      </div>
+
+      <div className="pt-4 space-y-3 border-t border-border">
+        <Button 
+          variant="outline" 
+          className="w-full justify-start gap-2"
+          onClick={handleLogout}
+        >
+          <LogOut className="h-4 w-4" />
+          Log out
+        </Button>
+
+        {!showDeleteConfirm ? (
+          <Button 
+            variant="ghost" 
+            className="w-full justify-start gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+            onClick={() => setShowDeleteConfirm(true)}
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete account
+          </Button>
+        ) : (
+          <motion.div 
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            className="p-3 rounded-lg border border-destructive/50 bg-destructive/5"
+          >
+            <p className="text-sm text-destructive mb-3">
+              Enter your password to confirm account deletion:
+            </p>
+            <Input 
+              type="password"
+              placeholder="Password"
+              value={deletePassword}
+              onChange={(e) => setDeletePassword(e.target.value)}
+              className="mb-3"
+            />
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  setDeletePassword('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleDeleteAccount}
+                disabled={isDeleting || !deletePassword}
+              >
+                {isDeleting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  'Delete permanently'
+                )}
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderVoiceSection = () => (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">Select a voice for text-to-speech</p>
+      <div className="grid grid-cols-1 gap-2">
+        {voiceOptions.map((voice) => (
+          <motion.button
+            key={voice.id}
+            onClick={() => {
+              setSelectedVoice(voice.id);
+              localStorage.setItem('xai-tts-voice', voice.id);
+            }}
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.99 }}
+            className={`flex items-center justify-between gap-2 p-3 rounded-lg border transition-all text-left ${
+              selectedVoice === voice.id 
+                ? 'border-xai-cyan bg-xai-cyan/10' 
+                : 'border-border hover:border-xai-cyan/50'
+            }`}
+          >
+            <div className="min-w-0">
+              <span className={`block text-sm font-medium ${selectedVoice === voice.id ? 'text-xai-cyan' : ''}`}>
+                {voice.name}
+              </span>
+              <span className="block text-xs text-muted-foreground">{voice.desc}</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {selectedVoice === voice.id && (
+                <Check className="h-4 w-4 text-xai-cyan" />
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-full"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  playVoiceSample(voice.id);
+                }}
+                disabled={previewingVoiceId === voice.id}
+                aria-label={`Play sample for ${voice.name}`}
+              >
+                {previewingVoiceId === voice.id ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Volume2 className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          </motion.button>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderThemeSection = () => (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">Choose your preferred theme</p>
+      <div className="grid grid-cols-3 gap-2">
+        {themes.map(({ value, icon: Icon, label }) => (
+          <motion.button
+            key={value}
+            onClick={() => setTheme(value)}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className={`flex flex-col items-center gap-2 p-4 rounded-lg border transition-all ${
+              theme === value 
+                ? 'border-xai-cyan bg-xai-cyan/10' 
+                : 'border-border hover:border-xai-cyan/50'
+            }`}
+          >
+            <Icon className={`h-6 w-6 ${theme === value ? 'text-xai-cyan' : 'text-muted-foreground'}`} />
+            <span className={`text-sm ${theme === value ? 'text-xai-cyan font-medium' : 'text-muted-foreground'}`}>
+              {label}
+            </span>
+            {theme === value && (
+              <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}>
+                <Check className="h-4 w-4 text-xai-cyan" />
+              </motion.div>
+            )}
+          </motion.button>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderUsageSection = () => (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">Your usage statistics</p>
+      <div className="grid grid-cols-1 gap-3">
+        <div className="p-4 rounded-lg bg-secondary/50 border border-border">
+          <p className="text-2xl font-bold text-xai-cyan">--</p>
+          <p className="text-sm text-muted-foreground">Messages sent</p>
+        </div>
+        <div className="p-4 rounded-lg bg-secondary/50 border border-border">
+          <p className="text-2xl font-bold text-xai-purple">--</p>
+          <p className="text-sm text-muted-foreground">Images generated</p>
+        </div>
+        <div className="p-4 rounded-lg bg-secondary/50 border border-border">
+          <p className="text-2xl font-bold text-green-500">--</p>
+          <p className="text-sm text-muted-foreground">Remaining daily generations</p>
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground text-center">
+        Usage tracking coming soon
+      </p>
+    </div>
+  );
+
+  const renderGallerySection = () => (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">Your generated images</p>
+      <div className="flex items-center justify-center py-12 text-center">
+        <div>
+          <Images className="h-12 w-12 mx-auto text-muted-foreground/50 mb-3" />
+          <p className="text-sm text-muted-foreground">Gallery coming soon</p>
+          <p className="text-xs text-muted-foreground mt-1">Your generated images will appear here</p>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderSection = () => {
+    switch (activeSection) {
+      case 'account':
+        return renderAccountSection();
+      case 'voice':
+        return renderVoiceSection();
+      case 'theme':
+        return renderThemeSection();
+      case 'usage':
+        return renderUsageSection();
+      case 'gallery':
+        return renderGallerySection();
+      default:
+        return renderMainMenu();
+    }
+  };
+
+  const sectionTitles: Record<Section, string> = {
+    main: 'Settings',
+    account: 'Account',
+    voice: 'Voice',
+    theme: 'Theme',
+    usage: 'Usage',
+    gallery: 'Gallery',
+  };
 
   return (
     <>
@@ -283,220 +586,37 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
             >
               <div className="xai-gradient-border rounded-xl max-h-[85vh] overflow-hidden">
                 <div className="xai-gradient-border-content rounded-xl bg-card p-6 max-h-[85vh] overflow-y-auto">
+                  {/* Header */}
                   <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-display font-semibold">Profile Settings</h2>
+                    {activeSection !== 'main' ? (
+                      <button
+                        onClick={() => setActiveSection('main')}
+                        className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <ChevronRight className="h-4 w-4 rotate-180" />
+                        Back
+                      </button>
+                    ) : (
+                      <div />
+                    )}
+                    <h2 className="text-xl font-display font-semibold">{sectionTitles[activeSection]}</h2>
                     <Button variant="ghost" size="icon" onClick={onClose}>
                       <X className="h-5 w-5" />
                     </Button>
                   </div>
 
-                  {/* Avatar Section */}
-                  <div className="flex flex-col items-center mb-6">
-                    <div className="relative group mb-3">
-                      <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-xai-cyan bg-secondary flex items-center justify-center">
-                        {displayAvatar ? (
-                          <img 
-                            src={displayAvatar} 
-                            alt="Avatar" 
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <User className="h-10 w-10 text-muted-foreground" />
-                        )}
-                      </div>
-                      <button
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={isUploadingAvatar}
-                        className="absolute inset-0 rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center disabled:cursor-not-allowed"
-                      >
-                        {isUploadingAvatar ? (
-                          <Loader2 className="h-6 w-6 text-white animate-spin" />
-                        ) : (
-                          <Camera className="h-6 w-6 text-white" />
-                        )}
-                      </button>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        onChange={handleAvatarSelect}
-                        className="hidden"
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground">Click to change avatar</p>
-                  </div>
-
-                  {/* Email (read-only) */}
-                  <div className="mb-4">
-                    <label className="text-sm text-muted-foreground mb-1.5 block">Email</label>
-                    <Input 
-                      value={user?.email || ''} 
-                      disabled 
-                      className="bg-secondary/50"
-                    />
-                  </div>
-
-                  {/* Name (editable) */}
-                  <div className="mb-6">
-                    <label className="text-sm text-muted-foreground mb-1.5 block">Name</label>
-                    <div className="flex gap-2">
-                      <Input 
-                        value={name} 
-                        onChange={(e) => setName(e.target.value)}
-                        placeholder="Your name"
-                      />
-                      <Button 
-                        variant="xai" 
-                        onClick={handleSaveName}
-                        disabled={isSavingName || name === profile?.full_name}
-                      >
-                        Save
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Theme Selection */}
-                  <div className="mb-6">
-                    <label className="text-sm text-muted-foreground mb-3 block">Theme</label>
-                    <div className="flex gap-2">
-                      {themes.map(({ value, icon: Icon, label }) => (
-                        <motion.button
-                          key={value}
-                          onClick={() => setTheme(value)}
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
-                          className={`flex-1 flex flex-col items-center gap-2 p-3 rounded-lg border transition-all ${
-                            theme === value 
-                              ? 'border-xai-cyan bg-xai-cyan/10' 
-                              : 'border-border hover:border-xai-cyan/50'
-                          }`}
-                        >
-                          <Icon className={`h-5 w-5 ${theme === value ? 'text-xai-cyan' : 'text-muted-foreground'}`} />
-                          <span className={`text-xs ${theme === value ? 'text-xai-cyan' : 'text-muted-foreground'}`}>
-                            {label}
-                          </span>
-                          {theme === value && (
-                            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}>
-                              <Check className="h-3 w-3 text-xai-cyan" />
-                            </motion.div>
-                          )}
-                        </motion.button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Voice Selection */}
-                  <div className="mb-6">
-                    <label className="text-sm text-muted-foreground mb-3 block">Voice for Text-to-Speech</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {voiceOptions.map((voice) => (
-                        <motion.button
-                          key={voice.id}
-                          onClick={() => {
-                            setSelectedVoice(voice.id);
-                            localStorage.setItem('xai-tts-voice', voice.id);
-                          }}
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
-                          className={`flex items-center justify-between gap-2 p-2.5 rounded-lg border transition-all text-left ${
-                            selectedVoice === voice.id 
-                              ? 'border-xai-cyan bg-xai-cyan/10' 
-                              : 'border-border hover:border-xai-cyan/50'
-                          }`}
-                        >
-                          <div className="min-w-0">
-                            <span className={`block text-sm font-medium ${selectedVoice === voice.id ? 'text-xai-cyan' : ''}`}>
-                              {voice.name}
-                            </span>
-                            <span className="block text-xs text-muted-foreground">{voice.desc}</span>
-                          </div>
-
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 rounded-full"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              playVoiceSample(voice.id);
-                            }}
-                            disabled={previewingVoiceId === voice.id}
-                            aria-label={`Play sample for ${voice.name}`}
-                          >
-                            {previewingVoiceId === voice.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Volume2 className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </motion.button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="space-y-3">
-                    <Button 
-                      variant="outline" 
-                      className="w-full justify-start gap-2"
-                      onClick={handleLogout}
+                  {/* Content */}
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={activeSection}
+                      initial={{ opacity: 0, x: activeSection === 'main' ? -20 : 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: activeSection === 'main' ? 20 : -20 }}
+                      transition={{ duration: 0.2 }}
                     >
-                      <LogOut className="h-4 w-4" />
-                      Log out
-                    </Button>
-
-                    {!showDeleteConfirm ? (
-                      <Button 
-                        variant="ghost" 
-                        className="w-full justify-start gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
-                        onClick={() => setShowDeleteConfirm(true)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Delete account
-                      </Button>
-                    ) : (
-                      <motion.div 
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        className="p-3 rounded-lg border border-destructive/50 bg-destructive/5"
-                      >
-                        <p className="text-sm text-destructive mb-3">
-                          Enter your password to confirm account deletion:
-                        </p>
-                        <Input 
-                          type="password"
-                          placeholder="Password"
-                          value={deletePassword}
-                          onChange={(e) => setDeletePassword(e.target.value)}
-                          className="mb-3"
-                        />
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setShowDeleteConfirm(false);
-                              setDeletePassword('');
-                            }}
-                          >
-                            Cancel
-                          </Button>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={handleDeleteAccount}
-                            disabled={isDeleting || !deletePassword}
-                          >
-                            {isDeleting ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              'Delete permanently'
-                            )}
-                          </Button>
-                        </div>
-                      </motion.div>
-                    )}
-                  </div>
+                      {renderSection()}
+                    </motion.div>
+                  </AnimatePresence>
                 </div>
               </div>
             </motion.div>

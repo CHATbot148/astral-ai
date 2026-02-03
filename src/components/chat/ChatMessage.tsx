@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { Copy, Check, ThumbsUp, ThumbsDown, Heart, Sparkles, FileText, Volume2, Download, Pencil, ExternalLink } from 'lucide-react';
+import { Copy, Check, ThumbsUp, ThumbsDown, Heart, Sparkles, FileText, Volume2, Download, Pencil } from 'lucide-react';
 import { useEffect, useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -121,7 +121,6 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
   const copyToClipboardUser = async () => {
     await navigator.clipboard.writeText(content);
     setCopied(true);
-    toast({ title: 'Copied to clipboard!' });
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -151,11 +150,9 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
     let match;
     
     while ((match = codeBlockRegex.exec(content)) !== null) {
-      // Add text before code block
       if (match.index > lastIndex) {
         parts.push({ type: 'text', content: content.slice(lastIndex, match.index) });
       }
-      // Add code block
       parts.push({ 
         type: 'code', 
         language: match[1] || 'code', 
@@ -164,7 +161,6 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
       lastIndex = match.index + match[0].length;
     }
     
-    // Add remaining text
     if (lastIndex < content.length) {
       parts.push({ type: 'text', content: content.slice(lastIndex) });
     }
@@ -174,24 +170,18 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
 
   // Format text with markdown-like features
   const formatText = (text: string) => {
-    // Split into lines for processing
     const lines = text.split('\n');
     
     return lines.map((line, lineIndex) => {
-      // Bold
       line = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      // Italic
       line = line.replace(/\*(.*?)\*/g, '<em>$1</em>');
-      // Inline code
       line = line.replace(/`([^`]+)`/g, '<code class="bg-muted px-1.5 py-0.5 rounded text-sm font-mono">$1</code>');
       
-      // Links - markdown style [text](url)
       line = line.replace(
         /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, 
         '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-xai-cyan hover:underline inline-flex items-center gap-1">$1<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>'
       );
       
-      // Plain URLs
       line = line.replace(
         /(?<!\])\((https?:\/\/[^\s\)]+)\)|(?<!["\(])(https?:\/\/[^\s<]+)(?!["\)])/g,
         (match, p1, p2) => {
@@ -201,7 +191,6 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
         }
       );
       
-      // Headers
       if (line.startsWith('### ')) {
         line = `<h3 class="text-lg font-semibold mt-4 mb-2">${line.slice(4)}</h3>`;
       } else if (line.startsWith('## ')) {
@@ -210,12 +199,10 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
         line = `<h1 class="text-2xl font-bold mt-4 mb-2">${line.slice(2)}</h1>`;
       }
       
-      // Unordered lists
       if (line.startsWith('- ') || line.startsWith('• ')) {
         line = `<li class="ml-4 list-disc">${line.slice(2)}</li>`;
       }
       
-      // Ordered lists (numbered)
       const numberedMatch = line.match(/^(\d+)\.\s(.+)/);
       if (numberedMatch) {
         line = `<li class="ml-4 list-decimal" value="${numberedMatch[1]}">${numberedMatch[2]}</li>`;
@@ -230,7 +217,6 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
     if (url.startsWith('storage:')) return url.match(/\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$/i);
     return url.match(/\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$/i) || (url.includes('supabase') && url.includes('storage'));
   };
-
 
   useEffect(() => {
     let cancelled = false;
@@ -259,9 +245,8 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
       className={cn(
-        "flex gap-3 px-4 py-4 group",
+        "flex gap-3 px-4 py-4 group w-full",
         isUser ? "flex-row-reverse" : "flex-row",
-        // AI messages blend with background (no extra background)
       )}
     >
       {/* Avatar */}
@@ -290,7 +275,10 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
       </motion.div>
 
       {/* Content */}
-      <div className={cn("flex-1 min-w-0 space-y-2", isUser ? "text-right" : "text-left")}>
+      <div className={cn(
+        "flex-1 min-w-0 space-y-2 overflow-hidden",
+        isUser ? "text-right" : "text-left"
+      )}>
         <div className={cn("flex items-center gap-2", isUser ? "justify-end" : "justify-start")}>
           <span className="font-semibold text-sm">
             {isUser ? (userName || 'You') : 'X-AI'}
@@ -354,7 +342,6 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
                       />
                     </button>
 
-                    {/* Overlay actions for generated images */}
                     {!isUser && (
                       <div className="absolute inset-0 bg-black/50 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-2 rounded-lg">
                         <Button
@@ -385,7 +372,6 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
                               a.click();
                               document.body.removeChild(a);
                               URL.revokeObjectURL(blobUrl);
-                              toast({ title: 'Image saved!' });
                             } catch {
                               toast({ title: 'Failed to save', variant: 'destructive' });
                             }
@@ -422,8 +408,8 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
 
         <motion.div 
           className={cn(
-            "text-foreground leading-relaxed inline-block max-w-[85%]",
-            isUser && "bg-secondary rounded-2xl rounded-tr-sm px-4 py-2"
+            "text-foreground leading-relaxed inline-block",
+            isUser ? "bg-secondary rounded-2xl rounded-tr-sm px-4 py-2 max-w-[85%] break-words" : "max-w-full"
           )}
           layout
         >
@@ -431,7 +417,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
             part.type === 'code' ? (
               <CodeBlock key={index} language={part.language || 'code'} code={part.content} />
             ) : (
-              <div key={index} className="whitespace-pre-wrap">{formatText(part.content)}</div>
+              <div key={index} className="whitespace-pre-wrap break-words">{formatText(part.content)}</div>
             )
           )}
         </motion.div>
