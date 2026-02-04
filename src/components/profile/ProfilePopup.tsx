@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, LogOut, Trash2, Camera, Sun, Moon, Monitor, Check, User, Loader2, Volume2, ChevronRight, BarChart3, Images } from 'lucide-react';
+import { X, LogOut, Trash2, Camera, Sun, Moon, Monitor, Check, User, Loader2, Volume2, ChevronRight, BarChart3, Images, Download, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
@@ -8,6 +8,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { ImageCropper } from '@/components/chat/ImageCropper';
+import { resolveFileUrl } from '@/lib/storageRef';
 
 interface ProfilePopupProps {
   isOpen: boolean;
@@ -20,6 +21,23 @@ interface ProfilePopupProps {
 }
 
 type Section = 'main' | 'account' | 'voice' | 'theme' | 'usage' | 'gallery';
+
+interface GeneratedImage {
+  id: string;
+  prompt: string;
+  image_url: string;
+  created_at: string;
+  resolvedUrl?: string;
+}
+
+interface UsageStats {
+  messagesSent: number;
+  imagesGenerated: number;
+  remainingToday: number;
+  dailyLimit: number;
+}
+
+const CEO_EMAIL = "khaleelktn@gmail.com";
 
 export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: ProfilePopupProps) => {
   const { user, signOut } = useAuth();
@@ -40,6 +58,15 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   );
   const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<Section>('main');
+  
+  // Gallery state
+  const [galleryImages, setGalleryImages] = useState<GeneratedImage[]>([]);
+  const [isLoadingGallery, setIsLoadingGallery] = useState(false);
+  const [previewImage, setPreviewImage] = useState<GeneratedImage | null>(null);
+  
+  // Usage state
+  const [usageStats, setUsageStats] = useState<UsageStats | null>(null);
+  const [isLoadingUsage, setIsLoadingUsage] = useState(false);
 
   // Reset state when popup opens/closes
   useEffect(() => {
@@ -54,6 +81,92 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       setActiveSection('main');
     }
   }, [isOpen, profile?.full_name]);
+
+  // Load gallery when section becomes active
+  useEffect(() => {
+    if (activeSection === 'gallery' && user) {
+      loadGallery();
+    }
+  }, [activeSection, user]);
+
+  // Load usage when section becomes active
+  useEffect(() => {
+    if (activeSection === 'usage' && user) {
+      loadUsage();
+    }
+  }, [activeSection, user]);
+
+  const loadGallery = async () => {
+    if (!user) return;
+    setIsLoadingGallery(true);
+    
+    try {
+      const { data, error } = await supabase
+        .from('generated_images')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      
+      if (error) throw error;
+      
+      // Resolve URLs for images
+      const resolved = await Promise.all(
+        (data || []).map(async (img) => ({
+          ...img,
+          resolvedUrl: await resolveFileUrl(img.image_url, { expiresIn: 60 * 60 }),
+        }))
+      );
+      
+      setGalleryImages(resolved);
+    } catch (error) {
+      console.error('Failed to load gallery:', error);
+    } finally {
+      setIsLoadingGallery(false);
+    }
+  };
+
+  const loadUsage = async () => {
+    if (!user) return;
+    setIsLoadingUsage(true);
+    
+    try {
+      // Get message count
+      const { count: messageCount } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('role', 'user');
+      
+      // Get total images generated
+      const { count: totalImages } = await supabase
+        .from('generated_images')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+      
+      // Get today's images
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const { count: todayImages } = await supabase
+        .from('generated_images')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .gte('created_at', today.toISOString());
+      
+      const dailyLimit = user.email === CEO_EMAIL ? 20 : 5;
+      
+      setUsageStats({
+        messagesSent: messageCount || 0,
+        imagesGenerated: totalImages || 0,
+        remainingToday: Math.max(0, dailyLimit - (todayImages || 0)),
+        dailyLimit,
+      });
+    } catch (error) {
+      console.error('Failed to load usage:', error);
+    } finally {
+      setIsLoadingUsage(false);
+    }
+  };
 
   const handleAvatarSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -227,6 +340,23 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
         variant: "destructive",
       });
       setPreviewingVoiceId(null);
+    }
+  };
+
+  const downloadImage = async (url: string, prompt: string) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `x-ai-${prompt.slice(0, 20).replace(/\s+/g, '-')}-${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      toast({ title: 'Failed to download', variant: 'destructive' });
     }
   };
 
@@ -492,36 +622,120 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   const renderUsageSection = () => (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">Your usage statistics</p>
-      <div className="grid grid-cols-1 gap-3">
-        <div className="p-4 rounded-lg bg-secondary/50 border border-border">
-          <p className="text-2xl font-bold text-xai-cyan">--</p>
-          <p className="text-sm text-muted-foreground">Messages sent</p>
+      
+      {isLoadingUsage ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-6 w-6 animate-spin text-xai-cyan" />
         </div>
-        <div className="p-4 rounded-lg bg-secondary/50 border border-border">
-          <p className="text-2xl font-bold text-xai-purple">--</p>
-          <p className="text-sm text-muted-foreground">Images generated</p>
+      ) : usageStats ? (
+        <div className="grid grid-cols-1 gap-3">
+          <div className="p-4 rounded-lg bg-secondary/50 border border-border">
+            <p className="text-2xl font-bold text-xai-cyan">{usageStats.messagesSent}</p>
+            <p className="text-sm text-muted-foreground">Messages sent</p>
+          </div>
+          <div className="p-4 rounded-lg bg-secondary/50 border border-border">
+            <p className="text-2xl font-bold text-xai-purple">{usageStats.imagesGenerated}</p>
+            <p className="text-sm text-muted-foreground">Images generated</p>
+          </div>
+          <div className="p-4 rounded-lg bg-secondary/50 border border-border">
+            <p className="text-2xl font-bold text-emerald-500">
+              {usageStats.remainingToday} / {usageStats.dailyLimit}
+            </p>
+            <p className="text-sm text-muted-foreground">Remaining daily generations</p>
+          </div>
         </div>
-        <div className="p-4 rounded-lg bg-secondary/50 border border-border">
-          <p className="text-2xl font-bold text-green-500">--</p>
-          <p className="text-sm text-muted-foreground">Remaining daily generations</p>
-        </div>
-      </div>
-      <p className="text-xs text-muted-foreground text-center">
-        Usage tracking coming soon
-      </p>
+      ) : (
+        <p className="text-sm text-muted-foreground text-center py-4">
+          Unable to load usage data
+        </p>
+      )}
     </div>
   );
 
   const renderGallerySection = () => (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">Your generated images</p>
-      <div className="flex items-center justify-center py-12 text-center">
-        <div>
-          <Images className="h-12 w-12 mx-auto text-muted-foreground/50 mb-3" />
-          <p className="text-sm text-muted-foreground">Gallery coming soon</p>
-          <p className="text-xs text-muted-foreground mt-1">Your generated images will appear here</p>
+      
+      {isLoadingGallery ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-xai-cyan" />
         </div>
-      </div>
+      ) : galleryImages.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <Images className="h-12 w-12 text-muted-foreground/50 mb-3" />
+          <p className="text-sm text-muted-foreground">No images yet</p>
+          <p className="text-xs text-muted-foreground mt-1">Generated images will appear here</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          {galleryImages.map((img) => (
+            <motion.div
+              key={img.id}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="relative group cursor-pointer aspect-square rounded-lg overflow-hidden border border-border bg-secondary"
+              onClick={() => setPreviewImage(img)}
+            >
+              <img
+                src={img.resolvedUrl || img.image_url}
+                alt={img.prompt}
+                className="w-full h-full object-cover"
+                loading="lazy"
+              />
+              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <ExternalLink className="h-6 w-6 text-white" />
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      )}
+
+      {/* Image Preview Modal */}
+      <AnimatePresence>
+        {previewImage && (
+          <div 
+            className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => setPreviewImage(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="relative max-w-lg w-full rounded-xl overflow-hidden bg-card"
+              onClick={e => e.stopPropagation()}
+            >
+              <button
+                onClick={() => setPreviewImage(null)}
+                className="absolute top-2 right-2 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+              
+              <img
+                src={previewImage.resolvedUrl || previewImage.image_url}
+                alt={previewImage.prompt}
+                className="w-full max-h-[50vh] object-contain"
+              />
+              
+              <div className="p-4 space-y-3">
+                <p className="text-sm font-medium line-clamp-2">{previewImage.prompt}</p>
+                <p className="text-xs text-muted-foreground">
+                  {new Date(previewImage.created_at).toLocaleDateString()}
+                </p>
+                <Button
+                  variant="xai"
+                  size="sm"
+                  className="w-full gap-2"
+                  onClick={() => downloadImage(previewImage.resolvedUrl || previewImage.image_url, previewImage.prompt)}
+                >
+                  <Download className="h-4 w-4" />
+                  Download
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 

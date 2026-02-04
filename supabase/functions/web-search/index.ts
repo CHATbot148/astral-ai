@@ -17,6 +17,7 @@ interface ImageResult {
   url: string;
   imageUrl: string;
   source: string;
+  thumbnail?: string;
 }
 
 interface VideoResult {
@@ -39,15 +40,32 @@ serve(async (req) => {
       throw new Error("Query is required");
     }
 
+    const SERPAPI_API_KEY = Deno.env.get("SERPAPI_API_KEY");
+    
+    if (!SERPAPI_API_KEY) {
+      console.log("SERPAPI_API_KEY not configured, using fallback DuckDuckGo");
+      // Fallback to DuckDuckGo
+      let results: SearchResult[] | ImageResult[] | VideoResult[] = [];
+      if (type === "web") {
+        results = await searchDuckDuckGo(query, count);
+      } else if (type === "images") {
+        results = await fallbackImageSearch(query, count);
+      } else if (type === "videos") {
+        results = await fallbackVideoSearch(query, count);
+      }
+      return new Response(JSON.stringify({ results, query, type }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     let results: SearchResult[] | ImageResult[] | VideoResult[] = [];
 
-    // Use DuckDuckGo HTML search (free, no API key required)
     if (type === "web") {
-      results = await searchDuckDuckGo(query, count);
+      results = await searchSerpAPIWeb(query, count, SERPAPI_API_KEY);
     } else if (type === "images") {
-      results = await searchImages(query, count);
+      results = await searchSerpAPIImages(query, count, SERPAPI_API_KEY);
     } else if (type === "videos") {
-      results = await searchVideos(query, count);
+      results = await searchSerpAPIVideos(query, count, SERPAPI_API_KEY);
     }
 
     return new Response(JSON.stringify({ results, query, type }), {
@@ -62,9 +80,133 @@ serve(async (req) => {
   }
 });
 
+// SerpAPI Web Search
+async function searchSerpAPIWeb(query: string, count: number, apiKey: string): Promise<SearchResult[]> {
+  try {
+    const params = new URLSearchParams({
+      q: query,
+      api_key: apiKey,
+      engine: "google",
+      num: String(Math.min(count, 10)),
+    });
+
+    const response = await fetch(`https://serpapi.com/search.json?${params}`);
+    
+    if (!response.ok) {
+      throw new Error(`SerpAPI error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const results: SearchResult[] = [];
+
+    // Get organic results
+    if (data.organic_results) {
+      for (const item of data.organic_results.slice(0, count)) {
+        results.push({
+          title: item.title || query,
+          url: item.link,
+          snippet: item.snippet || "",
+          thumbnail: item.thumbnail,
+        });
+      }
+    }
+
+    // Add knowledge graph if available
+    if (data.knowledge_graph && results.length < count) {
+      results.unshift({
+        title: data.knowledge_graph.title || query,
+        url: data.knowledge_graph.website || data.knowledge_graph.source?.link || `https://www.google.com/search?q=${encodeURIComponent(query)}`,
+        snippet: data.knowledge_graph.description || "",
+        thumbnail: data.knowledge_graph.header_images?.[0]?.image,
+      });
+    }
+
+    return results.slice(0, count);
+  } catch (error) {
+    console.error("SerpAPI web search error:", error);
+    return searchDuckDuckGo(query, count);
+  }
+}
+
+// SerpAPI Image Search
+async function searchSerpAPIImages(query: string, count: number, apiKey: string): Promise<ImageResult[]> {
+  try {
+    const params = new URLSearchParams({
+      q: query,
+      api_key: apiKey,
+      engine: "google_images",
+      num: String(Math.min(count + 5, 20)), // Request extra in case some fail
+    });
+
+    const response = await fetch(`https://serpapi.com/search.json?${params}`);
+    
+    if (!response.ok) {
+      throw new Error(`SerpAPI images error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const results: ImageResult[] = [];
+
+    if (data.images_results) {
+      for (const item of data.images_results.slice(0, count)) {
+        results.push({
+          title: item.title || query,
+          url: item.link || item.original,
+          imageUrl: item.original || item.thumbnail,
+          thumbnail: item.thumbnail,
+          source: item.source || new URL(item.link || item.original).hostname,
+        });
+      }
+    }
+
+    return results;
+  } catch (error) {
+    console.error("SerpAPI image search error:", error);
+    return fallbackImageSearch(query, count);
+  }
+}
+
+// SerpAPI Video Search
+async function searchSerpAPIVideos(query: string, count: number, apiKey: string): Promise<VideoResult[]> {
+  try {
+    const params = new URLSearchParams({
+      q: query,
+      api_key: apiKey,
+      engine: "google_videos",
+      num: String(Math.min(count + 3, 15)),
+    });
+
+    const response = await fetch(`https://serpapi.com/search.json?${params}`);
+    
+    if (!response.ok) {
+      throw new Error(`SerpAPI videos error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const results: VideoResult[] = [];
+
+    if (data.video_results) {
+      for (const item of data.video_results.slice(0, count)) {
+        results.push({
+          title: item.title || query,
+          url: item.link,
+          thumbnail: item.thumbnail?.static || item.thumbnail || "",
+          duration: item.duration,
+          source: item.source || "YouTube",
+        });
+      }
+    }
+
+    return results;
+  } catch (error) {
+    console.error("SerpAPI video search error:", error);
+    return fallbackVideoSearch(query, count);
+  }
+}
+
+// Fallback DuckDuckGo search
 async function searchDuckDuckGo(query: string, count: number): Promise<SearchResult[]> {
   try {
-    // Use DuckDuckGo instant answer API
     const encodedQuery = encodeURIComponent(query);
     const response = await fetch(
       `https://api.duckduckgo.com/?q=${encodedQuery}&format=json&no_html=1&skip_disambig=1`
@@ -77,7 +219,6 @@ async function searchDuckDuckGo(query: string, count: number): Promise<SearchRes
     const data = await response.json();
     const results: SearchResult[] = [];
 
-    // Add abstract if available
     if (data.Abstract) {
       results.push({
         title: data.Heading || query,
@@ -87,7 +228,6 @@ async function searchDuckDuckGo(query: string, count: number): Promise<SearchRes
       });
     }
 
-    // Add related topics
     if (data.RelatedTopics) {
       for (const topic of data.RelatedTopics.slice(0, count - results.length)) {
         if (topic.Text && topic.FirstURL) {
@@ -101,7 +241,6 @@ async function searchDuckDuckGo(query: string, count: number): Promise<SearchRes
       }
     }
 
-    // If no results, provide a search link
     if (results.length === 0) {
       results.push({
         title: `Search results for "${query}"`,
@@ -121,130 +260,24 @@ async function searchDuckDuckGo(query: string, count: number): Promise<SearchRes
   }
 }
 
-async function searchImages(query: string, count: number): Promise<ImageResult[]> {
-  try {
-    // Use DuckDuckGo image search API
-    const encodedQuery = encodeURIComponent(query);
-    const vqd = await getVQD(query);
-    
-    if (!vqd) {
-      // Fallback to providing direct links
-      return [{
-        title: query,
-        url: `https://duckduckgo.com/?q=${encodedQuery}&iax=images&ia=images`,
-        imageUrl: `https://via.placeholder.com/400x300?text=${encodedQuery}`,
-        source: "DuckDuckGo Images",
-      }];
-    }
-
-    const response = await fetch(
-      `https://duckduckgo.com/i.js?l=us-en&o=json&q=${encodedQuery}&vqd=${vqd}&f=,,,,,&p=1`,
-      {
-        headers: {
-          "Accept": "application/json",
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        },
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error("Image search failed");
-    }
-
-    const data = await response.json();
-    const results: ImageResult[] = [];
-
-    if (data.results) {
-      for (const item of data.results.slice(0, count)) {
-        results.push({
-          title: item.title || query,
-          url: item.url || item.image,
-          imageUrl: item.image || item.thumbnail,
-          source: item.source || new URL(item.url || item.image).hostname,
-        });
-      }
-    }
-
-    return results;
-  } catch (error) {
-    console.error("Image search error:", error);
-    const encodedQuery = encodeURIComponent(query);
-    return [{
-      title: query,
-      url: `https://duckduckgo.com/?q=${encodedQuery}&iax=images&ia=images`,
-      imageUrl: `https://via.placeholder.com/400x300?text=${encodedQuery}`,
-      source: "DuckDuckGo Images",
-    }];
-  }
+// Fallback image search
+async function fallbackImageSearch(query: string, count: number): Promise<ImageResult[]> {
+  const encodedQuery = encodeURIComponent(query);
+  return [{
+    title: query,
+    url: `https://www.google.com/search?q=${encodedQuery}&tbm=isch`,
+    imageUrl: `https://via.placeholder.com/400x300?text=${encodedQuery}`,
+    source: "Google Images",
+  }];
 }
 
-async function searchVideos(query: string, count: number): Promise<VideoResult[]> {
-  try {
-    const encodedQuery = encodeURIComponent(query);
-    const vqd = await getVQD(query);
-    
-    if (!vqd) {
-      return [{
-        title: query,
-        url: `https://www.youtube.com/results?search_query=${encodedQuery}`,
-        thumbnail: `https://via.placeholder.com/480x360?text=${encodedQuery}`,
-        source: "YouTube",
-      }];
-    }
-
-    const response = await fetch(
-      `https://duckduckgo.com/v.js?l=us-en&o=json&q=${encodedQuery}&vqd=${vqd}&f=,,,,,&p=1`,
-      {
-        headers: {
-          "Accept": "application/json",
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        },
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error("Video search failed");
-    }
-
-    const data = await response.json();
-    const results: VideoResult[] = [];
-
-    if (data.results) {
-      for (const item of data.results.slice(0, count)) {
-        results.push({
-          title: item.title || query,
-          url: item.content || item.url,
-          thumbnail: item.images?.large || item.images?.medium || item.images?.small || "",
-          duration: item.duration,
-          source: item.publisher || new URL(item.content || item.url).hostname,
-        });
-      }
-    }
-
-    return results;
-  } catch (error) {
-    console.error("Video search error:", error);
-    const encodedQuery = encodeURIComponent(query);
-    return [{
-      title: query,
-      url: `https://www.youtube.com/results?search_query=${encodedQuery}`,
-      thumbnail: `https://via.placeholder.com/480x360?text=${encodedQuery}`,
-      source: "YouTube",
-    }];
-  }
-}
-
-async function getVQD(query: string): Promise<string | null> {
-  try {
-    const response = await fetch(`https://duckduckgo.com/?q=${encodeURIComponent(query)}`, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      },
-    });
-    const html = await response.text();
-    const match = html.match(/vqd=['"]([^'"]+)['"]/);
-    return match ? match[1] : null;
-  } catch {
-    return null;
-  }
+// Fallback video search
+async function fallbackVideoSearch(query: string, count: number): Promise<VideoResult[]> {
+  const encodedQuery = encodeURIComponent(query);
+  return [{
+    title: query,
+    url: `https://www.youtube.com/results?search_query=${encodedQuery}`,
+    thumbnail: `https://via.placeholder.com/480x360?text=${encodedQuery}`,
+    source: "YouTube",
+  }];
 }

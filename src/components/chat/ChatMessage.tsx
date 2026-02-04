@@ -141,9 +141,23 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
     setShowReactions(false);
   };
 
-  // Parse content into parts (text, code blocks, links)
+  // Extract markdown images from text
+  const extractImages = (text: string): { images: Array<{ alt: string; url: string }>; cleanText: string } => {
+    const imageRegex = /!\[([^\]]*)\]\((https?:\/\/[^\)]+)\)/g;
+    const images: Array<{ alt: string; url: string }> = [];
+    let match;
+    
+    while ((match = imageRegex.exec(text)) !== null) {
+      images.push({ alt: match[1], url: match[2] });
+    }
+    
+    const cleanText = text.replace(imageRegex, '').trim();
+    return { images, cleanText };
+  };
+
+  // Parse content into parts (text, code blocks, images)
   const parsedContent = useMemo(() => {
-    const parts: Array<{ type: 'text' | 'code'; content: string; language?: string }> = [];
+    const parts: Array<{ type: 'text' | 'code' | 'images'; content: string; language?: string; images?: Array<{ alt: string; url: string }> }> = [];
     const codeBlockRegex = /```(\w+)?\n?([\s\S]*?)```/g;
     
     let lastIndex = 0;
@@ -151,7 +165,15 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
     
     while ((match = codeBlockRegex.exec(content)) !== null) {
       if (match.index > lastIndex) {
-        parts.push({ type: 'text', content: content.slice(lastIndex, match.index) });
+        const textPart = content.slice(lastIndex, match.index);
+        const { images, cleanText } = extractImages(textPart);
+        
+        if (cleanText) {
+          parts.push({ type: 'text', content: cleanText });
+        }
+        if (images.length > 0) {
+          parts.push({ type: 'images', content: '', images });
+        }
       }
       parts.push({ 
         type: 'code', 
@@ -162,7 +184,15 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
     }
     
     if (lastIndex < content.length) {
-      parts.push({ type: 'text', content: content.slice(lastIndex) });
+      const textPart = content.slice(lastIndex);
+      const { images, cleanText } = extractImages(textPart);
+      
+      if (cleanText) {
+        parts.push({ type: 'text', content: cleanText });
+      }
+      if (images.length > 0) {
+        parts.push({ type: 'images', content: '', images });
+      }
     }
     
     return parts;
@@ -416,6 +446,34 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
           {parsedContent.map((part, index) => 
             part.type === 'code' ? (
               <CodeBlock key={index} language={part.language || 'code'} code={part.content} />
+            ) : part.type === 'images' && part.images ? (
+              <div key={index} className="flex gap-2 overflow-x-auto pb-2 my-2 scrollbar-thin scrollbar-thumb-border">
+                {part.images.map((img, imgIdx) => (
+                  <a
+                    key={imgIdx}
+                    href={img.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-shrink-0 block group/img"
+                  >
+                    <div className="relative w-32 h-24 rounded-lg overflow-hidden border border-border bg-secondary">
+                      <img
+                        src={img.url}
+                        alt={img.alt}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                        <span className="text-white text-xs">View</span>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground truncate w-32 mt-1">{img.alt}</p>
+                  </a>
+                ))}
+              </div>
             ) : (
               <div key={index} className="whitespace-pre-wrap break-words">{formatText(part.content)}</div>
             )

@@ -304,37 +304,34 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
         )}
       </AnimatePresence>
 
-      {/* Input Bar - Mobile-optimized layout */}
-      <div className="flex items-end gap-1">
-        {/* Generate Image Button */}
-        {onOpenImageDialog && (
-          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-shrink-0">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={openImageDialog}
-              disabled={disabled || isRecording || isLoading}
-              className="h-9 w-9 rounded-full bg-secondary hover:bg-secondary/80"
-              aria-label="Generate image"
-              title="Generate image"
-            >
-              <ImageIcon className="h-4 w-4" />
-            </Button>
-          </motion.div>
-        )}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        onChange={handleFileChange}
+        className="hidden"
+        accept="image/*,.pdf,.doc,.docx,.txt"
+      />
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          onChange={handleFileChange}
-          className="hidden"
-          accept="image/*,.pdf,.doc,.docx,.txt"
-        />
+      {/* Input Bar - Matches reference design */}
+      <div className="flex items-end gap-2">
+        {/* Attachment Button - Outside input, circular */}
+        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-shrink-0">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled || isRecording || isLoading}
+            className="h-10 w-10 rounded-full bg-secondary hover:bg-secondary/80"
+            aria-label="Attach files"
+          >
+            <Plus className="h-5 w-5" />
+          </Button>
+        </motion.div>
 
-        {/* Main Input Container / Voice Recording Bar */}
+        {/* Main Input Container */}
         {isRecording ? (
-          <div className="flex-1 flex items-center bg-secondary rounded-3xl px-2 py-1 min-h-[44px] overflow-hidden">
+          <div className="flex-1 flex items-center bg-secondary rounded-3xl px-3 py-2 min-h-[44px] overflow-hidden">
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
               <Button
                 variant="ghost"
@@ -352,45 +349,49 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex items-end bg-secondary rounded-3xl px-2 sm:px-3 py-1 min-h-[44px]">
-            {/* Attachment Button inside input container */}
-            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-shrink-0 mb-1.5">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={disabled || isRecording}
-                className="h-7 w-7 rounded-full hover:bg-background/50"
-              >
-                <Plus className="h-4 w-4 text-muted-foreground" />
-              </Button>
-            </motion.div>
-
+          <div className="flex-1 flex items-center bg-secondary rounded-3xl px-3 py-2 min-h-[44px]">
             <textarea
               ref={textareaRef}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Message X-AI..."
+              placeholder="Ask anything"
               disabled={disabled || isLoading}
               rows={1}
               className={cn(
                 'flex-1 resize-none bg-transparent border-0 outline-none',
                 'text-foreground placeholder:text-muted-foreground',
-                'min-h-[36px] max-h-[120px] py-2 px-1',
+                'min-h-[28px] max-h-[120px] py-0 px-1',
                 'focus:ring-0 text-sm'
               )}
             />
 
-            {/* Voice Input Button inside input container */}
-            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-shrink-0 mb-1.5">
+            {/* Image Generation Button */}
+            {onOpenImageDialog && (
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-shrink-0 mr-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={openImageDialog}
+                  disabled={disabled || isRecording || isLoading}
+                  className="h-8 w-8 rounded-full hover:bg-background/50"
+                  aria-label="Generate image"
+                  title="Generate image"
+                >
+                  <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </motion.div>
+            )}
+
+            {/* Voice Input Button - Inside input */}
+            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-shrink-0">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={toggleRecording}
                 disabled={disabled || isTranscribing}
                 className={cn(
-                  'h-7 w-7 rounded-full transition-colors',
+                  'h-8 w-8 rounded-full transition-colors',
                   isRecording && 'text-destructive bg-destructive/10 animate-pulse'
                 )}
               >
@@ -404,14 +405,14 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
           </div>
         )}
 
-        {/* Send/Stop/Call Button */}
+        {/* Send/Stop/Call Button - Circular, accent color */}
         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-shrink-0">
           {isLoading && onStop ? (
             <Button
               variant="destructive"
               size="icon"
               onClick={onStop}
-              className="h-9 w-9 rounded-full"
+              className="h-10 w-10 rounded-full"
               aria-label="Stop generating"
             >
               <Square className="h-4 w-4" />
@@ -422,7 +423,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
               size="icon"
               onClick={onStartCall}
               disabled={disabled}
-              className="h-9 w-9 rounded-full"
+              className="h-10 w-10 rounded-full"
               aria-label="Start voice call"
             >
               <Phone className="h-4 w-4" />
@@ -433,7 +434,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
               size="icon"
               onClick={handleSubmit}
               disabled={isRecording || (!message.trim() && files.length === 0) || isLoading || disabled}
-              className="h-9 w-9 rounded-full"
+              className="h-10 w-10 rounded-full"
             >
               {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>

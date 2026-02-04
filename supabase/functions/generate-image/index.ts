@@ -15,6 +15,11 @@ const STYLE_PROMPTS: Record<string, string> = {
   none: "",
 };
 
+// CEO email for higher limits
+const CEO_EMAIL = "khaleelktn@gmail.com";
+const DAILY_LIMIT_REGULAR = 5;
+const DAILY_LIMIT_CEO = 20;
+
 function parseDataUrl(dataUrl: string): { mime: string; bytes: Uint8Array } {
   const match = dataUrl.match(/^data:(.+?);base64,(.+)$/);
   if (!match) throw new Error("Invalid image data");
@@ -36,6 +41,7 @@ serve(async (req) => {
       imageDataUrl,
       referenceImageUrl,
       style = "photoreal",
+      aspectRatio = "1:1",
     } = body;
 
     if (!prompt && !imageDataUrl) throw new Error("Prompt or imageDataUrl is required");
@@ -52,18 +58,55 @@ serve(async (req) => {
     const authHeader = req.headers.get("Authorization") || "";
     const jwt = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
 
-    // Resolve user id if available
+    // Resolve user id and email if available
     let userId = "anonymous";
+    let userEmail = "";
     if (jwt) {
       const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         global: { headers: { Authorization: `Bearer ${jwt}` } },
         auth: { persistSession: false },
       });
       const { data } = await userClient.auth.getUser();
-      if (data?.user?.id) userId = data.user.id;
+      if (data?.user?.id) {
+        userId = data.user.id;
+        userEmail = data.user.email || "";
+      }
     }
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+
+    // Check daily limit (skip for anonymous)
+    if (userId !== "anonymous") {
+      const dailyLimit = userEmail === CEO_EMAIL ? DAILY_LIMIT_CEO : DAILY_LIMIT_REGULAR;
+      
+      // Get today's start
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const { count, error: countErr } = await admin
+        .from("generated_images")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .gte("created_at", today.toISOString());
+      
+      if (countErr) {
+        console.error("Count error:", countErr);
+      }
+      
+      const todayCount = count || 0;
+      
+      if (todayCount >= dailyLimit) {
+        return new Response(JSON.stringify({ 
+          error: "You have used up your daily image generations", 
+          limit_reached: true,
+          remaining: 0,
+          limit: dailyLimit,
+        }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     // If imageDataUrl is provided (from client-side fallback), just upload it
     if (imageDataUrl) {
@@ -82,6 +125,18 @@ serve(async (req) => {
       }
 
       const storageRef = `storage:chat-files/${path}`;
+      
+      // Save to generated_images table
+      if (userId !== "anonymous") {
+        await admin.from("generated_images").insert({
+          user_id: userId,
+          prompt: prompt || "Uploaded image",
+          image_url: storageRef,
+          style,
+          aspect_ratio: aspectRatio,
+        });
+      }
+      
       return new Response(JSON.stringify({ image: storageRef }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -158,6 +213,18 @@ serve(async (req) => {
 
       const storageRef = `storage:chat-files/${path}`;
       console.log("Generation successful:", storageRef);
+      
+      // Save to generated_images table
+      if (userId !== "anonymous") {
+        await admin.from("generated_images").insert({
+          user_id: userId,
+          prompt,
+          image_url: storageRef,
+          style,
+          aspect_ratio: aspectRatio,
+        });
+      }
+      
       return new Response(JSON.stringify({ image: storageRef }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

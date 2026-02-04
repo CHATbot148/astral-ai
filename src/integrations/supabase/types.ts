@@ -62,6 +62,36 @@ export type Database = {
         }
         Relationships: []
       }
+      generated_images: {
+        Row: {
+          aspect_ratio: string | null
+          created_at: string
+          id: string
+          image_url: string
+          prompt: string
+          style: string | null
+          user_id: string
+        }
+        Insert: {
+          aspect_ratio?: string | null
+          created_at?: string
+          id?: string
+          image_url: string
+          prompt: string
+          style?: string | null
+          user_id: string
+        }
+        Update: {
+          aspect_ratio?: string | null
+          created_at?: string
+          id?: string
+          image_url?: string
+          prompt?: string
+          style?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       messages: {
         Row: {
           content: string
