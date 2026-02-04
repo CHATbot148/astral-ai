@@ -15,6 +15,9 @@ const WEB_SEARCH_PATTERNS = [
   /(?:can you |please )?google (.+)/i,
   /what(?:'s| is) happening (?:with |in )?(.+)/i,
   /(?:tell me about|what do you know about) (.+) (?:today|now|currently|recently)/i,
+  /who is (.+)/i,
+  /when (?:is|was|did) (.+)/i,
+  /where (?:is|was|can I find) (.+)/i,
 ];
 
 const IMAGE_FETCH_PATTERNS = [
@@ -23,6 +26,7 @@ const IMAGE_FETCH_PATTERNS = [
   /what does (.+) look like/i,
   /(?:show|display) (?:me )?(.+) (?:image|picture|photo)s?/i,
   /i want to see (.+)/i,
+  /images? of (.+)/i,
 ];
 
 const VIDEO_FETCH_PATTERNS = [
@@ -32,11 +36,26 @@ const VIDEO_FETCH_PATTERNS = [
   /how to (.+) video/i,
 ];
 
+// List patterns - for inline image display
+const LIST_PATTERNS = [
+  /(?:list|tell me|give me|what are) (?:the )?(best|top|\d+) (.+)/i,
+  /(?:best|top) (\d+) (.+)/i,
+  /recommend (?:me )?(?:some )?(.+)/i,
+];
+
 const REMINDER_PATTERNS = [
   /remind me (?:to |about )?(.+) (?:at|on|in) (.+)/i,
   /set a reminder (?:for |to )?(.+) (?:at|on|in) (.+)/i,
   /message me (?:about )?(.+) (?:at|on|in) (.+)/i,
   /notify me (?:about )?(.+) (?:at|on|in) (.+)/i,
+];
+
+// Image generation detection
+const IMAGE_GENERATION_PATTERNS = [
+  /generate (?:an? )?image/i,
+  /create (?:an? )?image/i,
+  /make (?:me )?(?:an? )?(?:image|picture|photo)/i,
+  /draw (?:me )?(?:an? )?/i,
 ];
 
 serve(async (req) => {
@@ -101,6 +120,27 @@ serve(async (req) => {
     
     let searchContext = "";
     let mediaContext = "";
+    let webImages: any[] = [];
+    let isListRequest = false;
+    let listTopic = "";
+
+    // Check for image generation request - provide guidance
+    for (const pattern of IMAGE_GENERATION_PATTERNS) {
+      if (pattern.test(lastContent)) {
+        searchContext += `\n\n[Note]: User is asking to generate an image. Tell them to click the picture icon (🖼️) in the input bar or use an Image Generation chat from the sidebar to generate images. You cannot generate images directly in this chat.`;
+        break;
+      }
+    }
+
+    // Check for list request (for inline images)
+    for (const pattern of LIST_PATTERNS) {
+      const match = lastContent.match(pattern);
+      if (match) {
+        isListRequest = true;
+        listTopic = match[2] || match[1];
+        break;
+      }
+    }
 
     // Check for web search intent
     for (const pattern of WEB_SEARCH_PATTERNS) {
@@ -111,7 +151,15 @@ serve(async (req) => {
           const searchResults = await performWebSearch(SUPABASE_URL!, query, "web");
           if (searchResults.length > 0) {
             searchContext = `\n\n[Web Search Results for "${query}"]:\n` +
-              searchResults.map((r, i) => `${i + 1}. ${r.title}\n   ${r.snippet}\n   Source: ${r.url}`).join("\n\n");
+              searchResults.map((r: any, i: number) => `${i + 1}. ${r.title}\n   ${r.snippet}\n   Source: ${r.url}`).join("\n\n");
+            
+            // Also fetch related images automatically (3-5)
+            const imageResults = await performWebSearch(SUPABASE_URL!, query, "images");
+            if (imageResults.length > 0) {
+              webImages = imageResults.slice(0, 5);
+              mediaContext += `\n\n[Related Images for "${query}" - display these in a horizontal scrollable grid]:\n` +
+                webImages.map((img: any, i: number) => `- Image ${i + 1}: ${img.title} (${img.imageUrl})`).join("\n");
+            }
           }
         } catch (e) {
           console.error("Web search error:", e);
@@ -120,7 +168,7 @@ serve(async (req) => {
       }
     }
 
-    // Check for image fetch intent
+    // Check for explicit image fetch intent
     for (const pattern of IMAGE_FETCH_PATTERNS) {
       const match = lastContent.match(pattern);
       if (match) {
@@ -128,13 +176,28 @@ serve(async (req) => {
         try {
           const imageResults = await performWebSearch(SUPABASE_URL!, query, "images");
           if (imageResults.length > 0) {
-            mediaContext = `\n\n[Images found for "${query}" - Display these to the user]:\n` +
-              imageResults.map((r, i) => `${i + 1}. ![${r.title}](${r.imageUrl || r.url})\n   Source: ${r.source || r.url}`).join("\n\n");
+            webImages = imageResults.slice(0, 5);
+            mediaContext = `\n\n[Images found for "${query}" - Display these images in a horizontal scrollable grid to the user]:\n` +
+              webImages.map((r: any, i: number) => `${i + 1}. ![${r.title}](${r.imageUrl})\n   Source: ${r.source || r.url}`).join("\n\n");
           }
         } catch (e) {
           console.error("Image search error:", e);
         }
         break;
+      }
+    }
+
+    // If it's a list request, fetch images for the topic
+    if (isListRequest && listTopic && !mediaContext) {
+      try {
+        const imageResults = await performWebSearch(SUPABASE_URL!, listTopic, "images");
+        if (imageResults.length > 0) {
+          webImages = imageResults.slice(0, 5);
+          mediaContext = `\n\n[Images related to "${listTopic}" - Include relevant images inline with each list item when appropriate]:\n` +
+            webImages.map((r: any, i: number) => `${i + 1}. ${r.title}: ${r.imageUrl}`).join("\n");
+        }
+      } catch (e) {
+        console.error("List image search error:", e);
       }
     }
 
@@ -146,8 +209,8 @@ serve(async (req) => {
         try {
           const videoResults = await performWebSearch(SUPABASE_URL!, query, "videos");
           if (videoResults.length > 0) {
-            mediaContext = `\n\n[Videos found for "${query}" - Share these links with the user]:\n` +
-              videoResults.map((r, i) => `${i + 1}. [${r.title}](${r.url})${r.duration ? ` (${r.duration})` : ""}\n   Source: ${r.source || "YouTube"}`).join("\n\n");
+            mediaContext += `\n\n[Videos found for "${query}" - Share these video links with the user]:\n` +
+              videoResults.map((r: any, i: number) => `${i + 1}. [${r.title}](${r.url})${r.duration ? ` (${r.duration})` : ""}\n   Source: ${r.source || "YouTube"}`).join("\n\n");
           }
         } catch (e) {
           console.error("Video search error:", e);
@@ -183,6 +246,7 @@ About You (X-AI):
 - You are helpful, friendly, and conversational
 - You have access to real-time web search when users ask for current information
 - You can find and display images and videos from the web when users request them
+- For IMAGE GENERATION (not fetching): You CANNOT generate images directly. Guide users to click the picture icon (🖼️) in the input bar or use an Image Generation chat from the sidebar.
 
 IMPORTANT RESPONSE GUIDELINES:
 1. BE CONCISE: Keep responses short and to the point. Don't write essays for simple questions.
@@ -194,9 +258,10 @@ IMPORTANT RESPONSE GUIDELINES:
 4. LINKS: When sharing URLs, make them clickable using markdown format: [text](url)
 5. MATCH RESPONSE LENGTH TO QUESTION: Short question = short answer. Only elaborate when the user asks for details.
 6. Don't be overly formal or robotic. Be natural and conversational.
-7. IMAGES: When showing images from search results, use markdown: ![description](url)
+7. IMAGES FROM WEB: When you have web images to show, format them as: ![description](url)
 8. VIDEOS: When showing video results, use clickable markdown links: [Video Title](url)
-9. EACH CHAT IS INDEPENDENT: Don't reference previous conversations. User's personal info (name, age, preferences) carries over, but conversation context does not.${timeContext}${userMemory}${searchContext}${mediaContext}`;
+9. EACH CHAT IS INDEPENDENT: Don't reference previous conversations. User's personal info (name, age, preferences) carries over, but conversation context does not.
+10. When displaying lists with images, show the image right after each item title using markdown image syntax.${timeContext}${userMemory}${searchContext}${mediaContext}`;
 
     if (fileContext) {
       systemContent += `\n\nAttachments: The user has shared files with you. ${fileContext}. Analyze and discuss them as needed.`;
@@ -319,7 +384,7 @@ async function performWebSearch(supabaseUrl: string, query: string, type: string
         apikey: Deno.env.get("SUPABASE_ANON_KEY") ?? "",
         Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")}`,
       },
-      body: JSON.stringify({ query, type, count: 5 }),
+      body: JSON.stringify({ query, type, count: type === "images" ? 8 : 5 }),
     });
 
     if (!response.ok) {
