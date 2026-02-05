@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, LogOut, Trash2, Camera, Sun, Moon, Monitor, Check, User, Loader2, Volume2, ChevronRight, BarChart3, Images, Download, ExternalLink } from 'lucide-react';
+ import { X, LogOut, Trash2, Camera, Sun, Moon, Monitor, Check, User, Loader2, Volume2, ChevronRight, BarChart3, Images, Download, ExternalLink, Bot, Brain, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
@@ -9,6 +9,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { ImageCropper } from '@/components/chat/ImageCropper';
 import { resolveFileUrl } from '@/lib/storageRef';
+ import { MemoryPopup } from './MemoryPopup';
+ import { AIMode, AISettings, modeDescriptions, getAISettings, saveAISettings } from '@/lib/aiSettings';
+ import { Checkbox } from '@/components/ui/checkbox';
 
 interface ProfilePopupProps {
   isOpen: boolean;
@@ -20,7 +23,7 @@ interface ProfilePopupProps {
   onProfileUpdate: () => void;
 }
 
-type Section = 'main' | 'account' | 'voice' | 'theme' | 'usage' | 'gallery';
+type Section = 'main' | 'account' | 'voice' | 'theme' | 'usage' | 'gallery' | 'ai_settings';
 
 interface GeneratedImage {
   id: string;
@@ -67,6 +70,10 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   // Usage state
   const [usageStats, setUsageStats] = useState<UsageStats | null>(null);
   const [isLoadingUsage, setIsLoadingUsage] = useState(false);
+ 
+   // AI Settings state
+   const [aiSettings, setAiSettings] = useState<AISettings>(() => getAISettings());
+   const [showMemoryPopup, setShowMemoryPopup] = useState(false);
 
   // Reset state when popup opens/closes
   useEffect(() => {
@@ -366,6 +373,12 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
     { value: 'system' as const, icon: Monitor, label: 'System' },
   ];
 
+   const handleAISettingsChange = (updates: Partial<AISettings>) => {
+     const newSettings = { ...aiSettings, ...updates };
+     setAiSettings(newSettings);
+     saveAISettings(newSettings);
+   };
+
   const voiceOptions = [
     { id: 'asteria', name: 'Asteria', desc: 'Female, Professional' },
     { id: 'luna', name: 'Luna', desc: 'Female, Soft' },
@@ -379,6 +392,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
 
   const menuItems = [
     { id: 'account' as Section, icon: User, label: 'Account', desc: 'Profile, logout, delete' },
+     { id: 'ai_settings' as Section, icon: Bot, label: 'AI Settings', desc: 'Modes, memory, behavior' },
     { id: 'voice' as Section, icon: Volume2, label: 'Voice', desc: 'Text-to-speech voice' },
     { id: 'theme' as Section, icon: Sun, label: 'Theme', desc: 'Light, dark, or system' },
     { id: 'usage' as Section, icon: BarChart3, label: 'Usage', desc: 'Messages and images' },
@@ -532,6 +546,78 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       </div>
     </div>
   );
+
+   const renderAISettingsSection = () => (
+     <div className="space-y-6">
+       {/* AI Modes */}
+       <div>
+         <h3 className="text-sm font-medium mb-3">AI Mode</h3>
+         <div className="space-y-2">
+           {(Object.keys(modeDescriptions) as AIMode[]).map((mode) => {
+             const { name, description } = modeDescriptions[mode];
+             const isSelected = aiSettings.mode === mode;
+             
+             return (
+               <motion.button
+                 key={mode}
+                 onClick={() => handleAISettingsChange({ mode })}
+                 whileHover={{ scale: 1.01 }}
+                 whileTap={{ scale: 0.99 }}
+                 className={`w-full flex items-start gap-3 p-3 rounded-lg border transition-all text-left ${
+                   isSelected 
+                     ? 'border-xai-cyan bg-xai-cyan/10' 
+                     : 'border-border hover:border-xai-cyan/50'
+                 }`}
+               >
+                 <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                   isSelected ? 'border-xai-cyan bg-xai-cyan' : 'border-muted-foreground'
+                 }`}>
+                   {isSelected && <Check className="h-3 w-3 text-white" />}
+                 </div>
+                 <div className="flex-1">
+                   <p className={`text-sm font-medium ${isSelected ? 'text-xai-cyan' : ''}`}>
+                     {name}
+                   </p>
+                   <p className="text-xs text-muted-foreground mt-0.5">
+                     {description}
+                   </p>
+                 </div>
+               </motion.button>
+             );
+           })}
+         </div>
+       </div>
+ 
+       {/* Follow-up Questions */}
+       <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 border border-border">
+         <div className="flex items-center gap-3">
+           <MessageSquare className="h-5 w-5 text-muted-foreground" />
+           <div>
+             <p className="text-sm font-medium">Follow-up Questions</p>
+             <p className="text-xs text-muted-foreground">Ask follow-up questions for deeper answers</p>
+           </div>
+         </div>
+         <Checkbox
+           checked={aiSettings.followUpQuestions}
+           onCheckedChange={(checked) => handleAISettingsChange({ followUpQuestions: !!checked })}
+         />
+       </div>
+ 
+       {/* Memory Button */}
+       <Button
+         variant="outline"
+         className="w-full justify-start gap-3"
+         onClick={() => setShowMemoryPopup(true)}
+       >
+         <Brain className="h-5 w-5 text-xai-purple" />
+         <div className="text-left">
+           <p className="text-sm font-medium">Memory</p>
+           <p className="text-xs text-muted-foreground">View what X-AI remembers about you</p>
+         </div>
+         <ChevronRight className="h-4 w-4 ml-auto text-muted-foreground" />
+       </Button>
+     </div>
+   );
 
   const renderVoiceSection = () => (
     <div className="space-y-3">
@@ -743,6 +829,8 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
     switch (activeSection) {
       case 'account':
         return renderAccountSection();
+       case 'ai_settings':
+         return renderAISettingsSection();
       case 'voice':
         return renderVoiceSection();
       case 'theme':
@@ -759,6 +847,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   const sectionTitles: Record<Section, string> = {
     main: 'Settings',
     account: 'Account',
+     ai_settings: 'AI Settings',
     voice: 'Voice',
     theme: 'Theme',
     usage: 'Usage',
@@ -767,6 +856,8 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
 
   return (
     <>
+       <MemoryPopup isOpen={showMemoryPopup} onClose={() => setShowMemoryPopup(false)} />
+
       <AnimatePresence>
         {showCropper && selectedImage && (
           <ImageCropper

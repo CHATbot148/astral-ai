@@ -6,6 +6,43 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+ // AI Mode system prompts
+ const MODE_PROMPTS: Record<string, string> = {
+   professional: `
+ PERSONALITY MODE: Professional
+ - Be extremely concise and direct. No fluff.
+ - Avoid small talk, pleasantries like "Great question!" or "How's your day?"
+ - Get straight to the point with factual, efficient responses
+ - Use bullet points and structured formats
+ - Maintain a business-like tone without being cold
+ - Focus purely on delivering accurate, helpful information
+ - Do NOT ask unnecessary follow-up questions unless critical`,
+
+   smart_friendly: `
+ PERSONALITY MODE: Smart & Friendly (Default)
+ - Be helpful, friendly, and conversational
+ - Strike a balance between warmth and efficiency
+ - Engage naturally without being overly formal or too casual
+ - Be encouraging and supportive while staying on topic`,
+
+   highly_courteous: `
+ PERSONALITY MODE: Highly Courteous
+ - Be exceptionally warm, friendly, and expressive
+ - Show genuine enthusiasm and care for the user
+ - Use emojis occasionally to add warmth 😊
+ - Adapt your tone to match the user's mood
+ - When the mood calls for it, include GIFs using: [GIF:keyword]
+ - GIF triggers:
+   * User says something funny → [GIF:laughing]
+   * User is bored → [GIF:party]
+   * User thanks you → [GIF:thank you]
+   * User accomplishes something → [GIF:celebration]
+   * User is sad → [GIF:hug]
+   * General excitement → [GIF:excited]
+ - Be encouraging and supportive
+ - Make the conversation feel like chatting with a caring friend`,
+ };
+
 // Intent detection patterns
 const WEB_SEARCH_PATTERNS = [
   /search (?:for |the web for |online for )?(.+)/i,
@@ -52,10 +89,13 @@ const REMINDER_PATTERNS = [
 
 // Image generation detection
 const IMAGE_GENERATION_PATTERNS = [
-  /generate (?:an? )?image/i,
-  /create (?:an? )?image/i,
-  /make (?:me )?(?:an? )?(?:image|picture|photo)/i,
-  /draw (?:me )?(?:an? )?/i,
+   /generate (?:an? |me )?(?:image|picture|photo|illustration|art|artwork)/i,
+   /create (?:an? |me )?(?:image|picture|photo|illustration|art|artwork)/i,
+   /make (?:me )?(?:an? )?(?:image|picture|photo|illustration|art|artwork)/i,
+   /draw (?:me )?(?:an? )?(.+)/i,
+   /visuali[sz]e (.+)/i,
+   /show me (?:a |an )?(?:drawing|illustration|picture|image) of (.+)/i,
+   /can you (?:generate|create|make|draw) (.+)/i,
 ];
 
 serve(async (req) => {
@@ -64,7 +104,7 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, fileContext, userId: _userId, timeZone, clientTimeISO } = await req.json();
+     const { messages, fileContext, userId: _userId, timeZone, clientTimeISO, aiMode, followUpQuestions } = await req.json();
     const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -123,11 +163,16 @@ serve(async (req) => {
     let webImages: any[] = [];
     let isListRequest = false;
     let listTopic = "";
+     let shouldGenerateImage = false;
+     let imagePrompt = "";
 
     // Check for image generation request - provide guidance
     for (const pattern of IMAGE_GENERATION_PATTERNS) {
-      if (pattern.test(lastContent)) {
-        searchContext += `\n\n[Note]: User is asking to generate an image. Tell them to click the picture icon (🖼️) in the input bar or use an Image Generation chat from the sidebar to generate images. You cannot generate images directly in this chat.`;
+       const match = lastContent.match(pattern);
+       if (match) {
+         shouldGenerateImage = true;
+         // Extract the prompt from the match
+         imagePrompt = match[1]?.trim() || lastContent.replace(pattern, '').trim() || lastContent;
         break;
       }
     }
@@ -231,6 +276,14 @@ serve(async (req) => {
       }
     }
 
+     // Get mode-specific prompt
+     const modePrompt = MODE_PROMPTS[aiMode] || MODE_PROMPTS['smart_friendly'];
+     
+     // Follow-up questions instruction
+     const followUpInstruction = followUpQuestions 
+       ? '\n- When appropriate, ask thoughtful follow-up questions to provide deeper, more helpful answers.'
+       : '\n- Do NOT ask follow-up questions unless absolutely necessary for clarification.';
+
     // X-AI identity system prompt with CONCISE behavior
     let systemContent = `You are X-AI, an intelligent AI assistant created by X-Tech.
 
@@ -246,22 +299,32 @@ About You (X-AI):
 - You are helpful, friendly, and conversational
 - You have access to real-time web search when users ask for current information
 - You can find and display images and videos from the web when users request them
-- For IMAGE GENERATION (not fetching): You CANNOT generate images directly. Guide users to click the picture icon (🖼️) in the input bar or use an Image Generation chat from the sidebar.
+${modePrompt}${followUpInstruction}
 
 IMPORTANT RESPONSE GUIDELINES:
 1. BE CONCISE: Keep responses short and to the point. Don't write essays for simple questions.
-2. PROPER NUMBERING: When making numbered lists, use sequential numbers (1, 2, 3, 4...), NOT repeating "1." for every item.
-3. CODE FORMATTING: When sharing code, ALWAYS wrap it in triple backticks with the language name, like:
+2. STRUCTURE PARAGRAPHS: Break up long text into readable paragraphs. Use spacing between ideas.
+3. PROPER NUMBERING: When making numbered lists, use sequential numbers (1, 2, 3, 4...), NOT repeating "1." for every item.
+4. CODE FORMATTING: When sharing code, ALWAYS wrap it in triple backticks with the language name, like:
 \`\`\`javascript
 // your code here
 \`\`\`
-4. LINKS: When sharing URLs, make them clickable using markdown format: [text](url)
-5. MATCH RESPONSE LENGTH TO QUESTION: Short question = short answer. Only elaborate when the user asks for details.
-6. Don't be overly formal or robotic. Be natural and conversational.
-7. IMAGES FROM WEB: When you have web images to show, format them as: ![description](url)
-8. VIDEOS: When showing video results, use clickable markdown links: [Video Title](url)
-9. EACH CHAT IS INDEPENDENT: Don't reference previous conversations. User's personal info (name, age, preferences) carries over, but conversation context does not.
-10. When displaying lists with images, show the image right after each item title using markdown image syntax.${timeContext}${userMemory}${searchContext}${mediaContext}`;
+5. LINKS: When sharing URLs, make them clickable using markdown format: [text](url)
+6. MATCH RESPONSE LENGTH TO QUESTION: Short question = short answer. Only elaborate when the user asks for details.
+7. Don't be overly formal or robotic. Be natural and conversational.
+8. IMAGES FROM WEB: When you have web images to show, format them as: ![description](url)
+9. VIDEOS: When showing video results, use clickable markdown links: [Video Title](url)
+10. EACH CHAT IS INDEPENDENT: Don't reference previous conversations. User's personal info (name, age, preferences) carries over, but conversation context does not.
+11. When displaying lists with images, show the image right after each item title using markdown image syntax.
+12. USE PARAGRAPH BREAKS: Add empty lines between different topics or ideas to improve readability.${timeContext}${userMemory}${searchContext}${mediaContext}`;
+
+     // Add image generation guidance if detected
+     if (shouldGenerateImage) {
+       systemContent += `\n\n[IMAGE GENERATION REQUEST DETECTED]
+The user wants to generate an image with prompt: "${imagePrompt}"
+RESPOND WITH: Tell them you're generating their image now, then include this special tag in your response: [GENERATE_IMAGE:${imagePrompt}]
+Example response: "I'm generating that image for you now! ✨ [GENERATE_IMAGE:${imagePrompt}]"`;
+     }
 
     if (fileContext) {
       systemContent += `\n\nAttachments: The user has shared files with you. ${fileContext}. Analyze and discuss them as needed.`;
