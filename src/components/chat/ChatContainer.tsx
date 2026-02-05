@@ -18,6 +18,7 @@ import { makeStorageRef, resolveFileUrl } from '@/lib/storageRef';
 import { getConversationMode, setConversationMode } from '@/lib/conversationMode';
 import { cn } from '@/lib/utils';
 import xaiLogo from '@/assets/xai-logo.png';
+ import { getAISettings } from '@/lib/aiSettings';
 
 // Memory extraction patterns
 const MEMORY_PATTERNS = [
@@ -457,6 +458,8 @@ export const ChatContainer = () => {
           userId: user?.id,
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           clientTimeISO: new Date().toISOString(),
+           aiMode: getAISettings().mode,
+           followUpQuestions: getAISettings().followUpQuestions,
         }),
         signal: abortControllerRef.current?.signal,
       });
@@ -506,7 +509,48 @@ export const ChatContainer = () => {
       }
 
       if (fullContent) {
-        await addMessage(convId, 'assistant', fullContent);
+         // Check for image generation trigger in response
+         const imageGenMatch = fullContent.match(/\[GENERATE_IMAGE:([^\]]+)\]/);
+         if (imageGenMatch) {
+           const imagePrompt = imageGenMatch[1].trim();
+           // Remove the tag from displayed content
+           const cleanContent = fullContent.replace(/\[GENERATE_IMAGE:[^\]]+\]/g, '').trim();
+           
+           // Save the text part first
+           if (cleanContent) {
+             await addMessage(convId, 'assistant', cleanContent);
+           }
+           
+           // Trigger image generation
+           setImageDialogPrompt(imagePrompt);
+           setShowImageDialog(true);
+         } else {
+           // Check for GIF tags and fetch them
+           const gifMatches = fullContent.matchAll(/\[GIF:([^\]]+)\]/g);
+           let processedContent = fullContent;
+           
+           for (const match of gifMatches) {
+             const keyword = match[1].trim();
+             try {
+               const gifResponse = await supabase.functions.invoke('fetch-gif', {
+                 body: { query: keyword, limit: 1 }
+               });
+               
+               if (gifResponse.data?.gifs?.[0]?.url) {
+                 processedContent = processedContent.replace(
+                   match[0],
+                   `\n\n![${keyword}](${gifResponse.data.gifs[0].url})\n\n`
+                 );
+               } else {
+                 processedContent = processedContent.replace(match[0], '');
+               }
+             } catch {
+               processedContent = processedContent.replace(match[0], '');
+             }
+           }
+           
+           await addMessage(convId, 'assistant', processedContent);
+         }
       }
       setStreamingContent('');
     } catch (error) {

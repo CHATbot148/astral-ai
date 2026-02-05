@@ -157,8 +157,9 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
 
   // Parse content into parts (text, code blocks, images)
   const parsedContent = useMemo(() => {
-    const parts: Array<{ type: 'text' | 'code' | 'images'; content: string; language?: string; images?: Array<{ alt: string; url: string }> }> = [];
+     const parts: Array<{ type: 'text' | 'code' | 'images' | 'gif'; content: string; language?: string; images?: Array<{ alt: string; url: string }>; gifUrl?: string; gifAlt?: string }> = [];
     const codeBlockRegex = /```(\w+)?\n?([\s\S]*?)```/g;
+     const gifRegex = /!\[([^\]]*)\]\((https?:\/\/[^\)]*giphy[^\)]+)\)/g;
     
     let lastIndex = 0;
     let match;
@@ -166,13 +167,29 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
     while ((match = codeBlockRegex.exec(content)) !== null) {
       if (match.index > lastIndex) {
         const textPart = content.slice(lastIndex, match.index);
-        const { images, cleanText } = extractImages(textPart);
+         // Check for GIFs first
+         const gifMatch = gifRegex.exec(textPart);
+         if (gifMatch) {
+           const beforeGif = textPart.slice(0, gifMatch.index);
+           const afterGif = textPart.slice(gifMatch.index + gifMatch[0].length);
         
-        if (cleanText) {
-          parts.push({ type: 'text', content: cleanText });
-        }
-        if (images.length > 0) {
-          parts.push({ type: 'images', content: '', images });
+           if (beforeGif.trim()) {
+             const { images, cleanText } = extractImages(beforeGif);
+             if (cleanText) parts.push({ type: 'text', content: cleanText });
+             if (images.length > 0) parts.push({ type: 'images', content: '', images });
+           }
+           
+           parts.push({ type: 'gif', content: '', gifUrl: gifMatch[2], gifAlt: gifMatch[1] });
+           
+           if (afterGif.trim()) {
+             const { images, cleanText } = extractImages(afterGif);
+             if (cleanText) parts.push({ type: 'text', content: cleanText });
+             if (images.length > 0) parts.push({ type: 'images', content: '', images });
+           }
+         } else {
+           const { images, cleanText } = extractImages(textPart);
+           if (cleanText) parts.push({ type: 'text', content: cleanText });
+           if (images.length > 0) parts.push({ type: 'images', content: '', images });
         }
       }
       parts.push({ 
@@ -185,13 +202,30 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
     
     if (lastIndex < content.length) {
       const textPart = content.slice(lastIndex);
-      const { images, cleanText } = extractImages(textPart);
+       // Check for GIFs
+       gifRegex.lastIndex = 0;
+       const gifMatch = gifRegex.exec(textPart);
+       if (gifMatch) {
+         const beforeGif = textPart.slice(0, gifMatch.index);
+         const afterGif = textPart.slice(gifMatch.index + gifMatch[0].length);
       
-      if (cleanText) {
-        parts.push({ type: 'text', content: cleanText });
-      }
-      if (images.length > 0) {
-        parts.push({ type: 'images', content: '', images });
+         if (beforeGif.trim()) {
+           const { images, cleanText } = extractImages(beforeGif);
+           if (cleanText) parts.push({ type: 'text', content: cleanText });
+           if (images.length > 0) parts.push({ type: 'images', content: '', images });
+         }
+         
+         parts.push({ type: 'gif', content: '', gifUrl: gifMatch[2], gifAlt: gifMatch[1] });
+         
+         if (afterGif.trim()) {
+           const { images, cleanText } = extractImages(afterGif);
+           if (cleanText) parts.push({ type: 'text', content: cleanText });
+           if (images.length > 0) parts.push({ type: 'images', content: '', images });
+         }
+       } else {
+         const { images, cleanText } = extractImages(textPart);
+         if (cleanText) parts.push({ type: 'text', content: cleanText });
+         if (images.length > 0) parts.push({ type: 'images', content: '', images });
       }
     }
     
@@ -199,48 +233,69 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
   }, [content]);
 
   // Format text with markdown-like features
-  const formatText = (text: string) => {
-    const lines = text.split('\n');
-    
-    return lines.map((line, lineIndex) => {
-      line = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      line = line.replace(/\*(.*?)\*/g, '<em>$1</em>');
-      line = line.replace(/`([^`]+)`/g, '<code class="bg-muted px-1.5 py-0.5 rounded text-sm font-mono">$1</code>');
-      
-      line = line.replace(
-        /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, 
-        '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-xai-cyan hover:underline inline-flex items-center gap-1">$1<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>'
-      );
-      
-      line = line.replace(
-        /(?<!\])\((https?:\/\/[^\s\)]+)\)|(?<!["\(])(https?:\/\/[^\s<]+)(?!["\)])/g,
-        (match, p1, p2) => {
-          const url = p1 || p2;
-          if (!url) return match;
-          return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-xai-cyan hover:underline inline-flex items-center gap-1">${url}<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>`;
-        }
-      );
-      
-      if (line.startsWith('### ')) {
-        line = `<h3 class="text-lg font-semibold mt-4 mb-2">${line.slice(4)}</h3>`;
-      } else if (line.startsWith('## ')) {
-        line = `<h2 class="text-xl font-semibold mt-4 mb-2">${line.slice(3)}</h2>`;
-      } else if (line.startsWith('# ')) {
-        line = `<h1 class="text-2xl font-bold mt-4 mb-2">${line.slice(2)}</h1>`;
-      }
-      
-      if (line.startsWith('- ') || line.startsWith('• ')) {
-        line = `<li class="ml-4 list-disc">${line.slice(2)}</li>`;
-      }
-      
-      const numberedMatch = line.match(/^(\d+)\.\s(.+)/);
-      if (numberedMatch) {
-        line = `<li class="ml-4 list-decimal" value="${numberedMatch[1]}">${numberedMatch[2]}</li>`;
-      }
-      
-      return <span key={lineIndex} dangerouslySetInnerHTML={{ __html: line || '<br/>' }} />;
-    });
-  };
+   // Format text with markdown-like features and better paragraph spacing
+   const formatText = (text: string) => {
+     // Split by double newlines for paragraphs, then by single newlines for lines
+     const paragraphs = text.split(/\n\n+/);
+     
+     return paragraphs.map((paragraph, pIndex) => {
+       const lines = paragraph.split('\n');
+       
+       const formattedLines = lines.map((line, lineIndex) => {
+         // Bold
+         line = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+         // Italic
+         line = line.replace(/\*(.*?)\*/g, '<em>$1</em>');
+         // Inline code
+         line = line.replace(/`([^`]+)`/g, '<code class="bg-muted px-1.5 py-0.5 rounded text-sm font-mono">$1</code>');
+         
+         // Markdown links
+         line = line.replace(
+           /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, 
+           '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-xai-cyan hover:underline inline-flex items-center gap-1">$1<svg class="w-3 h-3 inline-block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>'
+         );
+         
+         // Plain URLs
+         line = line.replace(
+           /(?<!\])\((https?:\/\/[^\s\)]+)\)|(?<!["\(])(https?:\/\/[^\s<]+)(?!["\)])/g,
+           (match, p1, p2) => {
+             const url = p1 || p2;
+             if (!url) return match;
+             return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-xai-cyan hover:underline inline-flex items-center gap-1">${url}<svg class="w-3 h-3 inline-block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>`;
+           }
+         );
+         
+         // Headers
+         if (line.startsWith('### ')) {
+           line = `<h3 class="text-lg font-semibold mt-3 mb-1.5">${line.slice(4)}</h3>`;
+         } else if (line.startsWith('## ')) {
+           line = `<h2 class="text-xl font-semibold mt-4 mb-2">${line.slice(3)}</h2>`;
+         } else if (line.startsWith('# ')) {
+           line = `<h1 class="text-2xl font-bold mt-4 mb-2">${line.slice(2)}</h1>`;
+         }
+         
+         // Bullet points
+         if (line.startsWith('- ') || line.startsWith('• ')) {
+           line = `<li class="ml-4 list-disc mb-1">${line.slice(2)}</li>`;
+         }
+         
+         // Numbered lists
+         const numberedMatch = line.match(/^(\d+)\.\s(.+)/);
+         if (numberedMatch) {
+           line = `<li class="ml-4 list-decimal mb-1" value="${numberedMatch[1]}">${numberedMatch[2]}</li>`;
+         }
+         
+         return <span key={lineIndex} dangerouslySetInnerHTML={{ __html: line || '<br/>' }} />;
+       });
+       
+       // Add margin between paragraphs
+       return (
+         <div key={pIndex} className={pIndex > 0 ? 'mt-3' : ''}>
+           {formattedLines}
+         </div>
+       );
+     });
+   };
 
   const isImageLike = (url: string) => {
     if (url.startsWith('data:image/')) return true;
@@ -446,6 +501,20 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
           {parsedContent.map((part, index) => 
             part.type === 'code' ? (
               <CodeBlock key={index} language={part.language || 'code'} code={part.content} />
+           ) : part.type === 'gif' && part.gifUrl ? (
+             <motion.div 
+               key={index} 
+               className="my-3 max-w-xs"
+               initial={{ opacity: 0, scale: 0.9 }}
+               animate={{ opacity: 1, scale: 1 }}
+             >
+               <img
+                 src={part.gifUrl}
+                 alt={part.gifAlt || 'GIF'}
+                 className="rounded-lg"
+                 loading="lazy"
+               />
+             </motion.div>
             ) : part.type === 'images' && part.images ? (
               <div key={index} className="flex gap-2 overflow-x-auto pb-2 my-2 scrollbar-thin scrollbar-thumb-border">
                 {part.images.map((img, imgIdx) => (
