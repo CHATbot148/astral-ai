@@ -102,8 +102,10 @@ export const Sidebar = ({
   const handleSelectConversation = (conv: Conversation) => {
     if (!editingId) {
       onSelectConversation(conv);
-      // Auto-close sidebar on mobile after selecting a chat
-      onClose();
+      // Auto-close sidebar on mobile only (< 1024px = lg breakpoint)
+      if (window.innerWidth < 1024) {
+        onClose();
+      }
     }
   };
 

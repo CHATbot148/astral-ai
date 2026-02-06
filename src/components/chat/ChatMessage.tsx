@@ -155,42 +155,27 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
     return { images, cleanText };
   };
 
-  // Parse content into parts (text, code blocks, images)
+  // Parse content into parts (text, code blocks, images, gifs)
   const parsedContent = useMemo(() => {
-     const parts: Array<{ type: 'text' | 'code' | 'images' | 'gif'; content: string; language?: string; images?: Array<{ alt: string; url: string }>; gifUrl?: string; gifAlt?: string }> = [];
+    const parts: Array<{ type: 'text' | 'code' | 'images' | 'gif'; content: string; language?: string; images?: Array<{ alt: string; url: string }>; gifUrl?: string; gifAlt?: string }> = [];
     const codeBlockRegex = /```(\w+)?\n?([\s\S]*?)```/g;
-     const gifRegex = /!\[([^\]]*)\]\((https?:\/\/[^\)]*giphy[^\)]+)\)/g;
+    
+    // First, extract GIFs and remove any URL text that follows them
+    let processedContent = content;
+    
+    // Remove standalone Giphy URLs (shown below GIFs) - these should not be displayed
+    processedContent = processedContent.replace(/\n?https?:\/\/[^\s]*giphy[^\s]*/gi, '');
+    
+    // Match GIFs - both markdown format and plain URLs
+    const gifRegex = /!\[([^\]]*)\]\((https?:\/\/[^\)]*(?:giphy|tenor)[^\)]+)\)/g;
     
     let lastIndex = 0;
     let match;
     
-    while ((match = codeBlockRegex.exec(content)) !== null) {
+    while ((match = codeBlockRegex.exec(processedContent)) !== null) {
       if (match.index > lastIndex) {
-        const textPart = content.slice(lastIndex, match.index);
-         // Check for GIFs first
-         const gifMatch = gifRegex.exec(textPart);
-         if (gifMatch) {
-           const beforeGif = textPart.slice(0, gifMatch.index);
-           const afterGif = textPart.slice(gifMatch.index + gifMatch[0].length);
-        
-           if (beforeGif.trim()) {
-             const { images, cleanText } = extractImages(beforeGif);
-             if (cleanText) parts.push({ type: 'text', content: cleanText });
-             if (images.length > 0) parts.push({ type: 'images', content: '', images });
-           }
-           
-           parts.push({ type: 'gif', content: '', gifUrl: gifMatch[2], gifAlt: gifMatch[1] });
-           
-           if (afterGif.trim()) {
-             const { images, cleanText } = extractImages(afterGif);
-             if (cleanText) parts.push({ type: 'text', content: cleanText });
-             if (images.length > 0) parts.push({ type: 'images', content: '', images });
-           }
-         } else {
-           const { images, cleanText } = extractImages(textPart);
-           if (cleanText) parts.push({ type: 'text', content: cleanText });
-           if (images.length > 0) parts.push({ type: 'images', content: '', images });
-        }
+        const textPart = processedContent.slice(lastIndex, match.index);
+        processTextPart(textPart, parts, gifRegex);
       }
       parts.push({ 
         type: 'code', 
@@ -200,37 +185,52 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
       lastIndex = match.index + match[0].length;
     }
     
-    if (lastIndex < content.length) {
-      const textPart = content.slice(lastIndex);
-       // Check for GIFs
-       gifRegex.lastIndex = 0;
-       const gifMatch = gifRegex.exec(textPart);
-       if (gifMatch) {
-         const beforeGif = textPart.slice(0, gifMatch.index);
-         const afterGif = textPart.slice(gifMatch.index + gifMatch[0].length);
-      
-         if (beforeGif.trim()) {
-           const { images, cleanText } = extractImages(beforeGif);
-           if (cleanText) parts.push({ type: 'text', content: cleanText });
-           if (images.length > 0) parts.push({ type: 'images', content: '', images });
-         }
-         
-         parts.push({ type: 'gif', content: '', gifUrl: gifMatch[2], gifAlt: gifMatch[1] });
-         
-         if (afterGif.trim()) {
-           const { images, cleanText } = extractImages(afterGif);
-           if (cleanText) parts.push({ type: 'text', content: cleanText });
-           if (images.length > 0) parts.push({ type: 'images', content: '', images });
-         }
-       } else {
-         const { images, cleanText } = extractImages(textPart);
-         if (cleanText) parts.push({ type: 'text', content: cleanText });
-         if (images.length > 0) parts.push({ type: 'images', content: '', images });
-      }
+    if (lastIndex < processedContent.length) {
+      const textPart = processedContent.slice(lastIndex);
+      processTextPart(textPart, parts, gifRegex);
     }
     
     return parts;
   }, [content]);
+
+  // Helper function to process text parts for GIFs and images
+  function processTextPart(
+    textPart: string,
+    parts: Array<{ type: 'text' | 'code' | 'images' | 'gif'; content: string; language?: string; images?: Array<{ alt: string; url: string }>; gifUrl?: string; gifAlt?: string }>,
+    gifRegex: RegExp
+  ) {
+    gifRegex.lastIndex = 0;
+    let lastGifIndex = 0;
+    let gifMatch;
+    let gifCount = 0;
+    const maxGifs = 2; // Limit to 2 GIFs per message
+    
+    while ((gifMatch = gifRegex.exec(textPart)) !== null && gifCount < maxGifs) {
+      if (gifMatch.index > lastGifIndex) {
+        const beforeGif = textPart.slice(lastGifIndex, gifMatch.index);
+        if (beforeGif.trim()) {
+          const { images, cleanText } = extractImages(beforeGif);
+          if (cleanText) parts.push({ type: 'text', content: cleanText });
+          if (images.length > 0) parts.push({ type: 'images', content: '', images });
+        }
+      }
+      
+      parts.push({ type: 'gif', content: '', gifUrl: gifMatch[2], gifAlt: gifMatch[1] });
+      lastGifIndex = gifMatch.index + gifMatch[0].length;
+      gifCount++;
+    }
+    
+    if (lastGifIndex < textPart.length) {
+      const remainingText = textPart.slice(lastGifIndex);
+      // Remove any leftover GIF markdown beyond the limit
+      const cleanedRemaining = remainingText.replace(/!\[([^\]]*)\]\((https?:\/\/[^\)]*(?:giphy|tenor)[^\)]+)\)/g, '');
+      if (cleanedRemaining.trim()) {
+        const { images, cleanText } = extractImages(cleanedRemaining);
+        if (cleanText) parts.push({ type: 'text', content: cleanText });
+        if (images.length > 0) parts.push({ type: 'images', content: '', images });
+      }
+    }
+  }
 
   // Format text with markdown-like features
    // Format text with markdown-like features and better paragraph spacing
@@ -504,7 +504,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
            ) : part.type === 'gif' && part.gifUrl ? (
              <motion.div 
                key={index} 
-               className="my-3 max-w-xs"
+               className="my-2 block"
                initial={{ opacity: 0, scale: 0.9 }}
                animate={{ opacity: 1, scale: 1 }}
              >
@@ -512,6 +512,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
                  src={part.gifUrl}
                  alt={part.gifAlt || 'GIF'}
                  className="rounded-lg"
+                 style={{ width: '100px', height: '100px', objectFit: 'cover' }}
                  loading="lazy"
                />
              </motion.div>

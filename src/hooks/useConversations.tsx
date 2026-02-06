@@ -184,10 +184,43 @@ export const useConversations = () => {
     }
   };
 
-  const updateMessage = (messageId: string, content: string) => {
-    setMessages(prev => prev.map(msg => 
-      msg.id === messageId ? { ...msg, content } : msg
-    ));
+  const updateMessage = async (messageId: string, content: string) => {
+    try {
+      const { error } = await supabase
+        .from('messages')
+        .update({ content })
+        .eq('id', messageId);
+      
+      if (error) throw error;
+      
+      setMessages(prev => prev.map(msg => 
+        msg.id === messageId ? { ...msg, content } : msg
+      ));
+    } catch (error) {
+      console.error('Error updating message:', error);
+    }
+  };
+
+  // Delete messages from a specific index onwards (for edit functionality)
+  const deleteMessagesFrom = async (conversationId: string, fromIndex: number) => {
+    try {
+      const messagesToDelete = messages.slice(fromIndex);
+      const idsToDelete = messagesToDelete.map(m => m.id);
+      
+      if (idsToDelete.length === 0) return;
+      
+      const { error } = await supabase
+        .from('messages')
+        .delete()
+        .in('id', idsToDelete);
+      
+      if (error) throw error;
+      
+      setMessages(prev => prev.slice(0, fromIndex));
+    } catch (error) {
+      console.error('Error deleting messages:', error);
+      throw error;
+    }
   };
 
   const deleteConversation = async (conversationId: string) => {
@@ -252,6 +285,7 @@ export const useConversations = () => {
     createConversation,
     addMessage,
     updateMessage,
+    deleteMessagesFrom,
     deleteConversation,
     renameConversation,
     startNewChat,

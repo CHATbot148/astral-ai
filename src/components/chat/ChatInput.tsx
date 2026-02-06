@@ -1,12 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Mic, MicOff, Plus, X, Loader2, FileText, Square, Phone, Image as ImageIcon } from 'lucide-react';
+import { Send, Mic, MicOff, Plus, X, Loader2, FileText, Square, Phone, Image as ImageIcon, Smile } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { VoiceVisualizer } from './VoiceVisualizer';
 import { cn } from '@/lib/utils';
 import { useMicVisualizer } from '@/hooks/useMicVisualizer';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface ChatInputProps {
   onSend: (message: string, files?: File[]) => void;
@@ -33,6 +35,11 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
   const [filePreviews, setFilePreviews] = useState<{ file: File; preview: string | null }[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [showGifPicker, setShowGifPicker] = useState(false);
+  const [gifSearch, setGifSearch] = useState('');
+  const [gifs, setGifs] = useState<Array<{ url: string; title: string }>>([]);
+  const [loadingGifs, setLoadingGifs] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -78,6 +85,53 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
     generatePreviews();
   }, [files]);
 
+  // Load trending GIFs when picker opens
+  useEffect(() => {
+    if (showGifPicker && gifs.length === 0) {
+      searchGifs('trending');
+    }
+  }, [showGifPicker]);
+
+  const searchGifs = async (query: string) => {
+    setLoadingGifs(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('fetch-gif', {
+        body: { query: query || 'trending', limit: 20 }
+      });
+      
+      if (error) throw error;
+      setGifs(data?.gifs || []);
+    } catch (e) {
+      console.error('GIF search error:', e);
+    } finally {
+      setLoadingGifs(false);
+    }
+  };
+
+  const handleGifSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (gifSearch.trim()) {
+      searchGifs(gifSearch.trim());
+    }
+  };
+
+  const insertGif = (gifUrl: string) => {
+    // Insert GIF as markdown at cursor position
+    const textarea = textareaRef.current;
+    if (textarea) {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const gifMarkdown = `![GIF](${gifUrl})`;
+      const newMessage = message.slice(0, start) + gifMarkdown + message.slice(end);
+      setMessage(newMessage);
+    } else {
+      setMessage(prev => prev + `![GIF](${gifUrl})`);
+    }
+    setShowGifPicker(false);
+    setShowAttachMenu(false);
+    textareaRef.current?.focus();
+  };
+
   const handleSubmit = () => {
     if ((!message.trim() && files.length === 0) || isLoading || disabled) return;
     onSend(message.trim(), files.length > 0 ? files : undefined);
@@ -103,6 +157,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
     if (e.target.files) {
       setFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
     }
+    setShowAttachMenu(false);
   };
 
   const removeFile = (index: number) => {
@@ -289,6 +344,62 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
         )}
       </AnimatePresence>
 
+      {/* GIF Picker */}
+      <AnimatePresence>
+        {showGifPicker && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="mb-3 bg-secondary rounded-xl border border-border p-3"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium">GIFs</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={() => setShowGifPicker(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <form onSubmit={handleGifSearch} className="mb-2">
+              <Input
+                placeholder="Search GIFs..."
+                value={gifSearch}
+                onChange={(e) => setGifSearch(e.target.value)}
+                className="h-8 text-sm"
+              />
+            </form>
+            <ScrollArea className="h-40">
+              {loadingGifs ? (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <div className="grid grid-cols-4 gap-2">
+                  {gifs.map((gif, index) => (
+                    <button
+                      key={index}
+                      onClick={() => insertGif(gif.url)}
+                      className="rounded-lg overflow-hidden hover:ring-2 hover:ring-xai-cyan transition-all"
+                    >
+                      <img
+                        src={gif.url}
+                        alt={gif.title}
+                        className="w-full h-16 object-cover"
+                        loading="lazy"
+                      />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Transcribing indicator */}
       <AnimatePresence>
         {isTranscribing && (
@@ -316,18 +427,52 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
       {/* Input Bar - Matches reference design */}
       <div className="flex items-end gap-2">
         {/* Attachment Button - Outside input, circular */}
-        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-shrink-0">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={disabled || isRecording || isLoading}
-            className="h-10 w-10 rounded-full bg-secondary hover:bg-secondary/80"
-            aria-label="Attach files"
-          >
-            <Plus className="h-5 w-5" />
-          </Button>
-        </motion.div>
+        <div className="relative">
+          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-shrink-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowAttachMenu(!showAttachMenu)}
+              disabled={disabled || isRecording || isLoading}
+              className="h-10 w-10 rounded-full bg-secondary hover:bg-secondary/80"
+              aria-label="Attach files"
+            >
+              <Plus className="h-5 w-5" />
+            </Button>
+          </motion.div>
+
+          {/* Attachment Menu */}
+          <AnimatePresence>
+            {showAttachMenu && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                className="absolute bottom-full left-0 mb-2 bg-popover border border-border rounded-lg shadow-lg overflow-hidden"
+              >
+                <button
+                  onClick={() => {
+                    fileInputRef.current?.click();
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 hover:bg-secondary w-full text-left text-sm"
+                >
+                  <FileText className="h-4 w-4" />
+                  Files
+                </button>
+                <button
+                  onClick={() => {
+                    setShowGifPicker(true);
+                    setShowAttachMenu(false);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 hover:bg-secondary w-full text-left text-sm"
+                >
+                  <Smile className="h-4 w-4" />
+                  GIFs
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
         {/* Main Input Container */}
         {isRecording ? (

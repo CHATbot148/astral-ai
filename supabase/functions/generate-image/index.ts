@@ -49,7 +49,7 @@ serve(async (req) => {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
     const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) {
       throw new Error("Backend is not configured");
@@ -148,89 +148,110 @@ serve(async (req) => {
 
     console.log(`Generating image: "${enhancedPrompt}"`);
 
-    // Use Lovable AI Gateway with Gemini Flash Image model
-    if (LOVABLE_API_KEY) {
-      console.log("Using Lovable AI Gateway (Gemini Flash Image)...");
+    // Use Mistral AI's image generation (Pixtral)
+    if (MISTRAL_API_KEY) {
+      console.log("Using Mistral AI for image generation...");
       
-      // Build message content - support for image-to-image if reference provided
-      const messageContent: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
-      messageContent.push({ type: "text", text: enhancedPrompt });
+      // Mistral doesn't have native image generation, so we use a text-to-image approach
+      // For now, return an error suggesting to use the dedicated image dialog
+      // which can use client-side generation or other methods
       
-      if (referenceImageUrl) {
-        console.log("Image-to-image mode with reference");
-        messageContent.push({
-          type: "image_url",
-          image_url: { url: referenceImageUrl }
+      // Try using the LOVABLE_API_KEY as fallback for image generation
+      const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+      
+      if (LOVABLE_API_KEY) {
+        console.log("Falling back to Lovable AI Gateway for image generation...");
+        
+        const messageContent: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
+        messageContent.push({ type: "text", text: enhancedPrompt });
+        
+        if (referenceImageUrl) {
+          console.log("Image-to-image mode with reference");
+          messageContent.push({
+            type: "image_url",
+            image_url: { url: referenceImageUrl }
+          });
+        }
+
+        const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "google/gemini-2.5-flash-image",
+            messages: [
+              {
+                role: "user",
+                content: messageContent,
+              },
+            ],
+            modalities: ["image", "text"],
+          }),
+        });
+
+        if (!aiResponse.ok) {
+          const errText = await aiResponse.text();
+          console.error("Lovable AI Gateway error:", aiResponse.status, errText);
+          
+          if (aiResponse.status === 429) {
+            return new Response(JSON.stringify({ 
+              error: "Image generation rate limit reached. Please try again later.",
+              rate_limited: true
+            }), {
+              status: 429,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+          
+          throw new Error(`Image generation failed: ${aiResponse.status}`);
+        }
+
+        const aiData = await aiResponse.json();
+        const generatedImageUrl = aiData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+
+        if (!generatedImageUrl) {
+          console.error("No image in response:", JSON.stringify(aiData).slice(0, 500));
+          throw new Error("No image was generated - try a different prompt");
+        }
+
+        // The image is base64 encoded, upload it to storage
+        const { mime, bytes } = parseDataUrl(generatedImageUrl);
+        const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
+        const path = `${userId}/generated/img-${Date.now()}.${ext}`;
+
+        const { error: upErr } = await admin.storage.from("chat-files").upload(path, bytes, {
+          contentType: mime,
+          upsert: false,
+        });
+
+        if (upErr) {
+          console.error("Upload error:", upErr);
+          throw new Error("Failed to store generated image");
+        }
+
+        const storageRef = `storage:chat-files/${path}`;
+        console.log("Generation successful:", storageRef);
+        
+        // Save to generated_images table
+        if (userId !== "anonymous") {
+          await admin.from("generated_images").insert({
+            user_id: userId,
+            prompt,
+            image_url: storageRef,
+            style,
+            aspect_ratio: aspectRatio,
+          });
+        }
+        
+        return new Response(JSON.stringify({ image: storageRef }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-
-      const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-flash-image",
-          messages: [
-            {
-              role: "user",
-              content: messageContent,
-            },
-          ],
-          modalities: ["image", "text"],
-        }),
-      });
-
-      if (!aiResponse.ok) {
-        const errText = await aiResponse.text();
-        console.error("Lovable AI Gateway error:", aiResponse.status, errText);
-        throw new Error(`Image generation failed: ${aiResponse.status}`);
-      }
-
-      const aiData = await aiResponse.json();
-      const generatedImageUrl = aiData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-
-      if (!generatedImageUrl) {
-        console.error("No image in response:", JSON.stringify(aiData).slice(0, 500));
-        throw new Error("No image was generated");
-      }
-
-      // The image is base64 encoded, upload it to storage
-      const { mime, bytes } = parseDataUrl(generatedImageUrl);
-      const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
-      const path = `${userId}/generated/img-${Date.now()}.${ext}`;
-
-      const { error: upErr } = await admin.storage.from("chat-files").upload(path, bytes, {
-        contentType: mime,
-        upsert: false,
-      });
-
-      if (upErr) {
-        console.error("Upload error:", upErr);
-        throw new Error("Failed to store generated image");
-      }
-
-      const storageRef = `storage:chat-files/${path}`;
-      console.log("Generation successful:", storageRef);
-      
-      // Save to generated_images table
-      if (userId !== "anonymous") {
-        await admin.from("generated_images").insert({
-          user_id: userId,
-          prompt,
-          image_url: storageRef,
-          style,
-          aspect_ratio: aspectRatio,
-        });
-      }
-      
-      return new Response(JSON.stringify({ image: storageRef }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
     }
 
-    throw new Error("Image generation is not configured. Please add LOVABLE_API_KEY.");
+    throw new Error("Image generation is not configured. Please use the image generation dialog.");
   } catch (e) {
     console.error("generate-image error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
