@@ -62,7 +62,8 @@ export const ChatContainer = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [showVoiceCall, setShowVoiceCall] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
-  const [editingMessage, setEditingMessage] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingMessageContent, setEditingMessageContent] = useState<string | null>(null);
   const [showImageDialog, setShowImageDialog] = useState(false);
   const [imageDialogPrompt, setImageDialogPrompt] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -78,6 +79,7 @@ export const ChatContainer = () => {
     selectConversation,
     createConversation,
     addMessage,
+    deleteMessagesFrom,
     deleteConversation,
     renameConversation,
     startNewChat,
@@ -270,8 +272,16 @@ export const ChatContainer = () => {
     }
   };
 
-  const handleEditMessage = (content: string) => {
-    setEditingMessage(content);
+  // Handle edit message - stores message ID and content for revert
+  const handleEditMessage = (messageId: string, content: string) => {
+    setEditingMessageId(messageId);
+    setEditingMessageContent(content);
+  };
+
+  // Clear edit state
+  const clearEdit = () => {
+    setEditingMessageId(null);
+    setEditingMessageContent(null);
   };
 
   const uploadFiles = async (files: File[]): Promise<string[]> => {
@@ -300,6 +310,26 @@ export const ChatContainer = () => {
   };
 
   const handleSend = async (content: string, files?: File[]) => {
+    // Check if this is an edit - if so, delete messages from the edited message onwards
+    if (editingMessageId && currentConversation?.id) {
+      const messageIndex = messages.findIndex(m => m.id === editingMessageId);
+      if (messageIndex !== -1) {
+        try {
+          await deleteMessagesFrom(currentConversation.id, messageIndex);
+        } catch (error) {
+          console.error('Failed to delete messages for edit:', error);
+          toast({
+            title: 'Edit failed',
+            description: 'Could not revert messages. Please try again.',
+            variant: 'destructive',
+          });
+          clearEdit();
+          return;
+        }
+      }
+      clearEdit();
+    }
+
     if (!content.trim() && (!files || files.length === 0)) return;
 
     // Image-only conversations: only allow image requests and open the dialog directly.
@@ -683,7 +713,7 @@ export const ChatContainer = () => {
                       fileUrls={msg.file_urls}
                       userAvatar={profile?.avatar_url}
                       userName={profile?.full_name}
-                      onEdit={canEdit ? handleEditMessage : undefined}
+                      onEdit={canEdit ? (content: string) => handleEditMessage(msg.id, content) : undefined}
                       canEdit={canEdit}
                     />
                   );
@@ -742,8 +772,8 @@ export const ChatContainer = () => {
           isLoading={isLoading} 
           disabled={!user}
           onStop={isLoading ? stopGeneration : undefined}
-          editValue={editingMessage}
-          onClearEdit={() => setEditingMessage(null)}
+          editValue={editingMessageContent}
+          onClearEdit={clearEdit}
           onStartCall={user ? () => setShowVoiceCall(true) : undefined}
           onOpenImageDialog={openImageDialog}
         />

@@ -159,7 +159,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
       console.log("Transcribed:", transcript);
 
-      // Get AI response
+      // Get AI response - pass voice mode flag for plain text responses
       const chatResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
         method: "POST",
         headers: {
@@ -169,6 +169,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         },
         body: JSON.stringify({
           messages: [{ role: "user", content: transcript }],
+          isVoiceMode: true, // This will make AI respond with plain text only
         }),
       });
 

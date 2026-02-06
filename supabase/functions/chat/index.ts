@@ -6,44 +6,57 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
- // AI Mode system prompts
- const MODE_PROMPTS: Record<string, string> = {
-   professional: `
- PERSONALITY MODE: Professional
- - Be extremely concise and direct. No fluff.
- - Avoid small talk, pleasantries like "Great question!" or "How's your day?"
- - Get straight to the point with factual, efficient responses
- - Use bullet points and structured formats
- - Maintain a business-like tone without being cold
- - Focus purely on delivering accurate, helpful information
- - Do NOT ask unnecessary follow-up questions unless critical`,
+// AI Mode system prompts
+const MODE_PROMPTS: Record<string, string> = {
+  professional: `
+PERSONALITY MODE: Professional
+- Be extremely concise and direct. No fluff.
+- Avoid small talk, pleasantries like "Great question!" or "How's your day?"
+- Get straight to the point with factual, efficient responses
+- Use bullet points and structured formats
+- Maintain a business-like tone without being cold
+- Focus purely on delivering accurate, helpful information
+- Do NOT ask unnecessary follow-up questions unless critical
+- NO emojis, NO GIFs, NO bold text for emphasis`,
 
-   smart_friendly: `
- PERSONALITY MODE: Smart & Friendly (Default)
- - Be helpful, friendly, and conversational
- - Strike a balance between warmth and efficiency
- - Engage naturally without being overly formal or too casual
- - Be encouraging and supportive while staying on topic`,
+  smart_friendly: `
+PERSONALITY MODE: Smart & Friendly (Default)
+- Be helpful, friendly, and conversational
+- Strike a balance between warmth and efficiency
+- Engage naturally without being overly formal or too casual
+- Be encouraging and supportive while staying on topic`,
 
-   highly_courteous: `
- PERSONALITY MODE: Highly Courteous
- - Be exceptionally warm, friendly, and expressive
- - Show genuine enthusiasm and care for the user
- - Use emojis occasionally to add warmth 😊
- - Adapt your tone to match the user's mood
- - When the mood calls for it, include GIFs using: [GIF:keyword]
- - GIF triggers:
-   * User says something funny → [GIF:laughing]
-   * User is bored → [GIF:party]
-   * User thanks you → [GIF:thank you]
-   * User accomplishes something → [GIF:celebration]
-   * User is sad → [GIF:hug]
-   * General excitement → [GIF:excited]
- - Be encouraging and supportive
- - Make the conversation feel like chatting with a caring friend`,
- };
+  highly_courteous: `
+PERSONALITY MODE: Highly Courteous
+- Be exceptionally warm, friendly, and expressive
+- Show genuine enthusiasm and care for the user
+- Use emojis occasionally to add warmth 😊
+- Adapt your tone to match the user's mood
+- When the mood calls for it, include GIFs using: [GIF:keyword]
+- GIF triggers (use sparingly, max 2 per message):
+  * User says something funny → [GIF:laughing]
+  * User is bored → [GIF:party]
+  * User thanks you → [GIF:thank you]
+  * User accomplishes something → [GIF:celebration]
+  * User is sad → [GIF:hug]
+  * General excitement → [GIF:excited]
+- Be encouraging and supportive
+- Make the conversation feel like chatting with a caring friend`,
+};
 
-// Intent detection patterns
+// Voice mode restrictions
+const VOICE_MODE_RESTRICTIONS = `
+VOICE MODE ACTIVE - STRICT FORMATTING RULES:
+- Use ONLY plain text with punctuation marks
+- NO emojis whatsoever
+- NO GIFs or [GIF:...] tags
+- NO bold text (**text**) or italic (*text*)
+- NO markdown formatting
+- Keep responses conversational and natural for speech
+- Numbers should be written as words when short (one, two, three)
+`;
+
+// Web search intent patterns
 const WEB_SEARCH_PATTERNS = [
   /search (?:for |the web for |online for )?(.+)/i,
   /look up (.+)/i,
@@ -51,7 +64,6 @@ const WEB_SEARCH_PATTERNS = [
   /what(?:'s| is) the latest (?:news |info )?(?:on |about )?(.+)/i,
   /(?:can you |please )?google (.+)/i,
   /what(?:'s| is) happening (?:with |in )?(.+)/i,
-  /(?:tell me about|what do you know about) (.+) (?:today|now|currently|recently)/i,
   /who is (.+)/i,
   /when (?:is|was|did) (.+)/i,
   /where (?:is|was|can I find) (.+)/i,
@@ -61,42 +73,21 @@ const IMAGE_FETCH_PATTERNS = [
   /show me (?:an? )?(?:image|picture|photo)s? of (.+)/i,
   /(?:can you |please )?(?:find|get|fetch) (?:an? )?(?:image|picture|photo)s? of (.+)/i,
   /what does (.+) look like/i,
-  /(?:show|display) (?:me )?(.+) (?:image|picture|photo)s?/i,
-  /i want to see (.+)/i,
   /images? of (.+)/i,
 ];
 
-const VIDEO_FETCH_PATTERNS = [
-  /show me (?:a )?video(?:s)? (?:of |about |on )?(.+)/i,
-  /(?:find|get|fetch) (?:a )?video(?:s)? (?:of |about |on )?(.+)/i,
-  /video tutorial(?:s)? (?:on |about |for )?(.+)/i,
-  /how to (.+) video/i,
-];
-
-// List patterns - for inline image display
-const LIST_PATTERNS = [
-  /(?:list|tell me|give me|what are) (?:the )?(best|top|\d+) (.+)/i,
-  /(?:best|top) (\d+) (.+)/i,
-  /recommend (?:me )?(?:some )?(.+)/i,
-];
-
-const REMINDER_PATTERNS = [
-  /remind me (?:to |about )?(.+) (?:at|on|in) (.+)/i,
-  /set a reminder (?:for |to )?(.+) (?:at|on|in) (.+)/i,
-  /message me (?:about )?(.+) (?:at|on|in) (.+)/i,
-  /notify me (?:about )?(.+) (?:at|on|in) (.+)/i,
-];
-
-// Image generation detection
+// Image generation detection - be very specific
 const IMAGE_GENERATION_PATTERNS = [
-   /generate (?:an? |me )?(?:image|picture|photo|illustration|art|artwork)/i,
-   /create (?:an? |me )?(?:image|picture|photo|illustration|art|artwork)/i,
-   /make (?:me )?(?:an? )?(?:image|picture|photo|illustration|art|artwork)/i,
-   /draw (?:me )?(?:an? )?(.+)/i,
-   /visuali[sz]e (.+)/i,
-   /show me (?:a |an )?(?:drawing|illustration|picture|image) of (.+)/i,
-   /can you (?:generate|create|make|draw) (.+)/i,
+  /^generate (?:an? |me )?(?:image|picture|photo|illustration|art)/i,
+  /^create (?:an? |me )?(?:image|picture|photo|illustration|art)/i,
+  /^make (?:me )?(?:an? )?(?:image|picture|photo|illustration)/i,
+  /^draw (?:me )?(?:an? )?(.+)/i,
+  /^visuali[sz]e (.+)/i,
+  /^(?:can you |please )?(?:generate|create|make|draw) (?:an? )?(?:image|picture|photo|illustration)/i,
 ];
+
+// Style keywords for image generation
+const STYLE_KEYWORDS = ['sketch', 'anime', 'cinematic', 'photoreal', 'realistic', 'cartoon', 'painting', 'watercolor', 'oil painting', '3d render'];
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -104,14 +95,13 @@ serve(async (req) => {
   }
 
   try {
-     const { messages, fileContext, userId: _userId, timeZone, clientTimeISO, aiMode, followUpQuestions } = await req.json();
+    const { messages, fileContext, timeZone, clientTimeISO, aiMode, followUpQuestions, isVoiceMode } = await req.json();
     const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    // Always derive user id from the JWT (prevents cross-account memory bleed)
+    // Derive user id from JWT
     const authHeader = req.headers.get("Authorization") || "";
     const jwt = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
 
@@ -125,7 +115,7 @@ serve(async (req) => {
       if (data?.user?.id) userId = data.user.id;
     }
 
-    // Fetch user memory (service role) - ONLY personal info for this specific user
+    // Fetch user memory
     let userMemory = "";
     if (userId && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
       const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -136,12 +126,12 @@ serve(async (req) => {
 
       if (memories && memories.length > 0) {
         userMemory =
-          "\n\nUser Information (remember this about the user - these are facts they've shared with you):\n" +
+          "\n\nUser Information (facts they've shared with you):\n" +
           memories.map((m) => `- ${m.key}: ${m.value}`).join("\n");
       }
     }
 
-    // Current time context (helps prevent "living in 2023" answers)
+    // Current time context
     let timeContext = "";
     try {
       const tz = typeof timeZone === "string" && timeZone ? timeZone : undefined;
@@ -149,185 +139,127 @@ serve(async (req) => {
       const display = tz
         ? now.toLocaleString("en-US", { timeZone: tz, weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })
         : now.toUTCString();
-      timeContext = `\n\nCurrent date/time for the user${tz ? ` (${tz})` : ""}: ${display}. Always use this as the "today" reference.`;
+      timeContext = `\n\nCurrent date/time for the user${tz ? ` (${tz})` : ""}: ${display}.`;
     } catch {
       // ignore
     }
 
-    // Detect special intents in the last user message
+    // Get last user message
     const lastUserMessage = messages.filter((m: { role: string }) => m.role === "user").pop();
     const lastContent = lastUserMessage?.content || "";
     
     let searchContext = "";
     let mediaContext = "";
-    let webImages: any[] = [];
-    let isListRequest = false;
-    let listTopic = "";
-     let shouldGenerateImage = false;
-     let imagePrompt = "";
+    let shouldGenerateImage = false;
+    let imagePrompt = "";
+    let detectedStyle = "photoreal";
 
-    // Check for image generation request - provide guidance
+    // Check for image generation request - be very strict
     for (const pattern of IMAGE_GENERATION_PATTERNS) {
-       const match = lastContent.match(pattern);
-       if (match) {
-         shouldGenerateImage = true;
-         // Extract the prompt from the match
-         imagePrompt = match[1]?.trim() || lastContent.replace(pattern, '').trim() || lastContent;
+      if (pattern.test(lastContent)) {
+        shouldGenerateImage = true;
+        // Extract prompt by removing the trigger words
+        imagePrompt = lastContent
+          .replace(/^(generate|create|make|draw|visuali[sz]e)\s*(me\s*)?(an?\s*)?(image|picture|photo|illustration|art|artwork)?\s*(of\s*)?/i, '')
+          .trim() || lastContent;
+        
+        // Detect style from content
+        for (const style of STYLE_KEYWORDS) {
+          if (lastContent.toLowerCase().includes(style)) {
+            if (style === 'sketch') detectedStyle = 'sketch';
+            else if (style === 'anime' || style === 'cartoon') detectedStyle = 'anime';
+            else if (style === 'cinematic') detectedStyle = 'cinematic';
+            else detectedStyle = 'photoreal';
+            break;
+          }
+        }
         break;
       }
     }
 
-    // Check for list request (for inline images)
-    for (const pattern of LIST_PATTERNS) {
-      const match = lastContent.match(pattern);
-      if (match) {
-        isListRequest = true;
-        listTopic = match[2] || match[1];
-        break;
+    // Check for web search intent (only if not generating image)
+    if (!shouldGenerateImage) {
+      for (const pattern of WEB_SEARCH_PATTERNS) {
+        const match = lastContent.match(pattern);
+        if (match) {
+          const query = match[1].trim();
+          try {
+            const searchResults = await performWebSearch(SUPABASE_URL!, query, "web");
+            if (searchResults.length > 0) {
+              searchContext = `\n\n[Web Search Results for "${query}"]:\n` +
+                searchResults.map((r: any, i: number) => `${i + 1}. ${r.title}\n   ${r.snippet}\n   Source: ${r.url}`).join("\n\n");
+            }
+          } catch (e) {
+            console.error("Web search error:", e);
+          }
+          break;
+        }
       }
-    }
 
-    // Check for web search intent
-    for (const pattern of WEB_SEARCH_PATTERNS) {
-      const match = lastContent.match(pattern);
-      if (match) {
-        const query = match[1].trim();
-        try {
-          const searchResults = await performWebSearch(SUPABASE_URL!, query, "web");
-          if (searchResults.length > 0) {
-            searchContext = `\n\n[Web Search Results for "${query}"]:\n` +
-              searchResults.map((r: any, i: number) => `${i + 1}. ${r.title}\n   ${r.snippet}\n   Source: ${r.url}`).join("\n\n");
-            
-            // Also fetch related images automatically (3-5)
+      // Check for image fetch intent
+      for (const pattern of IMAGE_FETCH_PATTERNS) {
+        const match = lastContent.match(pattern);
+        if (match) {
+          const query = match[1].trim();
+          try {
             const imageResults = await performWebSearch(SUPABASE_URL!, query, "images");
             if (imageResults.length > 0) {
-              webImages = imageResults.slice(0, 5);
-              mediaContext += `\n\n[Related Images for "${query}" - display these in a horizontal scrollable grid]:\n` +
-                webImages.map((img: any, i: number) => `- Image ${i + 1}: ${img.title} (${img.imageUrl})`).join("\n");
+              mediaContext = `\n\n[Web Images for "${query}" - display these in a scrollable grid]:\n` +
+                imageResults.slice(0, 5).map((r: any, i: number) => `${i + 1}. ![${r.title}](${r.imageUrl})`).join("\n");
             }
+          } catch (e) {
+            console.error("Image search error:", e);
           }
-        } catch (e) {
-          console.error("Web search error:", e);
+          break;
         }
-        break;
       }
     }
 
-    // Check for explicit image fetch intent
-    for (const pattern of IMAGE_FETCH_PATTERNS) {
-      const match = lastContent.match(pattern);
-      if (match) {
-        const query = match[1].trim();
-        try {
-          const imageResults = await performWebSearch(SUPABASE_URL!, query, "images");
-          if (imageResults.length > 0) {
-            webImages = imageResults.slice(0, 5);
-            mediaContext = `\n\n[Images found for "${query}" - Display these images in a horizontal scrollable grid to the user]:\n` +
-              webImages.map((r: any, i: number) => `${i + 1}. ![${r.title}](${r.imageUrl})\n   Source: ${r.source || r.url}`).join("\n\n");
-          }
-        } catch (e) {
-          console.error("Image search error:", e);
-        }
-        break;
-      }
-    }
+    // Get mode-specific prompt
+    const modePrompt = MODE_PROMPTS[aiMode] || MODE_PROMPTS['smart_friendly'];
+    
+    // Voice mode restrictions
+    const voiceRestrictions = isVoiceMode ? VOICE_MODE_RESTRICTIONS : '';
+    
+    // Follow-up questions instruction
+    const followUpInstruction = followUpQuestions 
+      ? '\n- When appropriate, ask thoughtful follow-up questions.'
+      : '\n- Do NOT ask follow-up questions unless absolutely necessary.';
 
-    // If it's a list request, fetch images for the topic
-    if (isListRequest && listTopic && !mediaContext) {
-      try {
-        const imageResults = await performWebSearch(SUPABASE_URL!, listTopic, "images");
-        if (imageResults.length > 0) {
-          webImages = imageResults.slice(0, 5);
-          mediaContext = `\n\n[Images related to "${listTopic}" - Include relevant images inline with each list item when appropriate]:\n` +
-            webImages.map((r: any, i: number) => `${i + 1}. ${r.title}: ${r.imageUrl}`).join("\n");
-        }
-      } catch (e) {
-        console.error("List image search error:", e);
-      }
-    }
-
-    // Check for video fetch intent
-    for (const pattern of VIDEO_FETCH_PATTERNS) {
-      const match = lastContent.match(pattern);
-      if (match) {
-        const query = match[1].trim();
-        try {
-          const videoResults = await performWebSearch(SUPABASE_URL!, query, "videos");
-          if (videoResults.length > 0) {
-            mediaContext += `\n\n[Videos found for "${query}" - Share these video links with the user]:\n` +
-              videoResults.map((r: any, i: number) => `${i + 1}. [${r.title}](${r.url})${r.duration ? ` (${r.duration})` : ""}\n   Source: ${r.source || "YouTube"}`).join("\n\n");
-          }
-        } catch (e) {
-          console.error("Video search error:", e);
-        }
-        break;
-      }
-    }
-
-    // Check for reminder intent
-    for (const pattern of REMINDER_PATTERNS) {
-      const match = lastContent.match(pattern);
-      if (match && userId && SUPABASE_URL) {
-        const reminderContent = match[1].trim();
-        const timeString = match[2].trim();
-        // Let AI handle the response, but mention capability
-        searchContext += `\n\n[Reminder Request]: User wants to be reminded about "${reminderContent}" at "${timeString}". You can set reminders for users.`;
-        break;
-      }
-    }
-
-     // Get mode-specific prompt
-     const modePrompt = MODE_PROMPTS[aiMode] || MODE_PROMPTS['smart_friendly'];
-     
-     // Follow-up questions instruction
-     const followUpInstruction = followUpQuestions 
-       ? '\n- When appropriate, ask thoughtful follow-up questions to provide deeper, more helpful answers.'
-       : '\n- Do NOT ask follow-up questions unless absolutely necessary for clarification.';
-
-    // X-AI identity system prompt with CONCISE behavior
+    // Build system prompt
     let systemContent = `You are X-AI, an intelligent AI assistant created by X-Tech.
 
 About X-Tech:
-- X-Tech is a software and technology company founded on September 29th, 2023
-- X-Tech was founded by Khaleel Abdallah, a 15-year-old high schooler from Nigeria
-- X-Tech currently owns and operates X-AI and WishVerse
-- WishVerse is a wish-making platform where users can make wishes, share them, and have them potentially granted by the community
-- Khaleel Abdallah is the inventor of all X-Tech creations
+- Founded September 29th, 2023 by Khaleel Abdallah, a 15-year-old high schooler from Nigeria
+- Currently owns X-AI and WishVerse
+- WishVerse is a wish-making platform
 
 About You (X-AI):
-- You are X-AI, the AI assistant product of X-Tech
-- You are helpful, friendly, and conversational
-- You have access to real-time web search when users ask for current information
-- You can find and display images and videos from the web when users request them
-${modePrompt}${followUpInstruction}
+- Helpful, friendly AI assistant
+- Access to real-time web search and image finding
+${modePrompt}${voiceRestrictions}${followUpInstruction}
 
 IMPORTANT RESPONSE GUIDELINES:
-1. BE CONCISE: Keep responses short and to the point. Don't write essays for simple questions.
-2. STRUCTURE PARAGRAPHS: Break up long text into readable paragraphs. Use spacing between ideas.
-3. PROPER NUMBERING: When making numbered lists, use sequential numbers (1, 2, 3, 4...), NOT repeating "1." for every item.
-4. CODE FORMATTING: When sharing code, ALWAYS wrap it in triple backticks with the language name, like:
-\`\`\`javascript
-// your code here
-\`\`\`
-5. LINKS: When sharing URLs, make them clickable using markdown format: [text](url)
-6. MATCH RESPONSE LENGTH TO QUESTION: Short question = short answer. Only elaborate when the user asks for details.
-7. Don't be overly formal or robotic. Be natural and conversational.
-8. IMAGES FROM WEB: When you have web images to show, format them as: ![description](url)
-9. VIDEOS: When showing video results, use clickable markdown links: [Video Title](url)
-10. EACH CHAT IS INDEPENDENT: Don't reference previous conversations. User's personal info (name, age, preferences) carries over, but conversation context does not.
-11. When displaying lists with images, show the image right after each item title using markdown image syntax.
-12. USE PARAGRAPH BREAKS: Add empty lines between different topics or ideas to improve readability.${timeContext}${userMemory}${searchContext}${mediaContext}`;
+1. BE CONCISE: Short answers for simple questions.
+2. STRUCTURE: Break long text into readable paragraphs with spacing.
+3. PROPER NUMBERING: Use sequential numbers (1, 2, 3...) not repeating 1.
+4. CODE: Always wrap in triple backticks with language name.
+5. LINKS: Use markdown format [text](url)
+6. IMAGES FROM WEB: Format as ![description](url) - NEVER put 2+ images on same line
+7. GIFs: Max 2 per message, NEVER show the URL as text, only the image
+8. Each paragraph should have a blank line before it for readability${timeContext}${userMemory}${searchContext}${mediaContext}`;
 
-     // Add image generation guidance if detected
-     if (shouldGenerateImage) {
-       systemContent += `\n\n[IMAGE GENERATION REQUEST DETECTED]
-The user wants to generate an image with prompt: "${imagePrompt}"
-RESPOND WITH: Tell them you're generating their image now, then include this special tag in your response: [GENERATE_IMAGE:${imagePrompt}]
-Example response: "I'm generating that image for you now! ✨ [GENERATE_IMAGE:${imagePrompt}]"`;
-     }
+    // Add image generation guidance if detected
+    if (shouldGenerateImage) {
+      systemContent += `\n\n[IMAGE GENERATION REQUEST DETECTED]
+The user wants to generate an image: "${imagePrompt}"
+Style detected: ${detectedStyle}
+Respond with: "I'm generating that image for you now! ✨" followed by [GENERATE_IMAGE:${imagePrompt}]
+Keep response brief.`;
+    }
 
     if (fileContext) {
-      systemContent += `\n\nAttachments: The user has shared files with you. ${fileContext}. Analyze and discuss them as needed.`;
+      systemContent += `\n\nAttachments: ${fileContext}. Analyze and discuss them as needed.`;
     }
 
     // Check if any message has images - use multimodal model if so
@@ -335,33 +267,27 @@ Example response: "I'm generating that image for you now! ✨ [GENERATE_IMAGE:${
       (msg: { imageUrls?: string[] }) => msg.imageUrls && msg.imageUrls.length > 0
     );
 
-    // Build messages array with image support for multimodal
+    // Build messages array
     const formattedMessages = messages.map(
       (msg: { role: string; content: string; imageUrls?: string[] }) => {
         if (msg.imageUrls && msg.imageUrls.length > 0) {
-          const content: Array<
-            { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }
-          > = [{ type: "text", text: msg.content }];
-
+          const content: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }> = [
+            { type: "text", text: msg.content }
+          ];
           for (const url of msg.imageUrls) {
-            content.push({
-              type: "image_url",
-              image_url: { url },
-            });
+            content.push({ type: "image_url", image_url: { url } });
           }
-
           return { role: msg.role, content };
         }
-
         return { role: msg.role, content: msg.content };
       }
     );
 
-    // Use Mistral for text-only, Gemini for multimodal (images)
+    // Use Mistral AI for text-only, Gemini for multimodal
     if (hasImages) {
-      // Use Lovable AI Gateway for multimodal (Gemini)
+      const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
       if (!LOVABLE_API_KEY) {
-        throw new Error("LOVABLE_API_KEY is not configured for image analysis");
+        throw new Error("Image analysis is not configured");
       }
 
       const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -392,7 +318,7 @@ Example response: "I'm generating that image for you now! ✨ [GENERATE_IMAGE:${
       });
     }
 
-    // Use Mistral AI for text-only conversations
+    // Use Mistral AI for text-only
     if (!MISTRAL_API_KEY) {
       throw new Error("MISTRAL_API_KEY is not configured");
     }
@@ -437,7 +363,7 @@ Example response: "I'm generating that image for you now! ✨ [GENERATE_IMAGE:${
   }
 });
 
-// Helper function to perform web search
+// Web search helper
 async function performWebSearch(supabaseUrl: string, query: string, type: string): Promise<any[]> {
   try {
     const response = await fetch(`${supabaseUrl}/functions/v1/web-search`, {
@@ -450,10 +376,7 @@ async function performWebSearch(supabaseUrl: string, query: string, type: string
       body: JSON.stringify({ query, type, count: type === "images" ? 8 : 5 }),
     });
 
-    if (!response.ok) {
-      throw new Error("Search failed");
-    }
-
+    if (!response.ok) throw new Error("Search failed");
     const data = await response.json();
     return data.results || [];
   } catch (error) {
