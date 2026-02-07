@@ -272,14 +272,15 @@ export const ChatContainer = () => {
     }
   };
 
-  // Handle edit message - stores message ID and content for revert
+  // Handle edit message - stores message ID and populates input with content
   const handleEditMessage = (messageId: string, content: string) => {
     setEditingMessageId(messageId);
+    // Set the content which will be passed to ChatInput
     setEditingMessageContent(content);
   };
 
-  // Clear edit state
-  const clearEdit = () => {
+  // Clear edit state after the message is sent and processed
+  const clearEditState = () => {
     setEditingMessageId(null);
     setEditingMessageContent(null);
   };
@@ -323,11 +324,11 @@ export const ChatContainer = () => {
             description: 'Could not revert messages. Please try again.',
             variant: 'destructive',
           });
-          clearEdit();
+          clearEditState();
           return;
         }
       }
-      clearEdit();
+      clearEditState();
     }
 
     if (!content.trim() && (!files || files.length === 0)) return;
@@ -773,7 +774,7 @@ export const ChatContainer = () => {
           disabled={!user}
           onStop={isLoading ? stopGeneration : undefined}
           editValue={editingMessageContent}
-          onClearEdit={clearEdit}
+          onClearEdit={clearEditState}
           onStartCall={user ? () => setShowVoiceCall(true) : undefined}
           onOpenImageDialog={openImageDialog}
         />

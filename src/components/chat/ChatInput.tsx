@@ -48,14 +48,15 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
 
   const { levels } = useMicVisualizer({ enabled: isRecording, bars: 12 });
 
-  // Handle edit value prop
+  // Handle edit value prop - populate the input but DON'T clear the edit state
+  // The edit state is cleared in ChatContainer after the send completes
   useEffect(() => {
     if (editValue) {
       setMessage(editValue);
       textareaRef.current?.focus();
-      if (onClearEdit) onClearEdit();
+      // DON'T call onClearEdit here - it must persist until handleSend runs
     }
-  }, [editValue, onClearEdit]);
+  }, [editValue]);
 
   useEffect(() => {
     if (textareaRef.current) {
