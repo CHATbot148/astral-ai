@@ -5,7 +5,9 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { AudioPlayer } from './AudioPlayer';
 import { ImagePreviewModal } from './ImagePreviewModal';
+import { MediaRenderer } from './MediaRenderer';
 import { resolveFileUrl } from '@/lib/storageRef';
+import { extractMediaFromMessage } from '@/utils/mediaDetector';
 import { useToast } from '@/hooks/use-toast';
 import xaiLogo from '@/assets/xai-logo.png';
 
@@ -141,41 +143,24 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
     setShowReactions(false);
   };
 
-  // Extract markdown images from text
-  const extractImages = (text: string): { images: Array<{ alt: string; url: string }>; cleanText: string } => {
-    const imageRegex = /!\[([^\]]*)\]\((https?:\/\/[^\)]+)\)/g;
-    const images: Array<{ alt: string; url: string }> = [];
-    let match;
-    
-    while ((match = imageRegex.exec(text)) !== null) {
-      images.push({ alt: match[1], url: match[2] });
-    }
-    
-    const cleanText = text.replace(imageRegex, '').trim();
-    return { images, cleanText };
-  };
 
-  // Parse content into parts (text, code blocks, images, gifs)
+  // Parse content using the new media detector
   const parsedContent = useMemo(() => {
-    const parts: Array<{ type: 'text' | 'code' | 'images' | 'gif'; content: string; language?: string; images?: Array<{ alt: string; url: string }>; gifUrl?: string; gifAlt?: string }> = [];
+    // First extract media items using the smart detector
+    const { cleanText, mediaItems } = extractMediaFromMessage(content);
+    
+    const parts: Array<{ type: 'text' | 'code' | 'media'; content: string; language?: string }> = [];
     const codeBlockRegex = /```(\w+)?\n?([\s\S]*?)```/g;
-    
-    // First, extract GIFs and remove any URL text that follows them
-    let processedContent = content;
-    
-    // Remove standalone Giphy URLs (shown below GIFs) - these should not be displayed
-    processedContent = processedContent.replace(/\n?https?:\/\/[^\s]*giphy[^\s]*/gi, '');
-    
-    // Match GIFs - both markdown format and plain URLs
-    const gifRegex = /!\[([^\]]*)\]\((https?:\/\/[^\)]*(?:giphy|tenor)[^\)]+)\)/g;
     
     let lastIndex = 0;
     let match;
     
-    while ((match = codeBlockRegex.exec(processedContent)) !== null) {
+    while ((match = codeBlockRegex.exec(cleanText)) !== null) {
       if (match.index > lastIndex) {
-        const textPart = processedContent.slice(lastIndex, match.index);
-        processTextPart(textPart, parts, gifRegex);
+        const textPart = cleanText.slice(lastIndex, match.index).trim();
+        if (textPart) {
+          parts.push({ type: 'text', content: textPart });
+        }
       }
       parts.push({ 
         type: 'code', 
@@ -185,52 +170,16 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
       lastIndex = match.index + match[0].length;
     }
     
-    if (lastIndex < processedContent.length) {
-      const textPart = processedContent.slice(lastIndex);
-      processTextPart(textPart, parts, gifRegex);
+    if (lastIndex < cleanText.length) {
+      const textPart = cleanText.slice(lastIndex).trim();
+      if (textPart) {
+        parts.push({ type: 'text', content: textPart });
+      }
     }
     
-    return parts;
+    // Add media items as a separate entry if any exist
+    return { parts, mediaItems };
   }, [content]);
-
-  // Helper function to process text parts for GIFs and images
-  function processTextPart(
-    textPart: string,
-    parts: Array<{ type: 'text' | 'code' | 'images' | 'gif'; content: string; language?: string; images?: Array<{ alt: string; url: string }>; gifUrl?: string; gifAlt?: string }>,
-    gifRegex: RegExp
-  ) {
-    gifRegex.lastIndex = 0;
-    let lastGifIndex = 0;
-    let gifMatch;
-    let gifCount = 0;
-    const maxGifs = 2; // Limit to 2 GIFs per message
-    
-    while ((gifMatch = gifRegex.exec(textPart)) !== null && gifCount < maxGifs) {
-      if (gifMatch.index > lastGifIndex) {
-        const beforeGif = textPart.slice(lastGifIndex, gifMatch.index);
-        if (beforeGif.trim()) {
-          const { images, cleanText } = extractImages(beforeGif);
-          if (cleanText) parts.push({ type: 'text', content: cleanText });
-          if (images.length > 0) parts.push({ type: 'images', content: '', images });
-        }
-      }
-      
-      parts.push({ type: 'gif', content: '', gifUrl: gifMatch[2], gifAlt: gifMatch[1] });
-      lastGifIndex = gifMatch.index + gifMatch[0].length;
-      gifCount++;
-    }
-    
-    if (lastGifIndex < textPart.length) {
-      const remainingText = textPart.slice(lastGifIndex);
-      // Remove any leftover GIF markdown beyond the limit
-      const cleanedRemaining = remainingText.replace(/!\[([^\]]*)\]\((https?:\/\/[^\)]*(?:giphy|tenor)[^\)]+)\)/g, '');
-      if (cleanedRemaining.trim()) {
-        const { images, cleanText } = extractImages(cleanedRemaining);
-        if (cleanText) parts.push({ type: 'text', content: cleanText });
-        if (images.length > 0) parts.push({ type: 'images', content: '', images });
-      }
-    }
-  }
 
   // Format text with markdown-like features
    // Format text with markdown-like features and better paragraph spacing
@@ -491,6 +440,15 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
           onClose={() => setPreviewImage(null)} 
         />
 
+        {/* Render extracted media using MediaRenderer */}
+        {parsedContent.mediaItems.length > 0 && (
+          <MediaRenderer 
+            mediaItems={parsedContent.mediaItems} 
+            isUser={isUser}
+            onImageClick={(url) => setPreviewImage(url)}
+          />
+        )}
+
         <motion.div 
           className={cn(
             "text-foreground leading-relaxed inline-block",
@@ -498,52 +456,9 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
           )}
           layout
         >
-          {parsedContent.map((part, index) => 
+          {parsedContent.parts.map((part, index) => 
             part.type === 'code' ? (
               <CodeBlock key={index} language={part.language || 'code'} code={part.content} />
-           ) : part.type === 'gif' && part.gifUrl ? (
-             <motion.div 
-               key={index} 
-               className="my-2 block"
-               initial={{ opacity: 0, scale: 0.9 }}
-               animate={{ opacity: 1, scale: 1 }}
-             >
-               <img
-                 src={part.gifUrl}
-                 alt={part.gifAlt || 'GIF'}
-                 className="rounded-lg"
-                 style={{ width: '100px', height: '100px', objectFit: 'cover' }}
-                 loading="lazy"
-               />
-             </motion.div>
-            ) : part.type === 'images' && part.images ? (
-              <div key={index} className="flex gap-2 overflow-x-auto pb-2 my-2 scrollbar-thin scrollbar-thumb-border">
-                {part.images.map((img, imgIdx) => (
-                  <a
-                    key={imgIdx}
-                    href={img.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-shrink-0 block group/img"
-                  >
-                    <div className="relative w-32 h-24 rounded-lg overflow-hidden border border-border bg-secondary">
-                      <img
-                        src={img.url}
-                        alt={img.alt}
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
-                      />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
-                        <span className="text-white text-xs">View</span>
-                      </div>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground truncate w-32 mt-1">{img.alt}</p>
-                  </a>
-                ))}
-              </div>
             ) : (
               <div key={index} className="whitespace-pre-wrap break-words">{formatText(part.content)}</div>
             )

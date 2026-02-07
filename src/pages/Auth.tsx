@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { useTheme } from '@/hooks/useTheme';
 import { supabase } from '@/integrations/supabase/client';
+import { lovable } from '@/integrations/lovable';
 import { z } from 'zod';
 import xaiLogo from '@/assets/xai-logo.png';
 
@@ -160,11 +161,22 @@ const Auth = () => {
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
-    const { error } = await signInWithGoogle();
-    if (error) {
+    try {
+      const { error } = await lovable.auth.signInWithOAuth('google', {
+        redirect_uri: window.location.origin,
+      });
+      if (error) {
+        toast({
+          title: 'Google sign in failed',
+          description: error.message,
+          variant: 'destructive',
+        });
+        setLoading(false);
+      }
+    } catch (error) {
       toast({
         title: 'Google sign in failed',
-        description: error.message,
+        description: error instanceof Error ? error.message : 'Unknown error',
         variant: 'destructive',
       });
       setLoading(false);
