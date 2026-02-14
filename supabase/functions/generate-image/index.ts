@@ -146,53 +146,123 @@ serve(async (req) => {
     const stylePrompt = STYLE_PROMPTS[style] || "";
     const enhancedPrompt = stylePrompt ? `${prompt}, ${stylePrompt}` : prompt;
 
-    console.log(`Generating image with Pollinations.ai: "${enhancedPrompt}"`);
+    console.log(`Generating image: "${enhancedPrompt}"`);
 
-    // Use Pollinations.ai as the primary image generator
-    const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(enhancedPrompt)}?nologo=true&width=1024&height=1024`;
-    
-    const pollResponse = await fetch(pollinationsUrl);
-    
-    if (!pollResponse.ok) {
-      console.error("Pollinations.ai error:", pollResponse.status);
-      throw new Error("Image generation failed. Please try again.");
+    // Try Lovable AI Gateway first (uses your Lovable credits)
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    let imageGenerated = false;
+
+    if (LOVABLE_API_KEY) {
+      try {
+        console.log("Trying Lovable AI Gateway...");
+        const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "google/gemini-2.5-flash-image",
+            messages: [{ role: "user", content: enhancedPrompt }],
+            modalities: ["image", "text"],
+          }),
+        });
+
+        if (aiResponse.ok) {
+          const aiData = await aiResponse.json();
+          const genUrl = aiData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+          if (genUrl) {
+            const { mime: m, bytes: b } = parseDataUrl(genUrl);
+            const e = m.includes("png") ? "png" : m.includes("webp") ? "webp" : "jpg";
+            const p = `${userId}/generated/img-${Date.now()}.${e}`;
+            const { error: ue } = await admin.storage.from("chat-files").upload(p, b, { contentType: m, upsert: false });
+            if (!ue) {
+              const ref = `storage:chat-files/${p}`;
+              if (userId !== "anonymous") {
+                await admin.from("generated_images").insert({ user_id: userId, prompt, image_url: ref, style, aspect_ratio: aspectRatio });
+              }
+              return new Response(JSON.stringify({ image: ref }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+          }
+        } else {
+          console.warn("Lovable AI Gateway failed:", aiResponse.status);
+        }
+      } catch (err) {
+        console.warn("Lovable AI Gateway error:", err);
+      }
     }
 
-    const imageBlob = await pollResponse.blob();
-    const arrayBuffer = await imageBlob.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
+    // Fallback: Pollinations.ai with retries
+    console.log("Falling back to Pollinations.ai...");
+    const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(enhancedPrompt)}?nologo=true&width=1024&height=1024&model=flux`;
     
-    const mime = imageBlob.type || "image/jpeg";
-    const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
-    const path = `${userId}/generated/img-${Date.now()}.${ext}`;
-
-    const { error: upErr } = await admin.storage.from("chat-files").upload(path, bytes, {
-      contentType: mime,
-      upsert: false,
-    });
-
-    if (upErr) {
-      console.error("Upload error:", upErr);
-      throw new Error("Failed to store generated image");
+    let pollResponse: Response | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        pollResponse = await fetch(pollinationsUrl);
+        if (pollResponse.ok) break;
+        console.warn(`Pollinations attempt ${attempt}/3 failed: ${pollResponse.status}`);
+      } catch (e2) {
+        console.warn(`Pollinations attempt ${attempt}/3 error:`, e2);
+      }
+      if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 2000));
     }
 
-    const storageRef = `storage:chat-files/${path}`;
-    console.log("Pollinations generation successful:", storageRef);
-    
-    // Save to generated_images table
-    if (userId !== "anonymous") {
-      await admin.from("generated_images").insert({
-        user_id: userId,
-        prompt,
-        image_url: storageRef,
-        style,
-        aspect_ratio: aspectRatio,
-      });
+    if (pollResponse && pollResponse.ok) {
+      const imageBlob = await pollResponse.blob();
+      const arrayBuffer = await imageBlob.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      
+      const mime = imageBlob.type || "image/jpeg";
+      const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
+      const path = `${userId}/generated/img-${Date.now()}.${ext}`;
+
+      const { error: upErr } = await admin.storage.from("chat-files").upload(path, bytes, { contentType: mime, upsert: false });
+      if (!upErr) {
+        const storageRef = `storage:chat-files/${path}`;
+        if (userId !== "anonymous") {
+          await admin.from("generated_images").insert({ user_id: userId, prompt, image_url: storageRef, style, aspect_ratio: aspectRatio });
+        }
+        return new Response(JSON.stringify({ image: storageRef }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
     }
-    
-    return new Response(JSON.stringify({ image: storageRef }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+
+    // Third fallback: Stability AI
+    const STABILITY_API_KEY = Deno.env.get("STABILITY_API_KEY");
+    if (STABILITY_API_KEY) {
+      console.log("Falling back to Stability AI...");
+      try {
+        const formData = new FormData();
+        formData.append("prompt", enhancedPrompt);
+        formData.append("output_format", "png");
+
+        const stabRes = await fetch("https://api.stability.ai/v2beta/stable-image/generate/sd3", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${STABILITY_API_KEY}`, Accept: "image/*" },
+          body: formData,
+        });
+
+        if (stabRes.ok) {
+          const imgArrayBuffer = await stabRes.arrayBuffer();
+          const imgBytes = new Uint8Array(imgArrayBuffer);
+          const path = `${userId}/generated/img-${Date.now()}.png`;
+          const { error: upErr } = await admin.storage.from("chat-files").upload(path, imgBytes, { contentType: "image/png", upsert: false });
+          if (!upErr) {
+            const storageRef = `storage:chat-files/${path}`;
+            if (userId !== "anonymous") {
+              await admin.from("generated_images").insert({ user_id: userId, prompt, image_url: storageRef, style, aspect_ratio: aspectRatio });
+            }
+            return new Response(JSON.stringify({ image: storageRef }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          }
+        } else {
+          console.warn("Stability AI failed:", stabRes.status);
+        }
+      } catch (stabErr) {
+        console.warn("Stability AI error:", stabErr);
+      }
+    }
+
+    throw new Error("All image generation providers are temporarily unavailable. Please try again later.");
   } catch (e) {
     console.error("generate-image error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
