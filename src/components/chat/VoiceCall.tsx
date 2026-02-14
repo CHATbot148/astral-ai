@@ -108,6 +108,41 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       // iOS requires these attributes
       audio.setAttribute("playsinline", "true");
 
+      // Start listening while AI speaks so user can interrupt
+      const startListeningForInterrupt = () => {
+        if (!streamRef.current || !isActiveRef.current || isMuted) return;
+        const interruptCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const interruptSource = interruptCtx.createMediaStreamSource(streamRef.current!);
+        const interruptAnalyser = interruptCtx.createAnalyser();
+        interruptAnalyser.fftSize = 512;
+        interruptSource.connect(interruptAnalyser);
+        const interruptData = new Uint8Array(interruptAnalyser.frequencyBinCount);
+        let speechFrames = 0;
+
+        const checkInterrupt = () => {
+          if (!audio || audio.paused || audio.ended || !isActiveRef.current) {
+            interruptCtx.close();
+            return;
+          }
+          interruptAnalyser.getByteFrequencyData(interruptData);
+          const avg = interruptData.reduce((s, v) => s + v, 0) / interruptData.length;
+          if (avg > 25) {
+            speechFrames++;
+            if (speechFrames > 8) {
+              // User is speaking — interrupt AI
+              audio.pause();
+              audio.currentTime = audio.duration; // trigger ended
+              interruptCtx.close();
+              return;
+            }
+          } else {
+            speechFrames = Math.max(0, speechFrames - 1);
+          }
+          requestAnimationFrame(checkInterrupt);
+        };
+        requestAnimationFrame(checkInterrupt);
+      };
+
       await new Promise<void>((resolve, reject) => {
         audio.onended = () => {
           URL.revokeObjectURL(audioUrl);
@@ -118,11 +153,12 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
           reject(new Error("Audio playback error"));
         };
 
-        // Use play() with promise handling for iOS
         const playPromise = audio.play();
         if (playPromise) {
-          playPromise.catch((err) => {
-            // On iOS, AbortError means the play was interrupted - not a real error
+          playPromise.then(() => {
+            // Audio is playing — start monitoring for user interruption
+            startListeningForInterrupt();
+          }).catch((err) => {
             if (err.name === "AbortError") {
               resolve();
             } else {
@@ -297,11 +333,51 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       mediaRecorder.start();
       setStatus("listening");
 
-      setTimeout(() => {
-        if (mediaRecorder.state === "recording") {
-          mediaRecorder.stop();
+      // Use silence detection via AudioContext instead of a fixed timer
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const source = audioContext.createMediaStreamSource(streamRef.current!);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      let silenceStart: number | null = null;
+      const SILENCE_THRESHOLD = 15; // amplitude threshold
+      const SILENCE_DURATION = 1800; // ms of silence before stopping
+      const MAX_RECORD_TIME = 30000; // max 30s recording
+      const recordStart = Date.now();
+
+      const checkSilence = () => {
+        if (mediaRecorder.state !== "recording" || !isActiveRef.current) {
+          audioContext.close();
+          return;
         }
-      }, 5000);
+
+        // Max time check
+        if (Date.now() - recordStart > MAX_RECORD_TIME) {
+          mediaRecorder.stop();
+          audioContext.close();
+          return;
+        }
+
+        analyser.getByteFrequencyData(dataArray);
+        const avg = dataArray.reduce((sum, v) => sum + v, 0) / dataArray.length;
+
+        if (avg < SILENCE_THRESHOLD) {
+          if (!silenceStart) silenceStart = Date.now();
+          else if (Date.now() - silenceStart > SILENCE_DURATION) {
+            mediaRecorder.stop();
+            audioContext.close();
+            return;
+          }
+        } else {
+          silenceStart = null;
+        }
+
+        requestAnimationFrame(checkSilence);
+      };
+
+      requestAnimationFrame(checkSilence);
     } catch (error) {
       console.error("MediaRecorder error:", error);
       toast({ title: "Recording failed", variant: "destructive" });

@@ -380,12 +380,24 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
    };
 
   const voiceOptions = [
-    { id: 'asteria', name: 'Asteria', desc: 'Female, Professional' },
-    { id: 'luna', name: 'Luna', desc: 'Female, Soft' },
-    { id: 'athena', name: 'Athena', desc: 'Female, Gentle' },
-    { id: 'orion', name: 'Orion', desc: 'Male, Calm' },
-    { id: 'zeus', name: 'Zeus', desc: 'Male, Deep' },
-    { id: 'helios', name: 'Helios', desc: 'Male, Warm' },
+    // Feminine voices
+    { id: 'asteria', name: 'Asteria', desc: 'Feminine, Professional', gender: 'feminine' },
+    { id: 'luna', name: 'Luna', desc: 'Feminine, Soft', gender: 'feminine' },
+    { id: 'athena', name: 'Athena', desc: 'Feminine, Gentle', gender: 'feminine' },
+    { id: 'hera', name: 'Hera', desc: 'Feminine, Warm', gender: 'feminine' },
+    { id: 'stella', name: 'Stella', desc: 'Feminine, Clear', gender: 'feminine' },
+    { id: 'aurora', name: 'Aurora', desc: 'Feminine, Bright', gender: 'feminine' },
+    { id: 'thalia', name: 'Thalia', desc: 'Feminine, Expressive', gender: 'feminine' },
+    { id: 'cordelia', name: 'Cordelia', desc: 'Feminine, Elegant', gender: 'feminine' },
+    // Masculine voices
+    { id: 'orion', name: 'Orion', desc: 'Masculine, Calm', gender: 'masculine' },
+    { id: 'zeus', name: 'Zeus', desc: 'Masculine, Deep', gender: 'masculine' },
+    { id: 'helios', name: 'Helios', desc: 'Masculine, Warm', gender: 'masculine' },
+    { id: 'arcas', name: 'Arcas', desc: 'Masculine, Smooth', gender: 'masculine' },
+    { id: 'perseus', name: 'Perseus', desc: 'Masculine, Bold', gender: 'masculine' },
+    { id: 'angus', name: 'Angus', desc: 'Masculine, Rich', gender: 'masculine' },
+    { id: 'orpheus', name: 'Orpheus', desc: 'Masculine, Melodic', gender: 'masculine' },
+    { id: 'apollo', name: 'Apollo', desc: 'Masculine, Confident', gender: 'masculine' },
   ];
 
   const displayAvatar = profile?.avatar_url;
@@ -619,60 +631,75 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
      </div>
    );
 
-  const renderVoiceSection = () => (
-    <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">Select a voice for text-to-speech</p>
-      <div className="grid grid-cols-1 gap-2">
-        {voiceOptions.map((voice) => (
-          <motion.button
-            key={voice.id}
-            onClick={() => {
-              setSelectedVoice(voice.id);
-              localStorage.setItem('xai-tts-voice', voice.id);
-            }}
-            whileHover={{ scale: 1.01 }}
-            whileTap={{ scale: 0.99 }}
-            className={`flex items-center justify-between gap-2 p-3 rounded-lg border transition-all text-left ${
-              selectedVoice === voice.id 
-                ? 'border-xai-cyan bg-xai-cyan/10' 
-                : 'border-border hover:border-xai-cyan/50'
-            }`}
-          >
-            <div className="min-w-0">
-              <span className={`block text-sm font-medium ${selectedVoice === voice.id ? 'text-xai-cyan' : ''}`}>
-                {voice.name}
-              </span>
-              <span className="block text-xs text-muted-foreground">{voice.desc}</span>
-            </div>
+  const renderVoiceSection = () => {
+    const feminineVoices = voiceOptions.filter(v => v.gender === 'feminine');
+    const masculineVoices = voiceOptions.filter(v => v.gender === 'masculine');
 
-            <div className="flex items-center gap-2">
-              {selectedVoice === voice.id && (
-                <Check className="h-4 w-4 text-xai-cyan" />
-              )}
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 rounded-full"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  playVoiceSample(voice.id);
-                }}
-                disabled={previewingVoiceId === voice.id}
-                aria-label={`Play sample for ${voice.name}`}
-              >
-                {previewingVoiceId === voice.id ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Volume2 className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-          </motion.button>
-        ))}
+    const renderVoiceButton = (voice: typeof voiceOptions[0]) => (
+      <motion.button
+        key={voice.id}
+        onClick={() => {
+          setSelectedVoice(voice.id);
+          localStorage.setItem('xai-tts-voice', voice.id);
+        }}
+        whileHover={{ scale: 1.01 }}
+        whileTap={{ scale: 0.99 }}
+        className={`flex items-center justify-between gap-2 p-3 rounded-lg border transition-all text-left ${
+          selectedVoice === voice.id 
+            ? 'border-xai-cyan bg-xai-cyan/10' 
+            : 'border-border hover:border-xai-cyan/50'
+        }`}
+      >
+        <div className="min-w-0">
+          <span className={`block text-sm font-medium ${selectedVoice === voice.id ? 'text-xai-cyan' : ''}`}>
+            {voice.name}
+          </span>
+          <span className="block text-xs text-muted-foreground">{voice.desc}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {selectedVoice === voice.id && (
+            <Check className="h-4 w-4 text-xai-cyan" />
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 rounded-full"
+            onClick={(e) => {
+              e.stopPropagation();
+              playVoiceSample(voice.id);
+            }}
+            disabled={previewingVoiceId === voice.id}
+            aria-label={`Play sample for ${voice.name}`}
+          >
+            {previewingVoiceId === voice.id ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Volume2 className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+      </motion.button>
+    );
+
+    return (
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">Select a voice for text-to-speech</p>
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Feminine</p>
+          <div className="grid grid-cols-1 gap-2">
+            {feminineVoices.map(renderVoiceButton)}
+          </div>
+        </div>
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Masculine</p>
+          <div className="grid grid-cols-1 gap-2">
+            {masculineVoices.map(renderVoiceButton)}
+          </div>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderThemeSection = () => (
     <div className="space-y-3">
