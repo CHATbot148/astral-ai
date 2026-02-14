@@ -146,109 +146,9 @@ serve(async (req) => {
     const stylePrompt = STYLE_PROMPTS[style] || "";
     const enhancedPrompt = stylePrompt ? `${prompt}, ${stylePrompt}` : prompt;
 
-    console.log(`Generating image: "${enhancedPrompt}"`);
+    console.log(`Generating image with Pollinations.ai: "${enhancedPrompt}"`);
 
-    // Use Lovable AI Gateway for image generation, with Pollinations fallback
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    
-    if (LOVABLE_API_KEY) {
-      console.log("Using Lovable AI Gateway for image generation...");
-      
-      const messageContent: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
-      messageContent.push({ type: "text", text: enhancedPrompt });
-      
-      if (referenceImageUrl) {
-        console.log("Image-to-image mode with reference");
-        messageContent.push({
-          type: "image_url",
-          image_url: { url: referenceImageUrl }
-        });
-      }
-
-      try {
-        const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${LOVABLE_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "google/gemini-2.5-flash-image",
-            messages: [
-              {
-                role: "user",
-                content: messageContent,
-              },
-            ],
-            modalities: ["image", "text"],
-          }),
-        });
-
-        if (!aiResponse.ok) {
-          const errText = await aiResponse.text();
-          console.error("Lovable AI Gateway error:", aiResponse.status, errText);
-          
-          // Fall back to Pollinations.ai for 429/401/402 errors
-          if (aiResponse.status === 429 || aiResponse.status === 401 || aiResponse.status === 402) {
-            console.log("Falling back to Pollinations.ai...");
-            throw new Error("FALLBACK_TO_POLLINATIONS");
-          }
-          
-          throw new Error(`Image generation failed: ${aiResponse.status}`);
-        }
-
-        const aiData = await aiResponse.json();
-        const generatedImageUrl = aiData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-
-        if (!generatedImageUrl) {
-          console.error("No image in response:", JSON.stringify(aiData).slice(0, 500));
-          throw new Error("No image was generated - try a different prompt");
-        }
-
-        // The image is base64 encoded, upload it to storage
-        const { mime, bytes } = parseDataUrl(generatedImageUrl);
-        const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
-        const path = `${userId}/generated/img-${Date.now()}.${ext}`;
-
-        const { error: upErr } = await admin.storage.from("chat-files").upload(path, bytes, {
-          contentType: mime,
-          upsert: false,
-        });
-
-        if (upErr) {
-          console.error("Upload error:", upErr);
-          throw new Error("Failed to store generated image");
-        }
-
-        const storageRef = `storage:chat-files/${path}`;
-        console.log("Generation successful:", storageRef);
-        
-        // Save to generated_images table
-        if (userId !== "anonymous") {
-          await admin.from("generated_images").insert({
-            user_id: userId,
-            prompt,
-            image_url: storageRef,
-            style,
-            aspect_ratio: aspectRatio,
-          });
-        }
-        
-        return new Response(JSON.stringify({ image: storageRef }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      } catch (error) {
-        if (error instanceof Error && error.message === "FALLBACK_TO_POLLINATIONS") {
-          // Continue to Pollinations fallback below
-          console.log("Proceeding to Pollinations.ai fallback...");
-        } else {
-          throw error;
-        }
-      }
-    }
-
-    // Pollinations.ai fallback
-    console.log("Using Pollinations.ai for image generation...");
+    // Use Pollinations.ai as the primary image generator
     const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(enhancedPrompt)}?nologo=true&width=1024&height=1024`;
     
     const pollResponse = await fetch(pollinationsUrl);
@@ -258,7 +158,6 @@ serve(async (req) => {
       throw new Error("Image generation failed. Please try again.");
     }
 
-    // Get the image as a blob
     const imageBlob = await pollResponse.blob();
     const arrayBuffer = await imageBlob.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
