@@ -49,10 +49,20 @@ export function cleanTextForTTS(text: string): string {
   cleaned = cleaned.replace(/(You can view the link in the chat.\s*){2,}/g, 'You can view the link in the chat. ');
   cleaned = cleaned.replace(/(You can view the code in the chat.\s*){2,}/g, 'You can view the code in the chat. ');
 
-  // Clean up excessive whitespace / newlines
+  // Ensure proper spacing after punctuation for natural speech
+  cleaned = cleaned.replace(/([.!?])([A-Za-z])/g, '$1 $2');
+  cleaned = cleaned.replace(/([,;:])([A-Za-z])/g, '$1 $2');
+  
+  // Add pauses (periods) between separate thoughts/sections
   cleaned = cleaned.replace(/\n{2,}/g, '. ');
-  cleaned = cleaned.replace(/\n/g, ' ');
+  cleaned = cleaned.replace(/\n/g, ', ');
+  
+  // Clean up excessive whitespace
   cleaned = cleaned.replace(/\s{2,}/g, ' ');
+  
+  // Remove orphan punctuation
+  cleaned = cleaned.replace(/^\s*[.,;:!?]\s*/gm, '');
+  cleaned = cleaned.replace(/([.,;:!?])\s*\1+/g, '$1');
 
   return cleaned.trim();
 }

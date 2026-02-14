@@ -163,7 +163,7 @@ serve(async (req) => {
 
         const generationBody: Record<string, any> = {
           prompt: enhancedPrompt,
-          modelId: "6b645e3a-d64f-4341-a6d8-7a3690fbf042",
+          modelId: "d69c8273-6b17-4a68-b07a-4e1b27561a36",
           width: 1024, height: 1024, num_images: 1,
         };
 
