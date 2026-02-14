@@ -39,6 +39,61 @@ async function uploadAndSave(admin: any, userId: string, prompt: string, style: 
   return ref;
 }
 
+/**
+ * Upload init image to Leonardo AI for image-to-image.
+ * 1. POST /init-image → get presigned URL + image ID
+ * 2. PUT image bytes to presigned URL
+ * 3. Return the init image ID
+ */
+async function uploadInitImageToLeonardo(apiKey: string, imageBytes: Uint8Array, mime: string): Promise<string> {
+  const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
+
+  // Step 1: Get presigned URL
+  const initRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/init-image", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ extension: ext }),
+  });
+
+  if (!initRes.ok) {
+    const errText = await initRes.text();
+    throw new Error(`Leonardo init-image failed: ${initRes.status} ${errText}`);
+  }
+
+  const initData = await initRes.json();
+  const uploadData = initData.uploadInitImage;
+  if (!uploadData?.url || !uploadData?.id) {
+    throw new Error("Leonardo init-image returned no URL or ID");
+  }
+
+  // Step 2: Upload to presigned URL using the fields
+  const fields = typeof uploadData.fields === "string" ? JSON.parse(uploadData.fields) : uploadData.fields;
+  const formData = new FormData();
+  if (fields && typeof fields === "object") {
+    for (const [key, value] of Object.entries(fields)) {
+      formData.append(key, value as string);
+    }
+  }
+  const blob = new Blob([imageBytes], { type: mime });
+  formData.append("file", blob, `image.${ext}`);
+
+  const uploadRes = await fetch(uploadData.url, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!uploadRes.ok && uploadRes.status !== 204) {
+    throw new Error(`Leonardo image upload failed: ${uploadRes.status}`);
+  }
+
+  console.log(`Leonardo init image uploaded, ID: ${uploadData.id}`);
+  return uploadData.id;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -75,10 +130,10 @@ serve(async (req) => {
       }
     }
 
-    // Handle client-side image upload
-    if (imageDataUrl) {
+    // Handle client-side image upload (no AI generation)
+    if (imageDataUrl && !prompt) {
       const { mime, bytes } = parseDataUrl(imageDataUrl);
-      const ref = await uploadAndSave(admin, userId, prompt || "Uploaded image", style, aspectRatio, bytes, mime);
+      const ref = await uploadAndSave(admin, userId, "Uploaded image", style, aspectRatio, bytes, mime);
       return new Response(JSON.stringify({ image: ref }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -86,19 +141,49 @@ serve(async (req) => {
     const enhancedPrompt = stylePrompt ? `${prompt}, ${stylePrompt}` : prompt;
     console.log(`Generating image: "${enhancedPrompt}"`);
 
+    // Parse reference image if provided
+    let refImageBytes: Uint8Array | null = null;
+    let refImageMime = "image/png";
+    if (referenceImageUrl) {
+      try {
+        const parsed = parseDataUrl(referenceImageUrl);
+        refImageBytes = parsed.bytes;
+        refImageMime = parsed.mime;
+        console.log("Reference image provided for image-to-image");
+      } catch {
+        console.warn("Failed to parse reference image, proceeding without it");
+      }
+    }
+
     // === PRIMARY: Leonardo AI ===
     const LEONARDO_API_KEY = Deno.env.get("LEONARDO_API_KEY");
     if (LEONARDO_API_KEY) {
       try {
         console.log("Trying Leonardo AI...");
+
+        const generationBody: Record<string, any> = {
+          prompt: enhancedPrompt,
+          modelId: "6b645e3a-d64f-4341-a6d8-7a3690fbf042",
+          width: 1024, height: 1024, num_images: 1,
+        };
+
+        // Image-to-image: upload init image first
+        if (refImageBytes) {
+          try {
+            const initImageId = await uploadInitImageToLeonardo(LEONARDO_API_KEY, refImageBytes, refImageMime);
+            generationBody.init_image_id = initImageId;
+            generationBody.init_strength = 0.4; // Balance between reference and prompt
+            console.log(`Using init image ID: ${initImageId}`);
+          } catch (uploadErr) {
+            console.warn("Failed to upload init image to Leonardo:", uploadErr);
+            // Continue without reference image
+          }
+        }
+
         const createRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations", {
           method: "POST",
           headers: { Authorization: `Bearer ${LEONARDO_API_KEY}`, "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify({
-            prompt: enhancedPrompt,
-            modelId: "6b645e3a-d64f-4341-a6d8-7a3690fbf042",
-            width: 1024, height: 1024, num_images: 1,
-          }),
+          body: JSON.stringify(generationBody),
         });
 
         if (createRes.ok) {
@@ -143,6 +228,15 @@ serve(async (req) => {
         const formData = new FormData();
         formData.append("prompt", enhancedPrompt);
         formData.append("output_format", "png");
+
+        // Add reference image for Stability AI image-to-image
+        if (refImageBytes) {
+          const blob = new Blob([refImageBytes], { type: refImageMime });
+          formData.append("image", blob, "reference.png");
+          formData.append("strength", "0.6");
+          formData.append("mode", "image-to-image");
+        }
+
         const stabRes = await fetch("https://api.stability.ai/v2beta/stable-image/generate/sd3", {
           method: "POST",
           headers: { Authorization: `Bearer ${STABILITY_API_KEY}`, Accept: "image/*" },

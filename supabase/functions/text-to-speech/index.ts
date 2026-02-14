@@ -5,16 +5,26 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Deepgram Aura voices - 3 feminine, 3 masculine
+// Deepgram Aura voices - 8 feminine, 8 masculine
 const VOICE_MAP: Record<string, string> = {
   // Feminine voices
   asteria: "aura-asteria-en",
   luna: "aura-luna-en",
   athena: "aura-athena-en",
+  hera: "aura-hera-en",
+  stella: "aura-stella-en",
+  aurora: "aura-2-aurora-en",
+  thalia: "aura-2-thalia-en",
+  cordelia: "aura-2-cordelia-en",
   // Masculine voices
   orion: "aura-orion-en",
   zeus: "aura-zeus-en",
   helios: "aura-helios-en",
+  arcas: "aura-arcas-en",
+  perseus: "aura-perseus-en",
+  angus: "aura-angus-en",
+  orpheus: "aura-orpheus-en",
+  apollo: "aura-2-apollo-en",
 };
 
 serve(async (req) => {

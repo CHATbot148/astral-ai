@@ -1,24 +1,36 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { PhoneOff, Mic, MicOff, Volume2, Loader2 } from "lucide-react";
+import { PhoneOff, Mic, MicOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
-import { VoiceVisualizer } from "./VoiceVisualizer";
+import { VoiceOrb } from "./VoiceOrb";
 
 interface VoiceCallProps {
   onClose: () => void;
 }
 
-// Deepgram Aura voices
+// Deepgram Aura voices - 8 feminine, 8 masculine
 const VOICE_OPTIONS = [
-  { id: "asteria", name: "Asteria (Feminine)" },
-  { id: "luna", name: "Luna (Feminine)" },
-  { id: "athena", name: "Athena (Feminine)" },
-  { id: "orion", name: "Orion (Masculine)" },
-  { id: "zeus", name: "Zeus (Masculine)" },
-  { id: "helios", name: "Helios (Masculine)" },
+  // Feminine voices
+  { id: "asteria", name: "Asteria", gender: "feminine" },
+  { id: "luna", name: "Luna", gender: "feminine" },
+  { id: "athena", name: "Athena", gender: "feminine" },
+  { id: "hera", name: "Hera", gender: "feminine" },
+  { id: "stella", name: "Stella", gender: "feminine" },
+  { id: "aurora", name: "Aurora", gender: "feminine" },
+  { id: "thalia", name: "Thalia", gender: "feminine" },
+  { id: "cordelia", name: "Cordelia", gender: "feminine" },
+  // Masculine voices
+  { id: "orion", name: "Orion", gender: "masculine" },
+  { id: "zeus", name: "Zeus", gender: "masculine" },
+  { id: "helios", name: "Helios", gender: "masculine" },
+  { id: "arcas", name: "Arcas", gender: "masculine" },
+  { id: "perseus", name: "Perseus", gender: "masculine" },
+  { id: "angus", name: "Angus", gender: "masculine" },
+  { id: "orpheus", name: "Orpheus", gender: "masculine" },
+  { id: "apollo", name: "Apollo", gender: "masculine" },
 ];
 
 export const VoiceCall = ({ onClose }: VoiceCallProps) => {
@@ -26,7 +38,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const [callStart] = useState(() => Date.now());
   const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
-  const [selectedVoice, setSelectedVoice] = useState(() => 
+  const [selectedVoice, setSelectedVoice] = useState(() =>
     localStorage.getItem("xai-tts-voice") || "asteria"
   );
   const [status, setStatus] = useState<"idle" | "connecting" | "listening" | "processing" | "speaking">("idle");
@@ -37,6 +49,12 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const streamRef = useRef<MediaStream | null>(null);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const isActiveRef = useRef(true);
+  const selectedVoiceRef = useRef(selectedVoice);
+
+  // Keep voice ref in sync
+  useEffect(() => {
+    selectedVoiceRef.current = selectedVoice;
+  }, [selectedVoice]);
 
   useEffect(() => {
     const t = setInterval(() => setCallDuration(Math.floor((Date.now() - callStart) / 1000)), 1000);
@@ -52,10 +70,12 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const speakResponse = useCallback(async (text: string) => {
     if (!isActiveRef.current) return;
     setStatus("speaking");
-    
+
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
+      // Always read from ref for latest voice
+      const voiceId = selectedVoiceRef.current;
 
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/text-to-speech`, {
         method: "POST",
@@ -64,7 +84,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
           apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
           Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ text, voiceId: selectedVoice }),
+        body: JSON.stringify({ text, voiceId }),
       });
 
       if (!response.ok) {
@@ -78,46 +98,65 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         throw new Error(json?.error || "TTS did not return audio");
       }
 
+      if (!isActiveRef.current) return;
+
       const audioBlob = await response.blob();
       const audioUrl = URL.createObjectURL(audioBlob);
       const audio = new Audio(audioUrl);
       currentAudioRef.current = audio;
 
-      audio.onended = () => {
-        URL.revokeObjectURL(audioUrl);
-        if (isActiveRef.current && !isMuted) {
-          setStatus("listening");
-          startListening();
-        } else {
-          setStatus("idle");
-        }
-      };
+      // iOS requires these attributes
+      audio.setAttribute("playsinline", "true");
 
-      audio.onerror = () => {
-        URL.revokeObjectURL(audioUrl);
-        if (isActiveRef.current && !isMuted) {
-          setStatus("listening");
-          startListening();
-        }
-      };
+      await new Promise<void>((resolve, reject) => {
+        audio.onended = () => {
+          URL.revokeObjectURL(audioUrl);
+          resolve();
+        };
+        audio.onerror = () => {
+          URL.revokeObjectURL(audioUrl);
+          reject(new Error("Audio playback error"));
+        };
 
-      await audio.play();
+        // Use play() with promise handling for iOS
+        const playPromise = audio.play();
+        if (playPromise) {
+          playPromise.catch((err) => {
+            // On iOS, AbortError means the play was interrupted - not a real error
+            if (err.name === "AbortError") {
+              resolve();
+            } else {
+              reject(err);
+            }
+          });
+        }
+      });
+
+      if (isActiveRef.current && !isMuted) {
+        setStatus("listening");
+        startListening();
+      } else {
+        setStatus("idle");
+      }
     } catch (error) {
       console.error("TTS error:", error);
-      toast({ title: "Speech failed", variant: "destructive" });
+      const msg = error instanceof Error ? error.message : String(error);
+      // Don't show toast for abort errors
+      if (!msg.toLowerCase().includes("abort")) {
+        toast({ title: "Speech failed", variant: "destructive" });
+      }
       if (isActiveRef.current && !isMuted) {
         setStatus("listening");
         startListening();
       }
     }
-  }, [selectedVoice, toast, isMuted]);
+  }, [toast, isMuted]);
 
   const processAudio = useCallback(async (audioBlob: Blob) => {
     if (!isActiveRef.current) return;
     setStatus("processing");
-    
+
     try {
-      // Convert blob to base64
       const arrayBuffer = await audioBlob.arrayBuffer();
       const bytes = new Uint8Array(arrayBuffer);
       let binary = "";
@@ -129,7 +168,6 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
 
-      // Send to Deepgram STT via our edge function
       const sttResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/speech-to-text`, {
         method: "POST",
         headers: {
@@ -146,9 +184,9 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       }
 
       const { transcript, error: sttError } = await sttResponse.json();
-      
+
       if (sttError) throw new Error(sttError);
-      
+
       if (!transcript || transcript.trim() === "") {
         if (isActiveRef.current && !isMuted) {
           setStatus("listening");
@@ -159,7 +197,6 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
       console.log("Transcribed:", transcript);
 
-      // Get AI response - pass voice mode flag for plain text responses
       const chatResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
         method: "POST",
         headers: {
@@ -169,13 +206,12 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         },
         body: JSON.stringify({
           messages: [{ role: "user", content: transcript }],
-          isVoiceMode: true, // This will make AI respond with plain text only
+          isVoiceMode: true,
         }),
       });
 
       if (!chatResponse.ok) throw new Error("Chat failed");
 
-      // Parse streaming response
       const reader = chatResponse.body?.getReader();
       if (!reader) throw new Error("No reader");
 
@@ -220,16 +256,15 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     if (!streamRef.current || isMuted || !isActiveRef.current) return;
 
     audioChunksRef.current = [];
-    
-    // Check for supported MIME types
-    const mimeType = MediaRecorder.isTypeSupported("audio/webm") 
-      ? "audio/webm" 
-      : MediaRecorder.isTypeSupported("audio/mp4") 
-        ? "audio/mp4" 
+
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm")
+      ? "audio/webm"
+      : MediaRecorder.isTypeSupported("audio/mp4")
+        ? "audio/mp4"
         : "";
 
     const options = mimeType ? { mimeType } : undefined;
-    
+
     try {
       const mediaRecorder = new MediaRecorder(streamRef.current, options);
       mediaRecorderRef.current = mediaRecorder;
@@ -262,7 +297,6 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       mediaRecorder.start();
       setStatus("listening");
 
-      // Auto-stop after 5 seconds of recording
       setTimeout(() => {
         if (mediaRecorder.state === "recording") {
           mediaRecorder.stop();
@@ -276,22 +310,20 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
   const startCall = useCallback(async () => {
     setStatus("connecting");
-    
+
     try {
-      // Request microphone with specific constraints for mobile
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
         }
       });
-      
+
       streamRef.current = stream;
       isActiveRef.current = true;
       setIsConnected(true);
 
-      // Start listening immediately after getting stream
       setTimeout(() => {
         if (isActiveRef.current) {
           startListening();
@@ -299,7 +331,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       }, 100);
     } catch (error) {
       console.error("Microphone error:", error);
-      
+
       let errorMessage = "Could not access microphone";
       if (error instanceof Error) {
         if (error.name === "NotAllowedError") {
@@ -310,7 +342,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
           errorMessage = "Microphone is already in use by another application.";
         }
       }
-      
+
       toast({ title: errorMessage, variant: "destructive" });
       setStatus("idle");
     }
@@ -318,7 +350,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
   const endCall = useCallback(() => {
     isActiveRef.current = false;
-    
+
     if (mediaRecorderRef.current?.state === "recording") {
       mediaRecorderRef.current.stop();
     }
@@ -330,7 +362,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
-    
+
     setIsConnected(false);
     setStatus("idle");
     onClose();
@@ -339,7 +371,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const toggleMute = useCallback(() => {
     const next = !isMuted;
     setIsMuted(next);
-    
+
     if (next) {
       if (mediaRecorderRef.current?.state === "recording") {
         mediaRecorderRef.current.stop();
@@ -353,13 +385,9 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     }
   }, [isMuted, isConnected, startListening]);
 
-  const saveVoice = () => {
-    localStorage.setItem("xai-tts-voice", selectedVoice);
-  };
-
   useEffect(() => {
     startCall();
-    
+
     return () => {
       isActiveRef.current = false;
       if (streamRef.current) {
@@ -369,96 +397,93 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const statusLabel = 
+  const statusLabel =
     status === "connecting" ? "Connecting…" :
-    status === "listening" ? "Listening…" : 
-    status === "processing" ? "Processing…" : 
+    status === "listening" ? "Listening…" :
+    status === "processing" ? "Thinking…" :
     status === "speaking" ? "Speaking…" : "Ready";
+
+  const feminineVoices = VOICE_OPTIONS.filter(v => v.gender === "feminine");
+  const masculineVoices = VOICE_OPTIONS.filter(v => v.gender === "masculine");
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black"
     >
-      <div className="flex flex-col items-center gap-6 p-6 sm:p-8 max-w-md w-full">
+      <div className="flex flex-col items-center gap-4 p-6 sm:p-8 max-w-md w-full h-full justify-between pt-12 pb-10">
+        {/* Timer */}
         <div className="text-center">
-          <h2 className="text-2xl font-bold text-foreground mb-1">Voice Call</h2>
-          <p className="text-muted-foreground">{formatDuration(callDuration)}</p>
+          <p className="text-white/50 text-sm font-mono tracking-widest">{formatDuration(callDuration)}</p>
         </div>
 
-        {/* Status indicator */}
-        <div className="relative w-32 h-32 rounded-full bg-gradient-to-br from-xai-cyan to-xai-purple flex items-center justify-center">
-          {status === "speaking" ? (
-            <Volume2 className="h-12 w-12 text-white animate-pulse" />
-          ) : status === "processing" || status === "connecting" ? (
-            <Loader2 className="h-12 w-12 text-white animate-spin" />
-          ) : isConnected && !isMuted ? (
-            <Mic className="h-12 w-12 text-white" />
-          ) : (
-            <MicOff className="h-12 w-12 text-white/50" />
-          )}
-
-          <AnimatePresence>
-            {status === "listening" && (
-              <motion.div
-                initial={{ scale: 1, opacity: 0.5 }}
-                animate={{ scale: 1.5, opacity: 0 }}
-                transition={{ duration: 1.5, repeat: Infinity }}
-                className="absolute inset-0 rounded-full bg-gradient-to-br from-xai-cyan to-xai-purple"
-              />
-            )}
-          </AnimatePresence>
+        {/* Central Orb */}
+        <div className="flex-1 flex items-center justify-center">
+          <VoiceOrb status={status} isMuted={isMuted} />
         </div>
 
-        {/* Voice visualizer */}
-        {status === "listening" && <VoiceVisualizer isActive={true} className="h-12" />}
-
-        <div className="text-center min-h-[60px]">
-          <p className={cn("text-sm", status === "speaking" ? "text-xai-cyan" : "text-muted-foreground")}>
+        {/* Status */}
+        <div className="text-center mb-2">
+          <p className={cn(
+            "text-sm font-medium tracking-wide transition-colors",
+            status === "speaking" ? "text-cyan-400" :
+            status === "listening" ? "text-emerald-400" :
+            status === "processing" ? "text-purple-400" :
+            "text-white/40"
+          )}>
             {statusLabel}
-          </p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Speak naturally, I'll respond when you pause.
           </p>
         </div>
 
         {/* Voice selection */}
-        <div className="w-full rounded-xl border border-border bg-card/50 p-3">
-          <div className="flex gap-2">
-            <select
-              value={selectedVoice}
-              onChange={(e) => {
-                setSelectedVoice(e.target.value);
-                saveVoice();
-              }}
-              className="flex-1 h-9 rounded-md border border-border bg-background px-3 text-sm outline-none"
-            >
-              {VOICE_OPTIONS.map((voice) => (
-                <option key={voice.id} value={voice.id}>{voice.name}</option>
+        <div className="w-full rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm p-3">
+          <select
+            value={selectedVoice}
+            onChange={(e) => {
+              const newVoice = e.target.value;
+              setSelectedVoice(newVoice);
+              selectedVoiceRef.current = newVoice;
+              localStorage.setItem("xai-tts-voice", newVoice);
+            }}
+            className="w-full h-9 rounded-md border border-white/10 bg-black/50 px-3 text-sm text-white outline-none"
+          >
+            <optgroup label="Feminine Voices">
+              {feminineVoices.map((v) => (
+                <option key={v.id} value={v.id}>{v.name}</option>
               ))}
-            </select>
-          </div>
+            </optgroup>
+            <optgroup label="Masculine Voices">
+              {masculineVoices.map((v) => (
+                <option key={v.id} value={v.id}>{v.name}</option>
+              ))}
+            </optgroup>
+          </select>
         </div>
 
         {/* Controls */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-6">
           <Button
-            variant="secondary"
+            variant="ghost"
             size="icon"
             onClick={toggleMute}
-            className={cn("h-14 w-14 rounded-full", isMuted && "bg-destructive/20 text-destructive")}
+            className={cn(
+              "h-14 w-14 rounded-full border transition-all",
+              isMuted
+                ? "border-red-500/50 bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                : "border-white/20 bg-white/5 text-white hover:bg-white/10"
+            )}
             aria-label={isMuted ? "Unmute" : "Mute"}
           >
             {isMuted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
           </Button>
 
           <Button
-            variant="destructive"
+            variant="ghost"
             size="icon"
             onClick={endCall}
-            className="h-16 w-16 rounded-full"
+            className="h-16 w-16 rounded-full bg-red-500 hover:bg-red-600 text-white"
             aria-label="End call"
           >
             <PhoneOff className="h-7 w-7" />
@@ -466,7 +491,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         </div>
 
         {!isConnected && status !== "connecting" && (
-          <Button variant="xai" onClick={startCall} className="w-full">
+          <Button variant="outline" onClick={startCall} className="w-full border-white/20 text-white hover:bg-white/10">
             Reconnect
           </Button>
         )}
