@@ -4,7 +4,7 @@ import { Volume2, Pause, Play, RotateCcw, RotateCw, Loader2, X } from "lucide-re
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-
+import { cleanTextForTTS } from "@/utils/cleanTextForTTS";
 interface AudioPlayerProps {
   text: string;
   onClose: () => void;
@@ -38,6 +38,13 @@ export const AudioPlayer = ({ text, onClose }: AudioPlayerProps) => {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
 
+      // Clean text before sending to TTS - remove emojis, links, markdown, code blocks
+      const cleanedText = cleanTextForTTS(text);
+      if (!cleanedText) {
+        setIsLoading(false);
+        return;
+      }
+
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/text-to-speech`, {
         method: "POST",
         headers: {
@@ -45,7 +52,7 @@ export const AudioPlayer = ({ text, onClose }: AudioPlayerProps) => {
           apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
           Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ text, voiceId }),
+        body: JSON.stringify({ text: cleanedText, voiceId }),
       });
 
       if (!response.ok) {
@@ -76,10 +83,22 @@ export const AudioPlayer = ({ text, onClose }: AudioPlayerProps) => {
       await audio.play();
       setIsPlaying(true);
     } catch (err) {
-      console.error("TTS error:", err);
-      const msg = err instanceof Error ? err.message : "Failed to generate audio";
-      setError(msg);
-      toast({ title: "Text-to-speech failed", description: msg, variant: "destructive" });
+      // Suppress benign abort/pause errors that happen during normal operation
+      const msg = err instanceof Error ? err.message : String(err);
+      const isAbortError =
+        (err instanceof DOMException && err.name === 'AbortError') ||
+        msg.toLowerCase().includes('abort') ||
+        msg.toLowerCase().includes('interrupted') ||
+        msg.toLowerCase().includes('the play() request was interrupted');
+
+      if (isAbortError) {
+        console.log("TTS playback interrupted (non-error):", msg);
+        // Don't show error UI for abort — it's normal when user navigates or closes
+      } else {
+        console.error("TTS error:", err);
+        setError(msg || "Failed to generate audio");
+        toast({ title: "Text-to-speech failed", description: msg, variant: "destructive" });
+      }
     } finally {
       setIsLoading(false);
     }
