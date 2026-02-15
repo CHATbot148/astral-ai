@@ -51,6 +51,8 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const isMutedRef = useRef(isMuted);
   // Persistent AudioContext for iOS playback (unlocked on user gesture)
   const audioContextRef = useRef<AudioContext | null>(null);
+  // Conversation history for the duration of this call
+  const conversationHistoryRef = useRef<Array<{ role: string; content: string }>>([]);
 
   useEffect(() => { selectedVoiceRef.current = selectedVoice; }, [selectedVoice]);
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
@@ -189,7 +191,14 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
       console.log("Transcribed:", transcript);
 
-      // Chat — collect full response then speak
+      // Add user message to conversation history
+      conversationHistoryRef.current.push({ role: "user", content: transcript });
+
+      // Get user's timezone and time for context
+      const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const clientTimeISO = new Date().toISOString();
+
+      // Chat — collect full response then speak (send full conversation history)
       const chatResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
         method: "POST",
         headers: {
@@ -198,8 +207,10 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
           Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
         body: JSON.stringify({
-          messages: [{ role: "user", content: transcript }],
+          messages: conversationHistoryRef.current,
           isVoiceMode: true,
+          timeZone: userTimeZone,
+          clientTimeISO,
         }),
       });
 
@@ -231,6 +242,8 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       }
 
       if (fullResponse && isActiveRef.current) {
+        // Add assistant response to conversation history
+        conversationHistoryRef.current.push({ role: "assistant", content: fullResponse });
         await speakResponse(fullResponse);
       } else if (isActiveRef.current && !isMutedRef.current) {
         setStatus("listening");
