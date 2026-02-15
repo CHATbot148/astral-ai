@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
- import { X, LogOut, Trash2, Camera, Sun, Moon, Monitor, Check, User, Loader2, Volume2, ChevronRight, BarChart3, Images, Download, ExternalLink, Bot, Brain, MessageSquare } from 'lucide-react';
+ import { X, LogOut, Trash2, Camera, Sun, Moon, Monitor, Check, User, Loader2, Volume2, ChevronRight, BarChart3, Images, Download, ExternalLink, Bot, Brain, MessageSquare, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
@@ -612,6 +612,21 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
          <Checkbox
            checked={aiSettings.followUpQuestions}
            onCheckedChange={(checked) => handleAISettingsChange({ followUpQuestions: !!checked })}
+         />
+       </div>
+
+       {/* Typing Animation */}
+       <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 border border-border">
+         <div className="flex items-center gap-3">
+           <Sparkles className="h-5 w-5 text-muted-foreground" />
+           <div>
+             <p className="text-sm font-medium">Typing Animation</p>
+             <p className="text-xs text-muted-foreground">Show words as they're generated. Off = display all at once.</p>
+           </div>
+         </div>
+         <Checkbox
+           checked={aiSettings.typingAnimation}
+           onCheckedChange={(checked) => handleAISettingsChange({ typingAnimation: !!checked })}
          />
        </div>
  
