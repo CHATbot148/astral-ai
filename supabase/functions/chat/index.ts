@@ -283,21 +283,21 @@ Keep response brief.`;
       }
     );
 
-    // Use Mistral AI for text-only, Gemini for multimodal
+    // Use Mistral Pixtral for multimodal (images), Mistral Large for text-only
     if (hasImages) {
-      const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-      if (!LOVABLE_API_KEY) {
-        throw new Error("Image analysis is not configured");
+      if (!MISTRAL_API_KEY) {
+        throw new Error("MISTRAL_API_KEY is not configured");
       }
 
-      const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      // Mistral Pixtral supports vision/multimodal
+      const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          Authorization: `Bearer ${MISTRAL_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
+          model: "pixtral-large-latest",
           messages: [{ role: "system", content: systemContent }, ...formattedMessages],
           stream: true,
         }),
@@ -305,21 +305,15 @@ Keep response brief.`;
 
       if (!response.ok) {
         const errBody = await response.text();
-        console.error("Lovable AI gateway error:", response.status, errBody);
+        console.error("Mistral Pixtral error:", response.status, errBody);
         if (response.status === 429) {
           return new Response(
             JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment." }),
             { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
-        if (response.status === 402) {
-          return new Response(
-            JSON.stringify({ error: "AI usage limit reached. Please add credits." }),
-            { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
-        // Fall through to Mistral for text-only retry if multimodal fails
-        console.warn("Multimodal AI failed, attempting text-only fallback...");
+        // Fallback to text-only Mistral if Pixtral fails
+        console.warn("Pixtral failed, falling back to text-only...");
         const textOnlyMessages = formattedMessages.map((msg: any) => {
           if (Array.isArray(msg.content)) {
             const textParts = msg.content.filter((p: any) => p.type === 'text');
@@ -328,22 +322,19 @@ Keep response brief.`;
           return msg;
         });
 
-        const MISTRAL_KEY = Deno.env.get("MISTRAL_API_KEY");
-        if (MISTRAL_KEY) {
-          const fallbackRes = await fetch("https://api.mistral.ai/v1/chat/completions", {
-            method: "POST",
-            headers: { Authorization: `Bearer ${MISTRAL_KEY}`, "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model: "mistral-large-latest",
-              messages: [{ role: "system", content: systemContent }, ...textOnlyMessages],
-              stream: true,
-            }),
+        const fallbackRes = await fetch("https://api.mistral.ai/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${MISTRAL_API_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "mistral-large-latest",
+            messages: [{ role: "system", content: systemContent }, ...textOnlyMessages],
+            stream: true,
+          }),
+        });
+        if (fallbackRes.ok) {
+          return new Response(fallbackRes.body, {
+            headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
           });
-          if (fallbackRes.ok) {
-            return new Response(fallbackRes.body, {
-              headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
-            });
-          }
         }
         throw new Error("AI service temporarily unavailable. Please try again.");
       }

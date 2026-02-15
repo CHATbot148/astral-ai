@@ -18,6 +18,14 @@ const CEO_EMAIL = "khaleelktn@gmail.com";
 const DAILY_LIMIT_REGULAR = 5;
 const DAILY_LIMIT_CEO = 20;
 
+const ASPECT_RATIO_MAP: Record<string, { width: number; height: number }> = {
+  "1:1": { width: 1024, height: 1024 },
+  "16:9": { width: 1344, height: 768 },
+  "9:16": { width: 768, height: 1344 },
+  "4:3": { width: 1152, height: 896 },
+  "3:4": { width: 896, height: 1152 },
+};
+
 function parseDataUrl(dataUrl: string): { mime: string; bytes: Uint8Array } {
   const match = dataUrl.match(/^data:(.+?);base64,(.+)$/);
   if (!match) throw new Error("Invalid image data");
@@ -57,10 +65,11 @@ serve(async (req) => {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
     const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const STABILITY_API_KEY = Deno.env.get("STABILITY_API_KEY");
+    const LEONARDO_API_KEY = Deno.env.get("LEONARDO_API_KEY");
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) throw new Error("Backend is not configured");
-    if (!LOVABLE_API_KEY) throw new Error("Image generation is not configured");
+    if (!STABILITY_API_KEY && !LEONARDO_API_KEY) throw new Error("Image generation API key not configured");
 
     // Auth
     const authHeader = req.headers.get("Authorization") || "";
@@ -107,62 +116,128 @@ serve(async (req) => {
 
     const stylePrompt = STYLE_PROMPTS[style] || "";
     const enhancedPrompt = stylePrompt ? `${prompt}, ${stylePrompt}` : prompt;
-    console.log(`Generating image with Gemini: "${enhancedPrompt}"`);
+    const dims = ASPECT_RATIO_MAP[aspectRatio] || ASPECT_RATIO_MAP["1:1"];
 
-    // Build messages for Gemini image generation
-    const messages: any[] = [];
-    if (referenceImageUrl) {
-      messages.push({
-        role: "user",
-        content: [
-          { type: "text", text: `Create a variation of this image based on: ${enhancedPrompt}` },
-          { type: "image_url", image_url: { url: referenceImageUrl } },
-        ],
-      });
-    } else {
-      messages.push({ role: "user", content: `Generate an image: ${enhancedPrompt}` });
-    }
+    // Try Stability AI first, then Leonardo as fallback
+    let imgBytes: Uint8Array | null = null;
+    let imgMime = "image/png";
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash-image",
-        messages,
-        modalities: ["image", "text"],
-      }),
-    });
+    if (STABILITY_API_KEY) {
+      console.log(`Generating image with Stability AI: "${enhancedPrompt}"`);
+      try {
+        const formData = new FormData();
+        formData.append("prompt", enhancedPrompt);
+        formData.append("output_format", "png");
+        formData.append("width", String(dims.width));
+        formData.append("height", String(dims.height));
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("Gemini image gen error:", response.status, errText);
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again later." }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        if (referenceImageUrl) {
+          // Download reference image for img2img
+          try {
+            const refRes = await fetch(referenceImageUrl);
+            if (refRes.ok) {
+              const refBlob = await refRes.blob();
+              formData.append("image", refBlob);
+              formData.append("strength", "0.65");
+            }
+          } catch (e) {
+            console.warn("Could not fetch reference image:", e);
+          }
+        }
+
+        const endpoint = referenceImageUrl
+          ? "https://api.stability.ai/v2beta/stable-image/generate/sd3"
+          : "https://api.stability.ai/v2beta/stable-image/generate/sd3";
+
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${STABILITY_API_KEY}`,
+            Accept: "image/*",
+          },
+          body: formData,
         });
+
+        if (response.ok) {
+          imgBytes = new Uint8Array(await response.arrayBuffer());
+          imgMime = "image/png";
+        } else {
+          const errText = await response.text();
+          console.error("Stability AI error:", response.status, errText);
+        }
+      } catch (e) {
+        console.error("Stability AI failed:", e);
       }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "Usage limit reached. Please add credits." }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    }
+
+    // Fallback to Leonardo AI
+    if (!imgBytes && LEONARDO_API_KEY) {
+      console.log(`Falling back to Leonardo AI: "${enhancedPrompt}"`);
+      try {
+        const createRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LEONARDO_API_KEY}`,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            prompt: enhancedPrompt,
+            width: dims.width,
+            height: dims.height,
+            num_images: 1,
+            alchemy: true,
+            promptEnhance: true,
+          }),
         });
+
+        if (!createRes.ok) throw new Error(`Leonardo create failed: ${createRes.status}`);
+        const createData = await createRes.json();
+        const generationId = createData.sdGenerationJob?.generationId;
+        if (!generationId) throw new Error("No generation ID from Leonardo");
+
+        // Poll for completion
+        for (let i = 0; i < 30; i++) {
+          await new Promise(r => setTimeout(r, 3000));
+          const pollRes = await fetch(`https://cloud.leonardo.ai/api/rest/v1/generations/${generationId}`, {
+            headers: { Authorization: `Bearer ${LEONARDO_API_KEY}`, Accept: "application/json" },
+          });
+          if (!pollRes.ok) continue;
+          const pollData = await pollRes.json();
+          const gen = pollData.generations_by_pk;
+          if (gen?.status === "COMPLETE" && gen.generated_images?.[0]?.url) {
+            const dlRes = await fetch(gen.generated_images[0].url);
+            if (dlRes.ok) {
+              imgBytes = new Uint8Array(await dlRes.arrayBuffer());
+              imgMime = "image/png";
+            }
+            break;
+          }
+          if (gen?.status === "FAILED") throw new Error("Leonardo generation failed");
+        }
+      } catch (e) {
+        console.error("Leonardo AI failed:", e);
       }
-      throw new Error("Image generation failed. Please try again.");
     }
 
-    const data = await response.json();
-    const generatedImageUrl = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-
-    if (!generatedImageUrl) {
-      console.error("No image in Gemini response:", JSON.stringify(data).slice(0, 500));
-      throw new Error("No image was generated. Try a different prompt.");
+    // Fallback to Pollinations.ai (free, no API key)
+    if (!imgBytes) {
+      console.log("Falling back to Pollinations.ai");
+      try {
+        const polUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(enhancedPrompt)}?width=${dims.width}&height=${dims.height}&nologo=true`;
+        const polRes = await fetch(polUrl);
+        if (polRes.ok) {
+          imgBytes = new Uint8Array(await polRes.arrayBuffer());
+          imgMime = "image/jpeg";
+        }
+      } catch (e) {
+        console.error("Pollinations failed:", e);
+      }
     }
 
-    const { mime, bytes } = parseDataUrl(generatedImageUrl);
-    const ref = await uploadAndSave(admin, userId, prompt, style, aspectRatio, bytes, mime);
+    if (!imgBytes) throw new Error("All image generation providers failed. Please try again.");
 
+    const ref = await uploadAndSave(admin, userId, prompt, style, aspectRatio, imgBytes, imgMime);
     return new Response(JSON.stringify({ image: ref }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
