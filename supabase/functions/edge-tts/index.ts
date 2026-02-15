@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -25,6 +26,29 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
+    // Authenticate user
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error("Backend not configured");
+
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Authentication required" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
+      auth: { persistSession: false },
+    });
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(authHeader.replace("Bearer ", ""));
+    if (claimsError || !claimsData?.claims?.sub) {
+      return new Response(JSON.stringify({ error: "Invalid authentication token" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { text, languageCode = "en" } = await req.json();
     if (!text) throw new Error("Text is required");
 
@@ -35,7 +59,6 @@ serve(async (req) => {
 
     const truncatedText = String(text).slice(0, 2000);
 
-    // Try primary free Edge TTS proxy
     const proxyUrl = `https://api.tts.quest/v1/edge-tts?text=${encodeURIComponent(truncatedText)}&voice=${encodeURIComponent(voice)}`;
     const audioResponse = await fetch(proxyUrl);
 
@@ -50,7 +73,6 @@ serve(async (req) => {
       }
     }
 
-    // Fallback
     const fallbackUrl = `https://tts.langeek.co/READ_TEXT/${encodeURIComponent(truncatedText)}/${voice}`;
     const fallbackResponse = await fetch(fallbackUrl);
 

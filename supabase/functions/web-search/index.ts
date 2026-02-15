@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -34,6 +35,34 @@ serve(async (req) => {
   }
 
   try {
+    // Authenticate user — allow internal service-role calls (from chat function) and user JWTs
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+    const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error("Backend not configured");
+
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Authentication required" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    // Allow service role key (internal calls from chat function)
+    if (token !== SERVICE_ROLE_KEY) {
+      const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        global: { headers: { Authorization: authHeader } },
+        auth: { persistSession: false },
+      });
+      const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
+      if (claimsError || !claimsData?.claims?.sub) {
+        return new Response(JSON.stringify({ error: "Invalid authentication token" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     const { query, type = "web", count = 5 } = await req.json();
 
     if (!query) {
@@ -44,7 +73,6 @@ serve(async (req) => {
     
     if (!SERPAPI_API_KEY) {
       console.log("SERPAPI_API_KEY not configured, using fallback DuckDuckGo");
-      // Fallback to DuckDuckGo
       let results: SearchResult[] | ImageResult[] | VideoResult[] = [];
       if (type === "web") {
         results = await searchDuckDuckGo(query, count);
@@ -99,7 +127,6 @@ async function searchSerpAPIWeb(query: string, count: number, apiKey: string): P
     const data = await response.json();
     const results: SearchResult[] = [];
 
-    // Get organic results
     if (data.organic_results) {
       for (const item of data.organic_results.slice(0, count)) {
         results.push({
@@ -111,7 +138,6 @@ async function searchSerpAPIWeb(query: string, count: number, apiKey: string): P
       }
     }
 
-    // Add knowledge graph if available
     if (data.knowledge_graph && results.length < count) {
       results.unshift({
         title: data.knowledge_graph.title || query,
@@ -135,7 +161,7 @@ async function searchSerpAPIImages(query: string, count: number, apiKey: string)
       q: query,
       api_key: apiKey,
       engine: "google_images",
-      num: String(Math.min(count + 5, 20)), // Request extra in case some fail
+      num: String(Math.min(count + 5, 20)),
     });
 
     const response = await fetch(`https://serpapi.com/search.json?${params}`);

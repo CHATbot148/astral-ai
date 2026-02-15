@@ -1,11 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Common search terms mapping for better GIF matching
 const SEARCH_MAPPINGS: Record<string, string[]> = {
   "laughing": ["laughing", "lol", "haha", "funny"],
   "happy": ["happy", "joy", "excited", "yay"],
@@ -35,6 +35,29 @@ serve(async (req) => {
   }
 
   try {
+    // Authenticate user
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error("Backend not configured");
+
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Authentication required", gifs: [] }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
+      auth: { persistSession: false },
+    });
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(authHeader.replace("Bearer ", ""));
+    if (claimsError || !claimsData?.claims?.sub) {
+      return new Response(JSON.stringify({ error: "Invalid authentication token", gifs: [] }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { query, limit = 1 } = await req.json();
     const GIPHY_API_KEY = Deno.env.get("GIPHY_API_KEY");
 
@@ -52,11 +75,9 @@ serve(async (req) => {
       );
     }
 
-    // Try to find a better search term
     const normalizedQuery = query.toLowerCase().trim();
     let searchTerms = [normalizedQuery];
     
-    // Check if we have a mapping for this query
     for (const [key, alternatives] of Object.entries(SEARCH_MAPPINGS)) {
       if (normalizedQuery.includes(key) || alternatives.some(alt => normalizedQuery.includes(alt))) {
         searchTerms = [key, ...alternatives.slice(0, 2)];
@@ -66,16 +87,12 @@ serve(async (req) => {
 
     let gifs: Array<{ url: string; title: string; width: number; height: number }> = [];
     
-    // Try each search term until we get results
     for (const term of searchTerms) {
       const response = await fetch(
         `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(term)}&limit=${Math.min(limit * 2, 10)}&rating=pg-13&lang=en`
       );
 
-      if (!response.ok) {
-        console.error("Giphy API error:", response.status);
-        continue;
-      }
+      if (!response.ok) continue;
 
       const data = await response.json();
       
@@ -90,7 +107,6 @@ serve(async (req) => {
       }
     }
 
-    // If still no results, try trending as fallback
     if (gifs.length === 0) {
       const trendingResponse = await fetch(
         `https://api.giphy.com/v1/gifs/trending?api_key=${GIPHY_API_KEY}&limit=${limit}&rating=pg-13`
@@ -117,7 +133,7 @@ serve(async (req) => {
     console.error("Fetch GIF error:", error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error", gifs: [] }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });

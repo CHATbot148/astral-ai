@@ -1,1 +1,4 @@
 project_id = "thzfzqagsyxwlllcwlai"
+
+[functions.redeem-promo]
+verify_jwt = false

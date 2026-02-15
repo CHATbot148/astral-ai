@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -29,15 +30,23 @@ serve(async (req) => {
       auth: { persistSession: false },
     });
 
-    // Verify OTP
+    // Get OTP record by email (we can't query by hash, so get by email then compare)
     const { data: otpRecord, error: otpError } = await supabase
       .from("email_otps")
       .select("*")
       .eq("email", email)
-      .eq("otp_hash", otp)
       .single();
 
     if (otpError || !otpRecord) {
+      return new Response(
+        JSON.stringify({ error: "Invalid verification code" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Compare OTP with bcrypt hash
+    const isValid = await bcrypt.compare(otp, otpRecord.otp_hash);
+    if (!isValid) {
       return new Response(
         JSON.stringify({ error: "Invalid verification code" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -97,12 +106,11 @@ serve(async (req) => {
       const { data: authData, error: authError } = await supabase.auth.admin.createUser({
         email,
         password,
-        email_confirm: true, // Auto-confirm since OTP verified
+        email_confirm: true,
         user_metadata: { full_name: name || null },
       });
 
       if (authError) {
-        // Check if user already exists
         if (authError.message.includes("already been registered")) {
           return new Response(
             JSON.stringify({ error: "This email is already registered. Please log in instead." }),

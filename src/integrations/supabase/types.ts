@@ -398,7 +398,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      redeem_promo_code: {
+        Args: { p_code: string; p_user_id: string }
+        Returns: {
+          code_id: string
+          duration_days: number
+          error_message: string
+          success: boolean
+          tier: string
+        }[]
+      }
     }
     Enums: {
       billing_cycle: "monthly" | "yearly"
