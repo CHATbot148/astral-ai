@@ -8,6 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { Loader2, Sparkles, RotateCcw, Image as ImageIcon, Wand2, AlertCircle, Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSubscription } from "@/hooks/useSubscription";
 
 export type ImageGenOptions = {
   prompt: string;
@@ -51,6 +52,7 @@ const PROMPT_SUGGESTIONS = [
 ];
 
 export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPrompt = "" }: Props) => {
+  const { canGenerateImage, remainingImages, tier, tierConfig } = useSubscription();
   const [prompt, setPrompt] = useState(initialPrompt);
   const [style, setStyle] = useState<ImageGenOptions["style"]>("photoreal");
   const [aspectRatio, setAspectRatio] = useState<ImageGenOptions["aspectRatio"]>("1:1");
@@ -359,10 +361,21 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
               )}
             </AnimatePresence>
 
+            {/* Limit info */}
+            {!canGenerateImage && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/30">
+                <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
+                <p className="text-sm text-destructive">Daily image limit reached ({tierConfig.limits.imagesPerDay}/{tier} plan). Upgrade for more.</p>
+              </div>
+            )}
+            {canGenerateImage && (
+              <p className="text-xs text-muted-foreground">{remainingImages} image{remainingImages !== 1 ? 's' : ''} remaining today</p>
+            )}
+
             <Button
               variant="xai"
               onClick={() => run()}
-              disabled={isWorking || !prompt.trim()}
+              disabled={isWorking || !prompt.trim() || !canGenerateImage}
               className="gap-2 ml-auto min-w-[140px]"
             >
               {isWorking ? (
