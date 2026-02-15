@@ -38,6 +38,36 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_usage: {
+        Row: {
+          created_at: string
+          id: string
+          images_generated: number
+          updated_at: string
+          usage_date: string
+          user_id: string
+          videos_generated: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          images_generated?: number
+          updated_at?: string
+          usage_date?: string
+          user_id: string
+          videos_generated?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          images_generated?: number
+          updated_at?: string
+          usage_date?: string
+          user_id?: string
+          videos_generated?: number
+        }
+        Relationships: []
+      }
       email_otps: {
         Row: {
           created_at: string
@@ -220,6 +250,57 @@ export type Database = {
         }
         Relationships: []
       }
+      subscriptions: {
+        Row: {
+          agreed_to_privacy_policy: boolean
+          auto_renew: boolean
+          billing_cycle: Database["public"]["Enums"]["billing_cycle"] | null
+          cancelled_at: string | null
+          created_at: string
+          expires_at: string | null
+          id: string
+          privacy_policy_agreed_at: string | null
+          save_payment_method: boolean
+          started_at: string
+          status: Database["public"]["Enums"]["subscription_status"]
+          tier: Database["public"]["Enums"]["subscription_tier"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          agreed_to_privacy_policy?: boolean
+          auto_renew?: boolean
+          billing_cycle?: Database["public"]["Enums"]["billing_cycle"] | null
+          cancelled_at?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          privacy_policy_agreed_at?: string | null
+          save_payment_method?: boolean
+          started_at?: string
+          status?: Database["public"]["Enums"]["subscription_status"]
+          tier?: Database["public"]["Enums"]["subscription_tier"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          agreed_to_privacy_policy?: boolean
+          auto_renew?: boolean
+          billing_cycle?: Database["public"]["Enums"]["billing_cycle"] | null
+          cancelled_at?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          privacy_policy_agreed_at?: string | null
+          save_payment_method?: boolean
+          started_at?: string
+          status?: Database["public"]["Enums"]["subscription_status"]
+          tier?: Database["public"]["Enums"]["subscription_tier"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_memory: {
         Row: {
           created_at: string
@@ -255,7 +336,9 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      billing_cycle: "monthly" | "yearly"
+      subscription_status: "active" | "cancelled" | "expired" | "pending"
+      subscription_tier: "free" | "basic" | "pro" | "ultimate"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -382,6 +465,10 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      billing_cycle: ["monthly", "yearly"],
+      subscription_status: ["active", "cancelled", "expired", "pending"],
+      subscription_tier: ["free", "basic", "pro", "ultimate"],
+    },
   },
 } as const
