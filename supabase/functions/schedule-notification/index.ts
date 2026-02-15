@@ -20,7 +20,6 @@ serve(async (req) => {
       throw new Error("Backend not configured");
     }
 
-    // Authenticate the user from JWT
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(
@@ -29,29 +28,25 @@ serve(async (req) => {
       );
     }
 
-    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
     const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims?.sub) {
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+    if (userError || !user) {
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Use verified user ID from JWT — never trust client-supplied userId
-    const userId = claimsData.claims.sub as string;
-
+    const userId = user.id;
     const { message, scheduledFor, conversationId, type = "reminder" } = await req.json();
 
     // Get user email
-    const { data: userData, error: userError } = await supabase.auth.admin.getUserById(userId);
-    if (userError || !userData?.user?.email) {
-      throw new Error("User not found");
+    const userEmail = user.email;
+    if (!userEmail) {
+      throw new Error("User email not found");
     }
-
-    const userEmail = userData.user.email;
 
     // Store scheduled notification in database
     const { error: insertError } = await supabase
@@ -70,7 +65,6 @@ serve(async (req) => {
       console.error("Insert error:", insertError);
     }
 
-    // If scheduled for now or past, send immediately
     const scheduledDate = new Date(scheduledFor);
     const now = new Date();
 
@@ -117,7 +111,7 @@ async function sendEmail(apiKey: string, to: string, message: string, type: stri
       </div>
       <div style="background: #f8f9fa; padding: 24px; border-radius: 0 0 12px 12px;">
         <p style="font-size: 16px; line-height: 1.6; color: #333;">${message}</p>
-        <a href="https://xai.app" style="display: inline-block; background: linear-gradient(135deg, #00CED1, #9B59B6); color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 16px; font-weight: 500;">Open X-AI</a>
+        <a href="https://astraz.lovable.app" style="display: inline-block; background: linear-gradient(135deg, #00CED1, #9B59B6); color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 16px; font-weight: 500;">Open X-AI</a>
       </div>
       <p style="text-align: center; color: #888; font-size: 12px; margin-top: 16px;">
         Sent by X-AI, a product of X-Tech
