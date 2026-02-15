@@ -282,7 +282,7 @@ export const ChatContainer = () => {
       if (reminder && user) {
         try {
           const { data, error } = await supabase.functions.invoke('schedule-notification', {
-            body: { userId: user.id, message: reminder.message, scheduledFor: reminder.scheduledForISO, conversationId: convId, type: 'reminder' },
+            body: { message: reminder.message, scheduledFor: reminder.scheduledForISO, conversationId: convId, type: 'reminder' },
           });
           if (error || data?.error) throw error || new Error(data?.error);
           await addMessage(convId, 'assistant', `✅ Got it — I'll remind you about "${reminder.message}" in a bit.`);
