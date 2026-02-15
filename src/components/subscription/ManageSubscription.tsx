@@ -34,26 +34,7 @@ export const ManageSubscription = ({ onUpgrade }: ManageSubscriptionProps) => {
     try {
       const { refundEligible, fee } = await cancelSubscription();
 
-      // Send cancellation email
-      try {
-        const price = subscription?.billing_cycle === 'monthly'
-          ? TIER_CONFIGS[tier].price.monthly
-          : TIER_CONFIGS[tier].price.yearly;
-        await supabase.functions.invoke('subscription-email', {
-          body: {
-            type: 'cancellation',
-            userEmail: user?.email,
-            userName: user?.user_metadata?.full_name || user?.email?.split('@')[0],
-            tier: TIER_CONFIGS[tier].name,
-            billingCycle: subscription?.billing_cycle,
-            amount: price,
-            refundAmount: refundEligible ? price : price - fee,
-            fee: refundEligible ? 0 : fee,
-          },
-        });
-      } catch (e) {
-        console.error('Cancel email failed:', e);
-      }
+      // Subscription emails disabled for now
 
       if (refundEligible) {
         toast({ title: 'Subscription cancelled', description: 'Full refund will be processed.' });

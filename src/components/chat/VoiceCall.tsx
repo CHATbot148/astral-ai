@@ -49,8 +49,8 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const isActiveRef = useRef(true);
   const selectedVoiceRef = useRef(selectedVoice);
   const isMutedRef = useRef(isMuted);
-  // Pre-unlocked audio element for iOS
-  const preUnlockedAudioRef = useRef<HTMLAudioElement | null>(null);
+  // Persistent AudioContext for iOS playback (unlocked on user gesture)
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   useEffect(() => { selectedVoiceRef.current = selectedVoice; }, [selectedVoice]);
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
@@ -98,85 +98,30 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
       if (!isActiveRef.current) return;
 
-      const audioBlob = await response.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
-      
-      // Use pre-unlocked audio element on iOS, or create new one
-      const audio = preUnlockedAudioRef.current || new Audio();
-      audio.src = audioUrl;
-      currentAudioRef.current = audio;
-      audio.setAttribute("playsinline", "true");
+      const arrayBuffer = await response.arrayBuffer();
 
-      // Monitor for user interruption while AI speaks
-      const startListeningForInterrupt = () => {
-        if (!streamRef.current || !isActiveRef.current || isMutedRef.current) return;
-        try {
-          const interruptCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-          const interruptSource = interruptCtx.createMediaStreamSource(streamRef.current!);
-          const interruptAnalyser = interruptCtx.createAnalyser();
-          interruptAnalyser.fftSize = 512;
-          interruptSource.connect(interruptAnalyser);
-          const interruptData = new Uint8Array(interruptAnalyser.frequencyBinCount);
-          let speechFrames = 0;
+      // Use AudioContext decodeAudioData — works reliably on iOS Safari
+      let ctx = audioContextRef.current;
+      if (!ctx || ctx.state === "closed") {
+        ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        audioContextRef.current = ctx;
+      }
+      if (ctx.state === "suspended") await ctx.resume();
 
-          const checkInterrupt = () => {
-            if (!audio || audio.paused || audio.ended || !isActiveRef.current) {
-              interruptCtx.close().catch(() => {});
-              return;
-            }
-            interruptAnalyser.getByteFrequencyData(interruptData);
-            const avg = interruptData.reduce((s, v) => s + v, 0) / interruptData.length;
-            if (avg > 25) {
-              speechFrames++;
-              if (speechFrames > 8) {
-                audio.pause();
-                audio.src = "";
-                interruptCtx.close().catch(() => {});
-                URL.revokeObjectURL(audioUrl);
-                // After interruption, go back to listening for user's next input
-                if (isActiveRef.current && !isMutedRef.current) {
-                  setStatus("listening");
-                  startListening();
-                }
-                return;
-              }
-            } else {
-              speechFrames = Math.max(0, speechFrames - 1);
-            }
-            requestAnimationFrame(checkInterrupt);
-          };
-          requestAnimationFrame(checkInterrupt);
-        } catch (e) {
-          console.error("Interrupt monitor error:", e);
-        }
-      };
+      const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
+      const source = ctx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(ctx.destination);
 
-      await new Promise<void>((resolve, reject) => {
-        audio.onended = () => {
-          URL.revokeObjectURL(audioUrl);
+      // Store source so we can stop it on interruption or end call
+      currentAudioRef.current = source as any;
+
+      await new Promise<void>((resolve) => {
+        source.onended = () => {
           currentAudioRef.current = null;
           resolve();
         };
-        audio.onerror = () => {
-          URL.revokeObjectURL(audioUrl);
-          currentAudioRef.current = null;
-          reject(new Error("Audio playback error"));
-        };
-
-        const playPromise = audio.play();
-        if (playPromise) {
-          playPromise.then(() => {
-            startListeningForInterrupt();
-          }).catch((err) => {
-            if (err.name === "AbortError") {
-              resolve();
-            } else {
-              // iOS autoplay blocked — try with user interaction context
-              console.warn("Audio play blocked:", err.message);
-              resolve();
-            }
-          });
-        }
+        source.start(0);
       });
 
       // After speaking finishes normally, go back to listening
@@ -412,24 +357,17 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       isActiveRef.current = true;
       setIsConnected(true);
 
-      // Pre-unlock audio for iOS — must happen during user gesture
-      try {
-        const audio = new Audio();
-        audio.setAttribute("playsinline", "true");
-        // Play a tiny silent audio to unlock the audio element
-        audio.src = "data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYoRwVHAAAAAAD/+1DEAAAHAAGf9AAAIgAANIAAAAQAAAE/////ygfB8HwfB8AAAAB8Hw+D4Pg+D4Pg+H///8HwfB8HwfB8HwfB8H///4Pg+D4Pg+D4Pg+D4f///B8HwfB8HwfB8HwfD///+D4Pg+D4Pg+D4Pg//tQxBWAAADSAAAAAAAAANIAAAAQ+H///wfB8HwfB8HwfB8Hw///+D4Pg+D4Pg+D4Pg+H///B8HwfB8HwfB8HwfB8P//+D4Pg+D4Pg+D4Pg+D4f//B8HwfB8HwfB8HwfB8Hw//8=";
-        await audio.play().catch(() => {});
-        audio.pause();
-        preUnlockedAudioRef.current = audio;
-      } catch (e) {
-        console.warn("Audio pre-unlock failed:", e);
-      }
-
-      // Also pre-unlock AudioContext for iOS
+      // Pre-unlock AudioContext for iOS — must happen during user gesture
       try {
         const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
         if (ctx.state === "suspended") await ctx.resume();
-        ctx.close().catch(() => {});
+        // Play a short silent buffer to fully unlock audio output on iOS
+        const silentBuffer = ctx.createBuffer(1, 1, 22050);
+        const silentSource = ctx.createBufferSource();
+        silentSource.buffer = silentBuffer;
+        silentSource.connect(ctx.destination);
+        silentSource.start(0);
+        audioContextRef.current = ctx;
       } catch (e) {
         console.warn("AudioContext pre-unlock failed:", e);
       }
@@ -462,9 +400,12 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       mediaRecorderRef.current.stop();
     }
     if (currentAudioRef.current) {
-      currentAudioRef.current.pause();
-      currentAudioRef.current.src = "";
+      try { (currentAudioRef.current as any).stop(); } catch {}
       currentAudioRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
     }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
