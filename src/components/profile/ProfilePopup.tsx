@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, PanInfo } from 'framer-motion';
-import { X, LogOut, Trash2, Camera, Sun, Moon, Monitor, Check, User, Loader2, Volume2, ChevronRight, ChevronLeft, BarChart3, Images, Download, ExternalLink, Bot, Brain, MessageSquare, Sparkles, Globe, Video, Play } from 'lucide-react';
+import { X, LogOut, Trash2, Camera, Sun, Moon, Monitor, Check, User, Loader2, Volume2, ChevronRight, ChevronLeft, BarChart3, Images, Download, ExternalLink, Bot, Brain, MessageSquare, Sparkles, Video, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
@@ -12,9 +12,6 @@ import { resolveFileUrl } from '@/lib/storageRef';
 import { MemoryPopup } from './MemoryPopup';
 import { AIMode, AISettings, modeDescriptions, getAISettings, saveAISettings } from '@/lib/aiSettings';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useTranslation } from '@/hooks/useTranslation';
-import { LANGUAGES } from '@/lib/languages';
-import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface ProfilePopupProps {
   isOpen: boolean;
@@ -26,7 +23,7 @@ interface ProfilePopupProps {
   onProfileUpdate: () => void;
 }
 
-type Section = 'main' | 'account' | 'voice' | 'theme' | 'usage' | 'gallery' | 'ai_settings' | 'language';
+type Section = 'main' | 'account' | 'voice' | 'theme' | 'usage' | 'gallery' | 'ai_settings';
 
 interface GeneratedImage {
   id: string;
@@ -71,7 +68,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
-  const { t, language, setLanguage } = useTranslation();
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [name, setName] = useState(profile?.full_name || '');
@@ -246,11 +243,11 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
     e.currentTarget.value = '';
     if (file) {
       if (!file.type.startsWith('image/')) {
-        toast({ title: t('Please select an image file'), variant: 'destructive' });
+        toast({ title: 'Please select an image file', variant: 'destructive' });
         return;
       }
       if (file.size > 5 * 1024 * 1024) {
-        toast({ title: t('Image must be less than 5MB'), variant: 'destructive' });
+        toast({ title: 'Image must be less than 5MB', variant: 'destructive' });
         return;
       }
       const reader = new FileReader();
@@ -282,7 +279,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       onProfileUpdate();
     } catch (error) {
       console.error('Avatar upload error:', error);
-      toast({ title: t('Failed to update avatar'), variant: 'destructive' });
+      toast({ title: 'Failed to update avatar', variant: 'destructive' });
     } finally {
       setIsUploadingAvatar(false);
     }
@@ -299,7 +296,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       if (error) throw error;
       onProfileUpdate();
     } catch (error) {
-      toast({ title: t('Failed to update name'), variant: 'destructive' });
+      toast({ title: 'Failed to update name', variant: 'destructive' });
     } finally {
       setIsSavingName(false);
     }
@@ -307,7 +304,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
 
   const handleDeleteAccount = async () => {
     if (!deletePassword || !user?.email) {
-      toast({ title: t('Please enter your password'), variant: 'destructive' });
+      toast({ title: 'Please enter your password', variant: 'destructive' });
       return;
     }
     setIsDeleting(true);
@@ -317,7 +314,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
         password: deletePassword,
       });
       if (signInError) {
-        toast({ title: t('Incorrect password'), variant: 'destructive' });
+        toast({ title: 'Incorrect password', variant: 'destructive' });
         return;
       }
       const { error } = await supabase.functions.invoke('delete-account', { body: {} });
@@ -327,7 +324,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
     } catch (error) {
       console.error('Delete account error:', error);
       toast({
-        title: t('Failed to delete account'),
+        title: 'Failed to delete account',
         description: error instanceof Error ? error.message : 'Unknown error',
         variant: 'destructive',
       });
@@ -365,7 +362,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       audio.onerror = () => { URL.revokeObjectURL(url); setPreviewingVoiceId(null); };
       await audio.play();
     } catch (e) {
-      toast({ title: t("Voice sample failed"), variant: "destructive" });
+      toast({ title: "Voice sample failed", variant: "destructive" });
       setPreviewingVoiceId(null);
     }
   };
@@ -383,7 +380,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       document.body.removeChild(a);
       URL.revokeObjectURL(blobUrl);
     } catch {
-      toast({ title: t('Failed to download'), variant: 'destructive' });
+      toast({ title: 'Failed to download', variant: 'destructive' });
     }
   };
 
@@ -421,12 +418,12 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   const displayAvatar = profile?.avatar_url;
 
   const menuItems = [
-    { id: 'account' as Section, icon: User, label: t('Account'), desc: t('Profile, language, logout') },
-    { id: 'ai_settings' as Section, icon: Bot, label: t('AI Settings'), desc: t('Modes, memory, behavior') },
-    { id: 'voice' as Section, icon: Volume2, label: t('Voice'), desc: t('Text-to-speech voice') },
-    { id: 'theme' as Section, icon: Sun, label: t('Theme'), desc: t('Light, dark, or system') },
-    { id: 'usage' as Section, icon: BarChart3, label: t('Usage'), desc: t('Messages, images, videos') },
-    { id: 'gallery' as Section, icon: Images, label: t('Gallery'), desc: t('Generated images & videos') },
+    { id: 'account' as Section, icon: User, label: 'Account', desc: 'Profile, logout' },
+    { id: 'ai_settings' as Section, icon: Bot, label: 'AI Settings', desc: 'Modes, memory, behavior' },
+    { id: 'voice' as Section, icon: Volume2, label: 'Voice', desc: 'Text-to-speech voice' },
+    { id: 'theme' as Section, icon: Sun, label: 'Theme', desc: 'Light, dark, or system' },
+    { id: 'usage' as Section, icon: BarChart3, label: 'Usage', desc: 'Messages, images, videos' },
+    { id: 'gallery' as Section, icon: Images, label: 'Gallery', desc: 'Generated images & videos' },
   ];
 
   // Gallery filtered items
@@ -464,11 +461,6 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
     setPreviewItem(item);
   };
 
-  // Filtered languages
-  const filteredLanguages = LANGUAGES.filter(l =>
-    l.name.toLowerCase().includes(langSearch.toLowerCase()) ||
-    l.nativeName.toLowerCase().includes(langSearch.toLowerCase())
-  );
 
   const renderMainMenu = () => (
     <div className="space-y-2">
@@ -495,7 +487,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
           <input ref={fileInputRef} type="file" accept="image/*" onChange={handleAvatarSelect} className="hidden" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="font-medium truncate">{profile?.full_name || t('User')}</p>
+          <p className="font-medium truncate">{profile?.full_name || 'User'}</p>
           <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
         </div>
       </div>
@@ -521,43 +513,24 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   const renderAccountSection = () => (
     <div className="space-y-4">
       <div>
-        <label className="text-sm text-muted-foreground mb-1.5 block">{t('Name')}</label>
+        <label className="text-sm text-muted-foreground mb-1.5 block">Name</label>
         <div className="flex gap-2">
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('Your name')} />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" />
           <Button variant="xai" onClick={handleSaveName} disabled={isSavingName || name === profile?.full_name}>
-            {t('Save')}
+            Save
           </Button>
         </div>
       </div>
 
       <div>
-        <label className="text-sm text-muted-foreground mb-1.5 block">{t('Email')}</label>
+        <label className="text-sm text-muted-foreground mb-1.5 block">Email</label>
         <Input value={user?.email || ''} disabled className="bg-secondary/50" />
-      </div>
-
-      {/* Language Setting */}
-      <div>
-        <button
-          onClick={() => setActiveSection('language')}
-          className="w-full flex items-center justify-between p-3 rounded-lg bg-secondary/50 border border-border hover:border-xai-cyan/50 transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <Globe className="h-5 w-5 text-muted-foreground" />
-            <div className="text-left">
-              <p className="text-sm font-medium">{t('Language')}</p>
-              <p className="text-xs text-muted-foreground">
-                {LANGUAGES.find(l => l.code === language)?.name || 'Auto Detect'}
-              </p>
-            </div>
-          </div>
-          <ChevronRight className="h-4 w-4 text-muted-foreground" />
-        </button>
       </div>
 
       <div className="pt-4 space-y-3 border-t border-border">
         <Button variant="outline" className="w-full justify-start gap-2" onClick={handleLogout}>
           <LogOut className="h-4 w-4" />
-          {t('Log out')}
+          Log out
         </Button>
 
         {!showDeleteConfirm ? (
@@ -567,7 +540,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
             onClick={() => setShowDeleteConfirm(true)}
           >
             <Trash2 className="h-4 w-4" />
-            {t('Delete account')}
+            Delete account
           </Button>
         ) : (
           <motion.div 
@@ -576,18 +549,18 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
             className="p-3 rounded-lg border border-destructive/50 bg-destructive/5"
           >
             <p className="text-sm text-destructive mb-3">
-              {t('Enter your password to confirm account deletion:')}
+              Enter your password to confirm account deletion:
             </p>
             <Input 
-              type="password" placeholder={t('Password')} value={deletePassword}
+              type="password" placeholder="Password" value={deletePassword}
               onChange={(e) => setDeletePassword(e.target.value)} className="mb-3"
             />
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => { setShowDeleteConfirm(false); setDeletePassword(''); }}>
-                {t('Cancel')}
+                Cancel
               </Button>
               <Button variant="destructive" size="sm" onClick={handleDeleteAccount} disabled={isDeleting || !deletePassword}>
-                {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : t('Delete permanently')}
+                {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Delete permanently'}
               </Button>
             </div>
           </motion.div>
@@ -596,53 +569,13 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
     </div>
   );
 
-  const renderLanguageSection = () => (
-    <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">
-        {t('Select a language for the interface. Listen and Call features currently work with Auto Detect and English only.')}
-      </p>
-      <Input
-        placeholder={t('Search languages...')}
-        value={langSearch}
-        onChange={(e) => setLangSearch(e.target.value)}
-        className="mb-2"
-      />
-      <ScrollArea className="h-[350px]">
-        <div className="space-y-1 pr-2">
-          {filteredLanguages.map((lang) => (
-            <motion.button
-              key={lang.code}
-              onClick={() => {
-                setLanguage(lang.code);
-                toast({ title: lang.code === 'auto' ? 'Auto Detect enabled' : `Language set to ${lang.name}` });
-              }}
-              whileTap={{ scale: 0.98 }}
-              className={`w-full flex items-center justify-between p-2.5 rounded-lg border transition-all text-left text-sm ${
-                language === lang.code
-                  ? 'border-xai-cyan bg-xai-cyan/10'
-                  : 'border-transparent hover:bg-secondary/50'
-              }`}
-            >
-              <div>
-                <span className={`font-medium ${language === lang.code ? 'text-xai-cyan' : ''}`}>
-                  {lang.name}
-                </span>
-                {lang.nativeName !== lang.name && (
-                  <span className="text-xs text-muted-foreground ml-2">{lang.nativeName}</span>
-                )}
-              </div>
-              {language === lang.code && <Check className="h-4 w-4 text-xai-cyan" />}
-            </motion.button>
-          ))}
-        </div>
-      </ScrollArea>
-    </div>
-  );
+
+
 
   const renderAISettingsSection = () => (
     <div className="space-y-6">
       <div>
-        <h3 className="text-sm font-medium mb-3">{t('AI Mode')}</h3>
+        <h3 className="text-sm font-medium mb-3">AI Mode</h3>
         <div className="space-y-2">
           {(Object.keys(modeDescriptions) as AIMode[]).map((mode) => {
             const { name, description } = modeDescriptions[mode];
@@ -663,8 +596,8 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
                   {isSelected && <Check className="h-3 w-3 text-white" />}
                 </div>
                 <div className="flex-1">
-                  <p className={`text-sm font-medium ${isSelected ? 'text-xai-cyan' : ''}`}>{t(name)}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{t(description)}</p>
+                  <p className={`text-sm font-medium ${isSelected ? 'text-xai-cyan' : ''}`}>{name}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
                 </div>
               </motion.button>
             );
@@ -676,8 +609,8 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
         <div className="flex items-center gap-3">
           <MessageSquare className="h-5 w-5 text-muted-foreground" />
           <div>
-            <p className="text-sm font-medium">{t('Follow-up Questions')}</p>
-            <p className="text-xs text-muted-foreground">{t('Ask follow-up questions for deeper answers')}</p>
+            <p className="text-sm font-medium">Follow-up Questions</p>
+            <p className="text-xs text-muted-foreground">Ask follow-up questions for deeper answers</p>
           </div>
         </div>
         <Checkbox
@@ -690,8 +623,8 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
         <div className="flex items-center gap-3">
           <Sparkles className="h-5 w-5 text-muted-foreground" />
           <div>
-            <p className="text-sm font-medium">{t('Typing Animation')}</p>
-            <p className="text-xs text-muted-foreground">{t('Show words as they\'re generated. Off = display all at once.')}</p>
+            <p className="text-sm font-medium">Typing Animation</p>
+            <p className="text-xs text-muted-foreground">Show words as they're generated. Off = display all at once.</p>
           </div>
         </div>
         <Checkbox
@@ -703,8 +636,8 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       <Button variant="outline" className="w-full justify-start gap-3" onClick={() => setShowMemoryPopup(true)}>
         <Brain className="h-5 w-5 text-xai-purple" />
         <div className="text-left">
-          <p className="text-sm font-medium">{t('Memory')}</p>
-          <p className="text-xs text-muted-foreground">{t('View what X-AI remembers about you')}</p>
+          <p className="text-sm font-medium">Memory</p>
+          <p className="text-xs text-muted-foreground">View what X-AI remembers about you</p>
         </div>
         <ChevronRight className="h-4 w-4 ml-auto text-muted-foreground" />
       </Button>
@@ -742,13 +675,13 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
 
     return (
       <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">{t('Select a voice for text-to-speech')}</p>
+        <p className="text-sm text-muted-foreground">Select a voice for text-to-speech</p>
         <div>
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('Feminine')}</p>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Feminine</p>
           <div className="grid grid-cols-1 gap-2">{feminineVoices.map(renderVoiceButton)}</div>
         </div>
         <div>
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('Masculine')}</p>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Masculine</p>
           <div className="grid grid-cols-1 gap-2">{masculineVoices.map(renderVoiceButton)}</div>
         </div>
       </div>
@@ -757,7 +690,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
 
   const renderThemeSection = () => (
     <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">{t('Choose your preferred theme')}</p>
+      <p className="text-sm text-muted-foreground">Choose your preferred theme</p>
       <div className="grid grid-cols-3 gap-2">
         {themes.map(({ value, icon: Icon, label }) => (
           <motion.button
@@ -770,7 +703,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
             }`}
           >
             <Icon className={`h-6 w-6 ${theme === value ? 'text-xai-cyan' : 'text-muted-foreground'}`} />
-            <span className={`text-sm ${theme === value ? 'text-xai-cyan font-medium' : 'text-muted-foreground'}`}>{t(label)}</span>
+            <span className={`text-sm ${theme === value ? 'text-xai-cyan font-medium' : 'text-muted-foreground'}`}>{label}</span>
             {theme === value && (
               <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}><Check className="h-4 w-4 text-xai-cyan" /></motion.div>
             )}
@@ -782,38 +715,38 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
 
   const renderUsageSection = () => (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">{t('Your usage statistics')}</p>
+      <p className="text-sm text-muted-foreground">Your usage statistics</p>
       {isLoadingUsage ? (
         <div className="flex items-center justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-xai-cyan" /></div>
       ) : usageStats ? (
         <div className="grid grid-cols-1 gap-3">
           <div className="p-4 rounded-lg bg-secondary/50 border border-border">
             <p className="text-2xl font-bold text-xai-cyan">{usageStats.messagesSent}</p>
-            <p className="text-sm text-muted-foreground">{t('Messages sent')}</p>
+            <p className="text-sm text-muted-foreground">Messages sent</p>
           </div>
           <div className="p-4 rounded-lg bg-secondary/50 border border-border">
             <p className="text-2xl font-bold text-xai-purple">{usageStats.imagesGenerated}</p>
-            <p className="text-sm text-muted-foreground">{t('Images generated')}</p>
+            <p className="text-sm text-muted-foreground">Images generated</p>
           </div>
           <div className="p-4 rounded-lg bg-secondary/50 border border-border">
             <p className="text-2xl font-bold text-emerald-500">
               {usageStats.remainingImageToday} / {usageStats.imageDailyLimit}
             </p>
-            <p className="text-sm text-muted-foreground">{t('Remaining daily image generations')}</p>
+            <p className="text-sm text-muted-foreground">Remaining daily image generations</p>
           </div>
           <div className="p-4 rounded-lg bg-secondary/50 border border-border">
             <p className="text-2xl font-bold text-xai-purple">{usageStats.videosGenerated}</p>
-            <p className="text-sm text-muted-foreground">{t('Videos generated')}</p>
+            <p className="text-sm text-muted-foreground">Videos generated</p>
           </div>
           <div className="p-4 rounded-lg bg-secondary/50 border border-border">
             <p className="text-2xl font-bold text-amber-500">
               {usageStats.remainingVideoToday} / {usageStats.videoDailyLimit}
             </p>
-            <p className="text-sm text-muted-foreground">{t('Remaining daily video generations')}</p>
+            <p className="text-sm text-muted-foreground">Remaining daily video generations</p>
           </div>
         </div>
       ) : (
-        <p className="text-sm text-muted-foreground text-center py-4">{t('Unable to load usage data')}</p>
+        <p className="text-sm text-muted-foreground text-center py-4">Unable to load usage data</p>
       )}
     </div>
   );
@@ -832,7 +765,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            {filter === 'all' ? t('All') : filter === 'images' ? t('Images') : t('Videos')}
+            {filter === 'all' ? 'All' : filter === 'images' ? 'Images' : 'Videos'}
           </button>
         ))}
       </div>
@@ -842,8 +775,8 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       ) : filteredGalleryItems.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <Images className="h-12 w-12 text-muted-foreground/50 mb-3" />
-          <p className="text-sm text-muted-foreground">{t('No media yet')}</p>
-          <p className="text-xs text-muted-foreground mt-1">{t('Generated media will appear here')}</p>
+          <p className="text-sm text-muted-foreground">No media yet</p>
+          <p className="text-xs text-muted-foreground mt-1">Generated media will appear here</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2">
@@ -948,7 +881,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
                   )}
                 >
                   <Download className="h-4 w-4" />
-                  {t('Download')}
+                  Download
                 </Button>
               </div>
             </motion.div>
@@ -966,20 +899,18 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       case 'theme': return renderThemeSection();
       case 'usage': return renderUsageSection();
       case 'gallery': return renderGallerySection();
-      case 'language': return renderLanguageSection();
       default: return renderMainMenu();
     }
   };
 
   const sectionTitles: Record<Section, string> = {
-    main: t('Settings'),
-    account: t('Account'),
-    ai_settings: t('AI Settings'),
-    voice: t('Voice'),
-    theme: t('Theme'),
-    usage: t('Usage'),
-    gallery: t('Gallery'),
-    language: t('Language'),
+    main: 'Settings',
+    account: 'Account',
+    ai_settings: 'AI Settings',
+    voice: 'Voice',
+    theme: 'Theme',
+    usage: 'Usage',
+    gallery: 'Gallery',
   };
 
   return (
@@ -1019,11 +950,11 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
                   <div className="flex items-center justify-between mb-6">
                     {activeSection !== 'main' ? (
                       <button
-                        onClick={() => setActiveSection(activeSection === 'language' ? 'account' : 'main')}
+                        onClick={() => setActiveSection('main')}
                         className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
                       >
                         <ChevronRight className="h-4 w-4 rotate-180" />
-                        {t('Back')}
+                        Back
                       </button>
                     ) : (
                       <div />

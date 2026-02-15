@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ThemeProvider } from "@/hooks/useTheme";
-import { TranslationProvider } from "@/hooks/useTranslation";
+
 import { SplashScreen } from "@/components/SplashScreen";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
@@ -44,7 +44,6 @@ const App = () => {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <AuthProvider>
-          <TranslationProvider>
             <TooltipProvider>
               {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
               <Toaster />
@@ -57,7 +56,6 @@ const App = () => {
                 </Routes>
               </BrowserRouter>
             </TooltipProvider>
-          </TranslationProvider>
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>
