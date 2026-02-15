@@ -296,8 +296,24 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
+const defaultContext: SubscriptionContextType = {
+  subscription: null,
+  dailyUsage: { images_generated: 0, videos_generated: 0 },
+  tier: 'free',
+  tierConfig: TIER_CONFIGS['free'],
+  loading: true,
+  canGenerateImage: false,
+  canGenerateVideo: false,
+  remainingImages: 0,
+  remainingVideos: 0,
+  subscribe: async () => {},
+  cancelSubscription: async () => ({ refundEligible: false, fee: 0 }),
+  refreshUsage: async () => {},
+  incrementImageUsage: async () => {},
+  incrementVideoUsage: async () => {},
+};
+
 export const useSubscription = () => {
   const context = useContext(SubscriptionContext);
-  if (!context) throw new Error('useSubscription must be used within SubscriptionProvider');
-  return context;
+  return context ?? defaultContext;
 };
