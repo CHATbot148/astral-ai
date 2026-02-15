@@ -3,6 +3,7 @@
  export interface AISettings {
    mode: AIMode;
    followUpQuestions: boolean;
+   typingAnimation: boolean;
  }
  
  const STORAGE_KEY = 'xai-ai-settings';
@@ -10,6 +11,7 @@
  export const defaultSettings: AISettings = {
    mode: 'smart_friendly',
    followUpQuestions: true,
+   typingAnimation: true,
  };
  
  export const modeDescriptions: Record<AIMode, { name: string; description: string }> = {

@@ -506,6 +506,7 @@ export const ChatContainer = () => {
       const decoder = new TextDecoder();
       let fullContent = '';
       let buffer = '';
+      const showTyping = getAISettings().typingAnimation;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -530,7 +531,9 @@ export const ChatContainer = () => {
             const content = parsed.choices?.[0]?.delta?.content;
             if (content) {
               fullContent += content;
-              setStreamingContent(fullContent);
+              if (showTyping) {
+                setStreamingContent(fullContent);
+              }
             }
           } catch {
             buffer = line + '\n' + buffer;
