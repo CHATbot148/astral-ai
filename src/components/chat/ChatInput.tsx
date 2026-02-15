@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Mic, MicOff, Plus, X, Loader2, FileText, Square, Phone, Image as ImageIcon, Smile } from 'lucide-react';
+import { Send, Mic, MicOff, Plus, X, Loader2, FileText, Square, Phone, Image as ImageIcon, Smile, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { VoiceVisualizer } from './VoiceVisualizer';
@@ -297,9 +297,40 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
   };
 
   const showCallButton = !message.trim() && files.length === 0 && !isLoading && !isRecording && onStartCall;
+  const isEditing = !!editValue;
+
+  const handleCancelEdit = () => {
+    setMessage('');
+    onClearEdit?.();
+  };
 
   return (
     <div className="w-full max-w-4xl mx-auto px-3 sm:px-4 pb-4 pt-2">
+      {/* Editing indicator */}
+      <AnimatePresence>
+        {isEditing && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mb-2 flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-xai-cyan/10 border border-xai-cyan/30"
+          >
+            <div className="flex items-center gap-2 text-sm text-xai-cyan">
+              <Pencil className="h-3.5 w-3.5" />
+              <span className="font-medium">Editing message</span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCancelEdit}
+              className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3 w-3 mr-1" />
+              Cancel
+            </Button>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* File Previews Above Input */}
       <AnimatePresence>
         {filePreviews.length > 0 && (
