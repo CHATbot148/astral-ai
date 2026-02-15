@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, PanInfo } from 'framer-motion';
-import { X, LogOut, Trash2, Camera, Sun, Moon, Monitor, Check, User, Loader2, Volume2, ChevronRight, ChevronLeft, BarChart3, Images, Download, ExternalLink, Bot, Brain, MessageSquare, Sparkles, Video, Play } from 'lucide-react';
+import { X, LogOut, Trash2, Camera, Sun, Moon, Monitor, Check, User, Loader2, Volume2, ChevronRight, ChevronLeft, BarChart3, Images, Download, ExternalLink, Bot, Brain, MessageSquare, Sparkles, Video, Play, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
+import { useSubscription, TIER_CONFIGS } from '@/hooks/useSubscription';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { ImageCropper } from '@/components/chat/ImageCropper';
@@ -12,6 +13,8 @@ import { resolveFileUrl } from '@/lib/storageRef';
 import { MemoryPopup } from './MemoryPopup';
 import { AIMode, AISettings, modeDescriptions, getAISettings, saveAISettings } from '@/lib/aiSettings';
 import { Checkbox } from '@/components/ui/checkbox';
+import { ManageSubscription } from '@/components/subscription/ManageSubscription';
+import { UpgradeDialog } from '@/components/subscription/UpgradeDialog';
 
 interface ProfilePopupProps {
   isOpen: boolean;
@@ -67,6 +70,7 @@ const CEO_EMAIL = "khaleelktn@gmail.com";
 export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: ProfilePopupProps) => {
   const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
+  const { tier, tierConfig, remainingImages, remainingVideos, dailyUsage } = useSubscription();
   const { toast } = useToast();
   
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -103,6 +107,9 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   // Language search
   const [langSearch, setLangSearch] = useState('');
 
+  // Upgrade dialog
+  const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
+  const [upgradeReason, setUpgradeReason] = useState<'image_limit' | 'video_limit' | 'general'>('general');
   useEffect(() => {
     if (isOpen && profile?.full_name) {
       setName(profile.full_name);
@@ -527,6 +534,22 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
         <Input value={user?.email || ''} disabled className="bg-secondary/50" />
       </div>
 
+      {/* Subscription Management */}
+      <div className="pt-4 border-t border-border">
+        <label className="text-sm text-muted-foreground mb-2 block">Subscription</label>
+        <ManageSubscription onUpgrade={() => { setUpgradeReason('general'); setShowUpgradeDialog(true); }} />
+      </div>
+
+      {/* Privacy Policy link */}
+      <a
+        href="/privacy-policy"
+        target="_blank"
+        className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <Shield className="h-4 w-4" />
+        Privacy Policy & Terms
+      </a>
+
       <div className="pt-4 space-y-3 border-t border-border">
         <Button variant="outline" className="w-full justify-start gap-2" onClick={handleLogout}>
           <LogOut className="h-4 w-4" />
@@ -715,6 +738,19 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
 
   const renderUsageSection = () => (
     <div className="space-y-4">
+      {/* Current plan badge */}
+      <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 border border-border">
+        <div>
+          <p className="text-sm font-medium">Current Plan</p>
+          <p className="text-xs text-muted-foreground">{TIER_CONFIGS[tier].name}</p>
+        </div>
+        {tier !== 'ultimate' && (
+          <Button variant="xai" size="sm" onClick={() => { setUpgradeReason('general'); setShowUpgradeDialog(true); }}>
+            Upgrade
+          </Button>
+        )}
+      </div>
+
       <p className="text-sm text-muted-foreground">Your usage statistics</p>
       {isLoadingUsage ? (
         <div className="flex items-center justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-xai-cyan" /></div>
@@ -729,20 +765,38 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
             <p className="text-sm text-muted-foreground">Images generated</p>
           </div>
           <div className="p-4 rounded-lg bg-secondary/50 border border-border">
-            <p className="text-2xl font-bold text-emerald-500">
-              {usageStats.remainingImageToday} / {usageStats.imageDailyLimit}
-            </p>
-            <p className="text-sm text-muted-foreground">Remaining daily image generations</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-2xl font-bold text-xai-cyan">
+                  {remainingImages === Infinity ? '∞' : remainingImages} / {tierConfig.limits.imagesPerDay === Infinity ? '∞' : tierConfig.limits.imagesPerDay}
+                </p>
+                <p className="text-sm text-muted-foreground">Remaining daily images</p>
+              </div>
+              {remainingImages === 0 && tier !== 'ultimate' && (
+                <Button variant="xai" size="sm" onClick={() => { setUpgradeReason('image_limit'); setShowUpgradeDialog(true); }}>
+                  Upgrade
+                </Button>
+              )}
+            </div>
           </div>
           <div className="p-4 rounded-lg bg-secondary/50 border border-border">
             <p className="text-2xl font-bold text-xai-purple">{usageStats.videosGenerated}</p>
             <p className="text-sm text-muted-foreground">Videos generated</p>
           </div>
           <div className="p-4 rounded-lg bg-secondary/50 border border-border">
-            <p className="text-2xl font-bold text-amber-500">
-              {usageStats.remainingVideoToday} / {usageStats.videoDailyLimit}
-            </p>
-            <p className="text-sm text-muted-foreground">Remaining daily video generations</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-2xl font-bold text-xai-purple">
+                  {remainingVideos === Infinity ? '∞' : remainingVideos} / {tierConfig.limits.videosPerDay === Infinity ? '∞' : tierConfig.limits.videosPerDay}
+                </p>
+                <p className="text-sm text-muted-foreground">Remaining daily videos</p>
+              </div>
+              {tierConfig.limits.videosPerDay === 0 || (remainingVideos === 0 && tier !== 'ultimate') ? (
+                <Button variant="xai" size="sm" onClick={() => { setUpgradeReason('video_limit'); setShowUpgradeDialog(true); }}>
+                  Upgrade
+                </Button>
+              ) : null}
+            </div>
           </div>
         </div>
       ) : (
@@ -915,6 +969,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
 
   return (
     <>
+      <UpgradeDialog isOpen={showUpgradeDialog} onClose={() => setShowUpgradeDialog(false)} reason={upgradeReason} />
       <MemoryPopup isOpen={showMemoryPopup} onClose={() => setShowMemoryPopup(false)} />
 
       <AnimatePresence>
