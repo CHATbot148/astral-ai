@@ -33,9 +33,11 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
   const [isProcessing, setIsProcessing] = useState(false);
   const [step] = useState<'method' | 'details'>('method');
 
-  const config = TIER_CONFIGS[selectedTier];
+  const activeTier = promoApplied && promoDiscount?.tier ? (promoDiscount.tier as SubscriptionTier) : selectedTier;
+  const config = TIER_CONFIGS[activeTier];
   const price = billingCycle === 'monthly' ? config.price.monthly : config.price.yearly;
   const finalPrice = promoApplied && promoDiscount?.free ? 0 : price;
+  const tierSwitched = promoApplied && promoDiscount?.tier && promoDiscount.tier !== selectedTier;
 
   const handleRedeemCode = async () => {
     if (!promoCode.trim() || !user) return;
@@ -234,7 +236,10 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
                   </Button>
                 </div>
                 {promoApplied && (
-                  <p className="text-xs text-green-500 mt-1">✓ Code applied — {TIER_CONFIGS[promoDiscount?.tier as SubscriptionTier]?.name || 'Pro'} plan free for 30 days!</p>
+                  <p className="text-xs text-green-500 mt-1">✓ Code applied — {TIER_CONFIGS[promoDiscount?.tier as SubscriptionTier]?.name || 'Basic'} plan free for 30 days!</p>
+                )}
+                {tierSwitched && (
+                  <p className="text-xs text-amber-500 mt-1">⚠ This code is for the {TIER_CONFIGS[promoDiscount?.tier as SubscriptionTier]?.name} plan. Your subscription will be activated on that plan instead.</p>
                 )}
               </div>
 
@@ -250,7 +255,7 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
                 {isProcessing ? (
                   <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Processing...</>
                 ) : promoApplied ? (
-                  `Activate ${TIER_CONFIGS[promoDiscount?.tier as SubscriptionTier]?.name || selectedTier} — Free`
+                  `Activate ${TIER_CONFIGS[activeTier]?.name} — Free`
                 ) : (
                   'Enter a redeem code to continue'
                 )}
