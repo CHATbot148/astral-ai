@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useSubscription, SubscriptionTier, BillingCycle, TIER_CONFIGS } from '@/hooks/useSubscription';
 import { useToast } from '@/hooks/use-toast';
+import { PaymentPage } from './PaymentPage';
 
 interface UpgradeDialogProps {
   isOpen: boolean;
@@ -22,14 +23,14 @@ const tierIcons: Record<SubscriptionTier, React.ReactNode> = {
 const formatNGN = (amount: number) => `₦${amount.toLocaleString()}`;
 
 export const UpgradeDialog = ({ isOpen, onClose, reason = 'general' }: UpgradeDialogProps) => {
-  const { tier: currentTier, subscribe } = useSubscription();
+  const { tier: currentTier } = useSubscription();
   const { toast } = useToast();
   const [selectedTier, setSelectedTier] = useState<SubscriptionTier>('pro');
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
   const [autoRenew, setAutoRenew] = useState(true);
   const [savePayment, setSavePayment] = useState(false);
   const [agreedToPolicy, setAgreedToPolicy] = useState(false);
-  const [isSubscribing, setIsSubscribing] = useState(false);
+  const [showPaymentPage, setShowPaymentPage] = useState(false);
 
   const reasonText = reason === 'image_limit'
     ? "You've reached your daily image generation limit."
@@ -41,25 +42,15 @@ export const UpgradeDialog = ({ isOpen, onClose, reason = 'general' }: UpgradeDi
     t => (['free', 'basic', 'pro', 'ultimate'] as SubscriptionTier[]).indexOf(t as SubscriptionTier) > (['free', 'basic', 'pro', 'ultimate'] as SubscriptionTier[]).indexOf(currentTier)
   ) as SubscriptionTier[];
 
-  const handleSubscribe = async () => {
+  const handleProceedToPayment = () => {
     if (!agreedToPolicy) {
       toast({ title: 'Please agree to the Privacy Policy', variant: 'destructive' });
       return;
     }
-    setIsSubscribing(true);
-    try {
-      await subscribe(selectedTier, billingCycle, autoRenew, savePayment);
-      toast({ title: `Subscribed to ${TIER_CONFIGS[selectedTier].name}!`, description: 'Your plan is now active (mock mode).' });
-      onClose();
-    } catch (e) {
-      toast({ title: 'Subscription failed', variant: 'destructive' });
-    } finally {
-      setIsSubscribing(false);
-    }
+    setShowPaymentPage(true);
   };
 
   if (!isOpen) return null;
-
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
@@ -165,15 +156,24 @@ export const UpgradeDialog = ({ isOpen, onClose, reason = 'general' }: UpgradeDi
               <Button
                 variant="xai"
                 className="w-full h-12"
-                onClick={handleSubscribe}
-                disabled={isSubscribing || !agreedToPolicy}
+                onClick={handleProceedToPayment}
+                disabled={!agreedToPolicy}
               >
-                {isSubscribing ? 'Processing...' : `Subscribe to ${TIER_CONFIGS[selectedTier].name} — ${formatNGN(billingCycle === 'monthly' ? TIER_CONFIGS[selectedTier].price.monthly : TIER_CONFIGS[selectedTier].price.yearly)}`}
+                Continue to Payment — {formatNGN(billingCycle === 'monthly' ? TIER_CONFIGS[selectedTier].price.monthly : TIER_CONFIGS[selectedTier].price.yearly)}
               </Button>
             </div>
           </div>
         </motion.div>
       </div>
+
+      <PaymentPage
+        isOpen={showPaymentPage}
+        onClose={() => { setShowPaymentPage(false); onClose(); }}
+        selectedTier={selectedTier}
+        billingCycle={billingCycle}
+        autoRenew={autoRenew}
+        savePayment={savePayment}
+      />
     </AnimatePresence>
   );
 };
