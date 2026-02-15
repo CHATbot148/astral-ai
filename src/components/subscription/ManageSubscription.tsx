@@ -4,6 +4,8 @@ import { Crown, Zap, Sparkles, AlertTriangle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useSubscription, TIER_CONFIGS, SubscriptionTier } from '@/hooks/useSubscription';
+import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
 interface ManageSubscriptionProps {
@@ -21,6 +23,7 @@ const formatNGN = (amount: number) => `₦${amount.toLocaleString()}`;
 
 export const ManageSubscription = ({ onUpgrade }: ManageSubscriptionProps) => {
   const { subscription, tier, tierConfig } = useSubscription();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -30,6 +33,28 @@ export const ManageSubscription = ({ onUpgrade }: ManageSubscriptionProps) => {
     setIsCancelling(true);
     try {
       const { refundEligible, fee } = await cancelSubscription();
+
+      // Send cancellation email
+      try {
+        const price = subscription?.billing_cycle === 'monthly'
+          ? TIER_CONFIGS[tier].price.monthly
+          : TIER_CONFIGS[tier].price.yearly;
+        await supabase.functions.invoke('subscription-email', {
+          body: {
+            type: 'cancellation',
+            userEmail: user?.email,
+            userName: user?.user_metadata?.full_name || user?.email?.split('@')[0],
+            tier: TIER_CONFIGS[tier].name,
+            billingCycle: subscription?.billing_cycle,
+            amount: price,
+            refundAmount: refundEligible ? price : price - fee,
+            fee: refundEligible ? 0 : fee,
+          },
+        });
+      } catch (e) {
+        console.error('Cancel email failed:', e);
+      }
+
       if (refundEligible) {
         toast({ title: 'Subscription cancelled', description: 'Full refund will be processed.' });
       } else {
