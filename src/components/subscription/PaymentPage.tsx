@@ -85,23 +85,7 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
 
       await subscribe(tierToSubscribe, billingCycle, autoRenew, savePayment);
 
-      // Send subscription email notification
-      try {
-        await supabase.functions.invoke('subscription-email', {
-          body: {
-            type: 'subscription',
-            userEmail: user?.email,
-            userName: user?.user_metadata?.full_name || user?.email?.split('@')[0],
-            tier: TIER_CONFIGS[tierToSubscribe].name,
-            billingCycle,
-            amount: finalPrice,
-            autoRenew,
-            savePayment,
-          },
-        });
-      } catch (e) {
-        console.error('Email notification failed:', e);
-      }
+      // Subscription emails disabled for now
 
       toast({ title: `🎉 Subscribed to ${TIER_CONFIGS[tierToSubscribe].name}!`, description: promoApplied ? 'Promo code redeemed successfully!' : 'Your plan is now active.' });
       onClose();
