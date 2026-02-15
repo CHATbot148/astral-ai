@@ -31,7 +31,7 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
   const [promoApplied, setPromoApplied] = useState(false);
   const [promoDiscount, setPromoDiscount] = useState<{ tier: string; free: boolean } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [step, setStep] = useState<'method' | 'details'>('method');
+  const [step] = useState<'method' | 'details'>('method');
 
   const config = TIER_CONFIGS[selectedTier];
   const price = billingCycle === 'monthly' ? config.price.monthly : config.price.yearly;
@@ -162,11 +162,7 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
             <div className="xai-gradient-border-content rounded-xl bg-card p-6 max-h-[85vh] overflow-y-auto">
               {/* Header */}
               <div className="flex items-center justify-between mb-4">
-                {step === 'details' ? (
-                  <button onClick={() => setStep('method')} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-                    <ChevronLeft className="h-4 w-4" /> Back
-                  </button>
-                ) : <div />}
+                <div />
                 <h2 className="text-lg font-display font-bold xai-gradient-text">Payment</h2>
                 <Button variant="ghost" size="icon" onClick={onClose}><X className="h-5 w-5" /></Button>
               </div>
@@ -219,29 +215,7 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
                 )}
               </div>
 
-              {/* Payment Methods */}
-              {!promoApplied && (
-                <div className="space-y-2 mb-4">
-                  <label className="text-sm text-muted-foreground block">Payment Method</label>
-                  {paymentMethods.map((method) => (
-                    <motion.button
-                      key={method.id}
-                      onClick={() => { setPaymentMethod(method.id); setStep('details'); }}
-                      whileHover={{ scale: 1.01 }}
-                      className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left ${
-                        paymentMethod === method.id ? 'border-xai-cyan bg-xai-cyan/10' : 'border-border hover:border-xai-cyan/50'
-                      }`}
-                    >
-                      <span className={paymentMethod === method.id ? 'text-xai-cyan' : 'text-muted-foreground'}>{method.icon}</span>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">{method.label}</p>
-                        <p className="text-xs text-muted-foreground">{method.desc}</p>
-                      </div>
-                      {paymentMethod === method.id && <Check className="h-4 w-4 text-xai-cyan" />}
-                    </motion.button>
-                  ))}
-                </div>
-              )}
+              {/* Payment methods disabled — redeem code only */}
 
               {/* Payment button */}
               <Button
