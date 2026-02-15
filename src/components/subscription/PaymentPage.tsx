@@ -43,44 +43,19 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
     if (!promoCode.trim() || !user) return;
     setIsRedeeming(true);
     try {
-      const { data: code, error } = await supabase
-        .from('promo_codes')
-        .select('*')
-        .eq('code', promoCode.trim().toUpperCase())
-        .eq('is_active', true)
-        .maybeSingle();
+      // Validate promo code via secure edge function
+      const { data, error } = await supabase.functions.invoke('redeem-promo', {
+        body: { code: promoCode.trim().toUpperCase(), action: 'validate' },
+      });
 
-      if (error || !code) {
-        toast({ title: 'Invalid promo code', variant: 'destructive' });
-        return;
-      }
-
-      if (code.current_uses >= code.max_uses) {
-        toast({ title: 'This code has already been used', variant: 'destructive' });
-        return;
-      }
-
-      if (code.expires_at && new Date(code.expires_at) < new Date()) {
-        toast({ title: 'This code has expired', variant: 'destructive' });
-        return;
-      }
-
-      // Check if user already redeemed this code
-      const { data: existing } = await supabase
-        .from('promo_code_redemptions')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('promo_code_id', code.id)
-        .maybeSingle();
-
-      if (existing) {
-        toast({ title: 'You have already used this code', variant: 'destructive' });
+      if (error || data?.error) {
+        toast({ title: data?.error || 'Invalid promo code', variant: 'destructive' });
         return;
       }
 
       setPromoApplied(true);
-      setPromoDiscount({ tier: code.tier, free: true });
-      toast({ title: '🎉 Promo code applied!', description: `Free ${TIER_CONFIGS[code.tier as SubscriptionTier]?.name || code.tier} plan for ${code.duration_days} days!` });
+      setPromoDiscount({ tier: data.tier, free: true });
+      toast({ title: '🎉 Promo code applied!', description: `Free ${TIER_CONFIGS[data.tier as SubscriptionTier]?.name || data.tier} plan for ${data.duration_days} days!` });
     } catch {
       toast({ title: 'Failed to validate code', variant: 'destructive' });
     } finally {
@@ -94,41 +69,17 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
       const tierToSubscribe = promoDiscount?.tier as SubscriptionTier || selectedTier;
 
       if (promoApplied && promoDiscount) {
-        // Redeem the promo code - re-validate server-side
-        const { data: code } = await supabase
-          .from('promo_codes')
-          .select('id, current_uses, max_uses, is_active, expires_at')
-          .eq('code', promoCode.trim().toUpperCase())
-          .eq('is_active', true)
-          .maybeSingle();
+        // Atomically redeem the promo code via secure edge function
+        const { data, error } = await supabase.functions.invoke('redeem-promo', {
+          body: { code: promoCode.trim().toUpperCase(), action: 'redeem' },
+        });
 
-        if (!code || code.current_uses >= code.max_uses || (code.expires_at && new Date(code.expires_at) < new Date())) {
-          toast({ title: 'Promo code is no longer valid', variant: 'destructive' });
+        if (error || data?.error) {
+          toast({ title: data?.error || 'Promo code is no longer valid', variant: 'destructive' });
           setPromoApplied(false);
           setPromoDiscount(null);
           setIsProcessing(false);
           return;
-        }
-
-        if (user) {
-          // Check if already redeemed
-          const { data: existing } = await supabase
-            .from('promo_code_redemptions')
-            .select('id')
-            .eq('user_id', user.id)
-            .eq('promo_code_id', code.id)
-            .maybeSingle();
-
-          if (existing) {
-            toast({ title: 'You already used this code', variant: 'destructive' });
-            setIsProcessing(false);
-            return;
-          }
-
-          await supabase.from('promo_code_redemptions').insert({
-            user_id: user.id,
-            promo_code_id: code.id,
-          });
         }
       }
 

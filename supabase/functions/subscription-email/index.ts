@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -152,6 +153,29 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
+    // Authenticate user
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error("Backend not configured");
+
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Authentication required" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
+      auth: { persistSession: false },
+    });
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(authHeader.replace("Bearer ", ""));
+    if (claimsError || !claimsData?.claims?.sub) {
+      return new Response(JSON.stringify({ error: "Invalid authentication token" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const BREVO_API_KEY = Deno.env.get("BREVO_API_KEY");
     if (!BREVO_API_KEY) throw new Error("Email service not configured");
 
@@ -203,8 +227,7 @@ serve(async (req) => {
   } catch (e) {
     console.error("subscription-email error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

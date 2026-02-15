@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,7 +8,6 @@ const corsHeaders = {
 
 // Deepgram Aura voices - 8 feminine, 8 masculine
 const VOICE_MAP: Record<string, string> = {
-  // Feminine voices
   asteria: "aura-asteria-en",
   luna: "aura-luna-en",
   athena: "aura-athena-en",
@@ -16,7 +16,6 @@ const VOICE_MAP: Record<string, string> = {
   aurora: "aura-2-aurora-en",
   thalia: "aura-2-thalia-en",
   cordelia: "aura-2-cordelia-en",
-  // Masculine voices
   orion: "aura-orion-en",
   zeus: "aura-zeus-en",
   helios: "aura-helios-en",
@@ -33,6 +32,29 @@ serve(async (req) => {
   }
 
   try {
+    // Authenticate user
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error("Backend not configured");
+
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Authentication required" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
+      auth: { persistSession: false },
+    });
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(authHeader.replace("Bearer ", ""));
+    if (claimsError || !claimsData?.claims?.sub) {
+      return new Response(JSON.stringify({ error: "Invalid authentication token" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { text, voiceId = "asteria" } = await req.json();
 
     const DEEPGRAM_API_KEY = Deno.env.get("DEEPGRAM_API_KEY");
@@ -44,12 +66,9 @@ serve(async (req) => {
 
     const truncatedText = String(text).slice(0, 2000);
 
-    // Find the voice model
     const voiceKey =
       Object.keys(VOICE_MAP).find((k) => String(voiceId).toLowerCase().includes(k)) || "asteria";
     const deepgramVoiceModel = VOICE_MAP[voiceKey] || VOICE_MAP.asteria;
-
-    console.log(`Using Deepgram voice: ${deepgramVoiceModel}`);
 
     const response = await fetch(
       `https://api.deepgram.com/v1/speak?model=${deepgramVoiceModel}&encoding=mp3`,
@@ -71,19 +90,13 @@ serve(async (req) => {
 
     const audioBuffer = await response.arrayBuffer();
     return new Response(audioBuffer, {
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "audio/mpeg",
-      },
+      headers: { ...corsHeaders, "Content-Type": "audio/mpeg" },
     });
   } catch (error) {
     console.error("TTS error:", error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });

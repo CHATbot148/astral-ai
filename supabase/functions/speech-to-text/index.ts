@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,6 +12,29 @@ serve(async (req) => {
   }
 
   try {
+    // Authenticate user
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error("Backend not configured");
+
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Authentication required" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
+      auth: { persistSession: false },
+    });
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(authHeader.replace("Bearer ", ""));
+    if (claimsError || !claimsData?.claims?.sub) {
+      return new Response(JSON.stringify({ error: "Invalid authentication token" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const DEEPGRAM_API_KEY = Deno.env.get("DEEPGRAM_API_KEY");
     if (!DEEPGRAM_API_KEY) {
       throw new Error("DEEPGRAM_API_KEY is not configured");
@@ -20,11 +44,9 @@ serve(async (req) => {
     let audioData: ArrayBuffer;
 
     if (contentType.includes("application/json")) {
-      // Base64 encoded audio
       const { audio, mimeType = "audio/webm" } = await req.json();
       if (!audio) throw new Error("Audio data is required");
       
-      // Decode base64
       const binaryString = atob(audio);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
@@ -32,7 +54,6 @@ serve(async (req) => {
       }
       audioData = bytes.buffer;
     } else {
-      // Raw audio data
       audioData = await req.arrayBuffer();
     }
 
@@ -59,22 +80,15 @@ serve(async (req) => {
     const result = await response.json();
     const transcript = result.results?.channels?.[0]?.alternatives?.[0]?.transcript || "";
 
-    console.log("Transcription result:", transcript);
-
     return new Response(
       JSON.stringify({ transcript, confidence: result.results?.channels?.[0]?.alternatives?.[0]?.confidence }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
     console.error("STT error:", error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });

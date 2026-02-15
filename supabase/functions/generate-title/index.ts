@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,6 +12,29 @@ serve(async (req) => {
   }
 
   try {
+    // Authenticate user
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error("Backend not configured");
+
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Authentication required" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
+      auth: { persistSession: false },
+    });
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(authHeader.replace("Bearer ", ""));
+    if (claimsError || !claimsData?.claims?.sub) {
+      return new Response(JSON.stringify({ error: "Invalid authentication token" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { message } = await req.json();
     const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
 
@@ -22,7 +46,6 @@ serve(async (req) => {
     }
 
     if (!MISTRAL_API_KEY) {
-      // Fallback: just take first 15 chars
       const fallbackTitle = message.slice(0, 15).trim() || "New Chat";
       return new Response(
         JSON.stringify({ title: fallbackTitle }),
@@ -43,10 +66,7 @@ serve(async (req) => {
             role: "system",
             content: "Generate a very short title (max 15 characters) that summarizes the user's message. Return ONLY the title, nothing else. No quotes, no punctuation at the end. Be creative but concise."
           },
-          {
-            role: "user",
-            content: message
-          }
+          { role: "user", content: message }
         ],
         max_tokens: 20,
         temperature: 0.7,
@@ -63,11 +83,7 @@ serve(async (req) => {
 
     const data = await response.json();
     let title = data.choices?.[0]?.message?.content?.trim() || message.slice(0, 15);
-    
-    // Ensure max 15 characters
     title = title.slice(0, 15).trim();
-    
-    // Remove trailing punctuation
     title = title.replace(/[.!?,;:]+$/, '');
 
     return new Response(

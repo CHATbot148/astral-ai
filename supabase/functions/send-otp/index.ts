@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -35,6 +36,7 @@ serve(async (req) => {
     }
 
     const otp = generateOTP();
+    const otpHash = await bcrypt.hash(otp, 10);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
     // Store OTP in database
@@ -43,10 +45,10 @@ serve(async (req) => {
     // Delete any existing OTPs for this email
     await supabase.from("email_otps").delete().eq("email", email);
     
-    // Insert new OTP
+    // Insert new OTP (hashed)
     const { error: insertError } = await supabase.from("email_otps").insert({
       email,
-      otp_hash: otp, // In production, hash this
+      otp_hash: otpHash,
       expires_at: expiresAt.toISOString(),
     });
 
