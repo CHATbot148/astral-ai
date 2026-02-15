@@ -48,8 +48,23 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
         body: { code: promoCode.trim().toUpperCase(), action: 'validate' },
       });
 
-      if (error || data?.error) {
-        toast({ title: data?.error || 'Invalid promo code', variant: 'destructive' });
+      if (error) {
+        let errorMsg = 'Invalid promo code';
+        try {
+          if (error instanceof Error && 'context' in error) {
+            const ctx = (error as any).context;
+            if (ctx && typeof ctx.json === 'function') {
+              const body = await ctx.json();
+              if (body?.error) errorMsg = body.error;
+            }
+          }
+        } catch {}
+        toast({ title: errorMsg, variant: 'destructive' });
+        return;
+      }
+
+      if (data?.error) {
+        toast({ title: data.error, variant: 'destructive' });
         return;
       }
 
@@ -74,8 +89,27 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
           body: { code: promoCode.trim().toUpperCase(), action: 'redeem' },
         });
 
-        if (error || data?.error) {
-          toast({ title: data?.error || 'Promo code is no longer valid', variant: 'destructive' });
+        if (error) {
+          // Extract error message from FunctionsHttpError response body
+          let errorMsg = 'Promo code is no longer valid';
+          try {
+            if (error instanceof Error && 'context' in error) {
+              const ctx = (error as any).context;
+              if (ctx && typeof ctx.json === 'function') {
+                const body = await ctx.json();
+                if (body?.error) errorMsg = body.error;
+              }
+            }
+          } catch {}
+          toast({ title: errorMsg, variant: 'destructive' });
+          setPromoApplied(false);
+          setPromoDiscount(null);
+          setIsProcessing(false);
+          return;
+        }
+
+        if (data?.error) {
+          toast({ title: data.error, variant: 'destructive' });
           setPromoApplied(false);
           setPromoDiscount(null);
           setIsProcessing(false);
