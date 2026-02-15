@@ -117,7 +117,12 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
         }
       }
 
-      await subscribe(tierToSubscribe, billingCycle, autoRenew, savePayment);
+      // Promo code redemptions are strictly 32 days, regardless of billing cycle toggle
+      if (promoApplied) {
+        await subscribe(tierToSubscribe, 'monthly', false, false, 32);
+      } else {
+        await subscribe(tierToSubscribe, billingCycle, autoRenew, savePayment);
+      }
 
       // Subscription emails disabled for now
 

@@ -103,7 +103,7 @@ interface SubscriptionContextType {
   canGenerateVideo: boolean;
   remainingImages: number;
   remainingVideos: number;
-  subscribe: (tier: SubscriptionTier, cycle: BillingCycle, autoRenew: boolean, savePayment: boolean) => Promise<void>;
+  subscribe: (tier: SubscriptionTier, cycle: BillingCycle, autoRenew: boolean, savePayment: boolean, durationDays?: number) => Promise<void>;
   cancelSubscription: () => Promise<{ refundEligible: boolean; fee: number }>;
   refreshUsage: () => Promise<void>;
   incrementImageUsage: () => Promise<void>;
@@ -213,11 +213,13 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
     await fetchDailyUsage();
   };
 
-  const subscribe = async (newTier: SubscriptionTier, cycle: BillingCycle, autoRenew: boolean, savePayment: boolean) => {
+  const subscribe = async (newTier: SubscriptionTier, cycle: BillingCycle, autoRenew: boolean, savePayment: boolean, durationDays?: number) => {
     if (!user) return;
     const now = new Date();
     const expiresAt = new Date(now);
-    if (cycle === 'monthly') {
+    if (durationDays) {
+      expiresAt.setDate(expiresAt.getDate() + durationDays);
+    } else if (cycle === 'monthly') {
       expiresAt.setMonth(expiresAt.getMonth() + 1);
     } else {
       expiresAt.setFullYear(expiresAt.getFullYear() + 1);
