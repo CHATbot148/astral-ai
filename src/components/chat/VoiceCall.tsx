@@ -13,7 +13,6 @@ interface VoiceCallProps {
 
 // Deepgram Aura voices - 8 feminine, 8 masculine
 const VOICE_OPTIONS = [
-  // Feminine voices
   { id: "asteria", name: "Asteria", gender: "feminine" },
   { id: "luna", name: "Luna", gender: "feminine" },
   { id: "athena", name: "Athena", gender: "feminine" },
@@ -22,7 +21,6 @@ const VOICE_OPTIONS = [
   { id: "aurora", name: "Aurora", gender: "feminine" },
   { id: "thalia", name: "Thalia", gender: "feminine" },
   { id: "cordelia", name: "Cordelia", gender: "feminine" },
-  // Masculine voices
   { id: "orion", name: "Orion", gender: "masculine" },
   { id: "zeus", name: "Zeus", gender: "masculine" },
   { id: "helios", name: "Helios", gender: "masculine" },
@@ -50,11 +48,12 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const isActiveRef = useRef(true);
   const selectedVoiceRef = useRef(selectedVoice);
+  const isMutedRef = useRef(isMuted);
+  // Pre-unlocked audio element for iOS
+  const preUnlockedAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Keep voice ref in sync
-  useEffect(() => {
-    selectedVoiceRef.current = selectedVoice;
-  }, [selectedVoice]);
+  useEffect(() => { selectedVoiceRef.current = selectedVoice; }, [selectedVoice]);
+  useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
 
   useEffect(() => {
     const t = setInterval(() => setCallDuration(Math.floor((Date.now() - callStart) / 1000)), 1000);
@@ -74,7 +73,6 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
-      // Always read from ref for latest voice
       const voiceId = selectedVoiceRef.current;
 
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/text-to-speech`, {
@@ -102,73 +100,87 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
       const audioBlob = await response.blob();
       const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(audioUrl);
+      
+      // Use pre-unlocked audio element on iOS, or create new one
+      const audio = preUnlockedAudioRef.current || new Audio();
+      audio.src = audioUrl;
       currentAudioRef.current = audio;
-
-      // iOS requires these attributes
       audio.setAttribute("playsinline", "true");
 
-      // Start listening while AI speaks so user can interrupt
+      // Monitor for user interruption while AI speaks
       const startListeningForInterrupt = () => {
-        if (!streamRef.current || !isActiveRef.current || isMuted) return;
-        const interruptCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const interruptSource = interruptCtx.createMediaStreamSource(streamRef.current!);
-        const interruptAnalyser = interruptCtx.createAnalyser();
-        interruptAnalyser.fftSize = 512;
-        interruptSource.connect(interruptAnalyser);
-        const interruptData = new Uint8Array(interruptAnalyser.frequencyBinCount);
-        let speechFrames = 0;
+        if (!streamRef.current || !isActiveRef.current || isMutedRef.current) return;
+        try {
+          const interruptCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const interruptSource = interruptCtx.createMediaStreamSource(streamRef.current!);
+          const interruptAnalyser = interruptCtx.createAnalyser();
+          interruptAnalyser.fftSize = 512;
+          interruptSource.connect(interruptAnalyser);
+          const interruptData = new Uint8Array(interruptAnalyser.frequencyBinCount);
+          let speechFrames = 0;
 
-        const checkInterrupt = () => {
-          if (!audio || audio.paused || audio.ended || !isActiveRef.current) {
-            interruptCtx.close();
-            return;
-          }
-          interruptAnalyser.getByteFrequencyData(interruptData);
-          const avg = interruptData.reduce((s, v) => s + v, 0) / interruptData.length;
-          if (avg > 25) {
-            speechFrames++;
-            if (speechFrames > 8) {
-              // User is speaking — interrupt AI
-              audio.pause();
-              audio.currentTime = audio.duration; // trigger ended
-              interruptCtx.close();
+          const checkInterrupt = () => {
+            if (!audio || audio.paused || audio.ended || !isActiveRef.current) {
+              interruptCtx.close().catch(() => {});
               return;
             }
-          } else {
-            speechFrames = Math.max(0, speechFrames - 1);
-          }
+            interruptAnalyser.getByteFrequencyData(interruptData);
+            const avg = interruptData.reduce((s, v) => s + v, 0) / interruptData.length;
+            if (avg > 25) {
+              speechFrames++;
+              if (speechFrames > 8) {
+                audio.pause();
+                audio.src = "";
+                interruptCtx.close().catch(() => {});
+                URL.revokeObjectURL(audioUrl);
+                // After interruption, go back to listening for user's next input
+                if (isActiveRef.current && !isMutedRef.current) {
+                  setStatus("listening");
+                  startListening();
+                }
+                return;
+              }
+            } else {
+              speechFrames = Math.max(0, speechFrames - 1);
+            }
+            requestAnimationFrame(checkInterrupt);
+          };
           requestAnimationFrame(checkInterrupt);
-        };
-        requestAnimationFrame(checkInterrupt);
+        } catch (e) {
+          console.error("Interrupt monitor error:", e);
+        }
       };
 
       await new Promise<void>((resolve, reject) => {
         audio.onended = () => {
           URL.revokeObjectURL(audioUrl);
+          currentAudioRef.current = null;
           resolve();
         };
         audio.onerror = () => {
           URL.revokeObjectURL(audioUrl);
+          currentAudioRef.current = null;
           reject(new Error("Audio playback error"));
         };
 
         const playPromise = audio.play();
         if (playPromise) {
           playPromise.then(() => {
-            // Audio is playing — start monitoring for user interruption
             startListeningForInterrupt();
           }).catch((err) => {
             if (err.name === "AbortError") {
               resolve();
             } else {
-              reject(err);
+              // iOS autoplay blocked — try with user interaction context
+              console.warn("Audio play blocked:", err.message);
+              resolve();
             }
           });
         }
       });
 
-      if (isActiveRef.current && !isMuted) {
+      // After speaking finishes normally, go back to listening
+      if (isActiveRef.current && !isMutedRef.current) {
         setStatus("listening");
         startListening();
       } else {
@@ -177,16 +189,15 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     } catch (error) {
       console.error("TTS error:", error);
       const msg = error instanceof Error ? error.message : String(error);
-      // Don't show toast for abort errors
       if (!msg.toLowerCase().includes("abort")) {
         toast({ title: "Speech failed", variant: "destructive" });
       }
-      if (isActiveRef.current && !isMuted) {
+      if (isActiveRef.current && !isMutedRef.current) {
         setStatus("listening");
         startListening();
       }
     }
-  }, [toast, isMuted]);
+  }, [toast]);
 
   const processAudio = useCallback(async (audioBlob: Blob) => {
     if (!isActiveRef.current) return;
@@ -204,6 +215,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
 
+      // STT
       const sttResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/speech-to-text`, {
         method: "POST",
         headers: {
@@ -220,11 +232,10 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       }
 
       const { transcript, error: sttError } = await sttResponse.json();
-
       if (sttError) throw new Error(sttError);
 
       if (!transcript || transcript.trim() === "") {
-        if (isActiveRef.current && !isMuted) {
+        if (isActiveRef.current && !isMutedRef.current) {
           setStatus("listening");
           startListening();
         }
@@ -233,6 +244,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
       console.log("Transcribed:", transcript);
 
+      // Chat — collect full response then speak
       const chatResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
         method: "POST",
         headers: {
@@ -257,6 +269,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        if (!isActiveRef.current) { reader.cancel(); return; }
 
         const chunk = decoder.decode(value, { stream: true });
         const lines = chunk.split("\n");
@@ -274,22 +287,22 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
       if (fullResponse && isActiveRef.current) {
         await speakResponse(fullResponse);
-      } else if (isActiveRef.current && !isMuted) {
+      } else if (isActiveRef.current && !isMutedRef.current) {
         setStatus("listening");
         startListening();
       }
     } catch (error) {
       console.error("Process error:", error);
       toast({ title: "Processing failed", variant: "destructive" });
-      if (isActiveRef.current && !isMuted) {
+      if (isActiveRef.current && !isMutedRef.current) {
         setStatus("listening");
         startListening();
       }
     }
-  }, [speakResponse, toast, isMuted]);
+  }, [speakResponse, toast]);
 
   const startListening = useCallback(() => {
-    if (!streamRef.current || isMuted || !isActiveRef.current) return;
+    if (!streamRef.current || isMutedRef.current || !isActiveRef.current) return;
 
     audioChunksRef.current = [];
 
@@ -316,7 +329,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
           const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || "audio/webm" });
           if (audioBlob.size > 1000) {
             processAudio(audioBlob);
-          } else if (isActiveRef.current && !isMuted) {
+          } else if (isActiveRef.current && !isMutedRef.current) {
             setStatus("listening");
             startListening();
           }
@@ -325,7 +338,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
       mediaRecorder.onerror = (e) => {
         console.error("MediaRecorder error:", e);
-        if (isActiveRef.current && !isMuted) {
+        if (isActiveRef.current && !isMutedRef.current) {
           setTimeout(() => startListening(), 500);
         }
       };
@@ -333,7 +346,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       mediaRecorder.start();
       setStatus("listening");
 
-      // Use silence detection via AudioContext instead of a fixed timer
+      // Silence detection via AudioContext
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       const source = audioContext.createMediaStreamSource(streamRef.current!);
       const analyser = audioContext.createAnalyser();
@@ -342,21 +355,20 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
       let silenceStart: number | null = null;
-      const SILENCE_THRESHOLD = 15; // amplitude threshold
-      const SILENCE_DURATION = 1800; // ms of silence before stopping
-      const MAX_RECORD_TIME = 30000; // max 30s recording
+      const SILENCE_THRESHOLD = 15;
+      const SILENCE_DURATION = 1800;
+      const MAX_RECORD_TIME = 30000;
       const recordStart = Date.now();
 
       const checkSilence = () => {
         if (mediaRecorder.state !== "recording" || !isActiveRef.current) {
-          audioContext.close();
+          audioContext.close().catch(() => {});
           return;
         }
 
-        // Max time check
         if (Date.now() - recordStart > MAX_RECORD_TIME) {
           mediaRecorder.stop();
-          audioContext.close();
+          audioContext.close().catch(() => {});
           return;
         }
 
@@ -367,7 +379,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
           if (!silenceStart) silenceStart = Date.now();
           else if (Date.now() - silenceStart > SILENCE_DURATION) {
             mediaRecorder.stop();
-            audioContext.close();
+            audioContext.close().catch(() => {});
             return;
           }
         } else {
@@ -382,7 +394,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       console.error("MediaRecorder error:", error);
       toast({ title: "Recording failed", variant: "destructive" });
     }
-  }, [isMuted, processAudio, toast]);
+  }, [processAudio, toast]);
 
   const startCall = useCallback(async () => {
     setStatus("connecting");
@@ -400,11 +412,30 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       isActiveRef.current = true;
       setIsConnected(true);
 
-      setTimeout(() => {
-        if (isActiveRef.current) {
-          startListening();
-        }
-      }, 100);
+      // Pre-unlock audio for iOS — must happen during user gesture
+      try {
+        const audio = new Audio();
+        audio.setAttribute("playsinline", "true");
+        // Play a tiny silent audio to unlock the audio element
+        audio.src = "data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYoRwVHAAAAAAD/+1DEAAAHAAGf9AAAIgAANIAAAAQAAAE/////ygfB8HwfB8AAAAB8Hw+D4Pg+D4Pg+H///8HwfB8HwfB8HwfB8H///4Pg+D4Pg+D4Pg+D4f///B8HwfB8HwfB8HwfD///+D4Pg+D4Pg+D4Pg//tQxBWAAADSAAAAAAAAANIAAAAQ+H///wfB8HwfB8HwfB8Hw///+D4Pg+D4Pg+D4Pg+H///B8HwfB8HwfB8HwfB8P//+D4Pg+D4Pg+D4Pg+D4f//B8HwfB8HwfB8HwfB8Hw//8=";
+        await audio.play().catch(() => {});
+        audio.pause();
+        preUnlockedAudioRef.current = audio;
+      } catch (e) {
+        console.warn("Audio pre-unlock failed:", e);
+      }
+
+      // Also pre-unlock AudioContext for iOS
+      try {
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        if (ctx.state === "suspended") await ctx.resume();
+        ctx.close().catch(() => {});
+      } catch (e) {
+        console.warn("AudioContext pre-unlock failed:", e);
+      }
+
+      // Start listening immediately (no delay)
+      startListening();
     } catch (error) {
       console.error("Microphone error:", error);
 
@@ -432,6 +463,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     }
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
+      currentAudioRef.current.src = "";
       currentAudioRef.current = null;
     }
     if (streamRef.current) {
@@ -447,6 +479,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const toggleMute = useCallback(() => {
     const next = !isMuted;
     setIsMuted(next);
+    isMutedRef.current = next;
 
     if (next) {
       if (mediaRecorderRef.current?.state === "recording") {
