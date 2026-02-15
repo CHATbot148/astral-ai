@@ -12,8 +12,6 @@ serve(async (req) => {
   }
 
   try {
-    const { userId, message, scheduledFor, conversationId, type = "reminder" } = await req.json();
-
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const BREVO_API_KEY = Deno.env.get("BREVO_API_KEY");
@@ -22,7 +20,30 @@ serve(async (req) => {
       throw new Error("Backend not configured");
     }
 
+    // Authenticate the user from JWT
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
+    if (claimsError || !claimsData?.claims?.sub) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Use verified user ID from JWT — never trust client-supplied userId
+    const userId = claimsData.claims.sub as string;
+
+    const { message, scheduledFor, conversationId, type = "reminder" } = await req.json();
 
     // Get user email
     const { data: userData, error: userError } = await supabase.auth.admin.getUserById(userId);
@@ -47,7 +68,6 @@ serve(async (req) => {
 
     if (insertError) {
       console.error("Insert error:", insertError);
-      // Table might not exist, continue without storing
     }
 
     // If scheduled for now or past, send immediately
@@ -55,7 +75,6 @@ serve(async (req) => {
     const now = new Date();
 
     if (scheduledDate <= now) {
-      // Send email immediately using Brevo
       if (BREVO_API_KEY) {
         await sendEmail(BREVO_API_KEY, userEmail, message, type);
       }
