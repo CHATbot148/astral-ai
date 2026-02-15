@@ -92,6 +92,30 @@ export type Database = {
         }
         Relationships: []
       }
+      generated_videos: {
+        Row: {
+          created_at: string
+          id: string
+          prompt: string
+          user_id: string
+          video_url: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          prompt: string
+          user_id: string
+          video_url: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          prompt?: string
+          user_id?: string
+          video_url?: string
+        }
+        Relationships: []
+      }
       messages: {
         Row: {
           content: string

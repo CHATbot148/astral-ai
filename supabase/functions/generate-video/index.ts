@@ -25,6 +25,7 @@ serve(async (req) => {
     const authHeader = req.headers.get("Authorization") || "";
     const jwt = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
     let userId = "anonymous";
+    let userEmail = "";
     if (jwt) {
       const uc = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         global: { headers: { Authorization: `Bearer ${jwt}` } },
@@ -32,6 +33,27 @@ serve(async (req) => {
       });
       const { data } = await uc.auth.getUser();
       if (data?.user?.id) userId = data.user.id;
+      if (data?.user?.email) userEmail = data.user.email;
+    }
+
+    // Enforce daily video generation limits
+    const CEO_EMAIL = "khaleelktn@gmail.com";
+    const dailyLimit = userEmail === CEO_EMAIL ? 5 : 1;
+    
+    if (userId !== "anonymous") {
+      const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const { count } = await admin
+        .from("generated_videos")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .gte("created_at", today.toISOString());
+      
+      if ((count || 0) >= dailyLimit) {
+        throw new Error(`Daily video generation limit reached (${dailyLimit}/day). Try again tomorrow!`);
+      }
     }
 
     console.log(`Generating video with Leonardo text-to-video: "${prompt}"`);
@@ -119,6 +141,15 @@ serve(async (req) => {
 
     const ref = `storage:chat-files/${path}`;
     console.log("Video generated and uploaded:", ref);
+
+    // Save to generated_videos table for gallery
+    if (userId !== "anonymous") {
+      await admin.from("generated_videos").insert({
+        user_id: userId,
+        prompt,
+        video_url: ref,
+      });
+    }
 
     return new Response(JSON.stringify({ video: ref }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -241,6 +272,15 @@ async function imageToMotionFallback(
 
   const ref = `storage:chat-files/${path}`;
   console.log("Video (fallback) uploaded:", ref);
+
+  // Save to generated_videos table
+  if (userId !== "anonymous") {
+    await admin.from("generated_videos").insert({
+      user_id: userId,
+      prompt,
+      video_url: ref,
+    });
+  }
 
   return new Response(JSON.stringify({ video: ref }), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
