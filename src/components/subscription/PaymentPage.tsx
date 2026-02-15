@@ -240,19 +240,19 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
 
               {/* Payment methods disabled — redeem code only */}
 
-              {/* Payment button */}
+              {/* Payment button — only enabled after valid promo code */}
               <Button
                 variant="xai"
                 className="w-full h-12"
                 onClick={handlePayment}
-                disabled={isProcessing}
+                disabled={isProcessing || !promoApplied}
               >
                 {isProcessing ? (
                   <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Processing...</>
                 ) : promoApplied ? (
                   `Activate ${TIER_CONFIGS[promoDiscount?.tier as SubscriptionTier]?.name || selectedTier} — Free`
                 ) : (
-                  `Pay ${formatNGN(finalPrice)}`
+                  'Enter a redeem code to continue'
                 )}
               </Button>
 
