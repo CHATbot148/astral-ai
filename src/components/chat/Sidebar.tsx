@@ -1,18 +1,12 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, MessageSquare, Trash2, Pencil, Search, Check, X, Image as ImageIcon, PanelLeftClose } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, Pencil, Search, Check, X, PanelLeftClose } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Conversation } from '@/hooks/useConversations';
 import { useAuth } from '@/hooks/useAuth';
@@ -25,7 +19,6 @@ interface SidebarProps {
   currentConversation: Conversation | null;
   onSelectConversation: (conv: Conversation) => void;
   onNewChat: () => void;
-  onNewImageChat: () => void;
   onDeleteConversation: (id: string) => void;
   onRenameConversation: (id: string, newTitle: string) => void;
   isOpen: boolean;
@@ -35,17 +28,9 @@ interface SidebarProps {
 }
 
 export const Sidebar = ({
-  conversations,
-  currentConversation,
-  onSelectConversation,
-  onNewChat,
-  onNewImageChat,
-  onDeleteConversation,
-  onRenameConversation,
-  isOpen,
-  onClose,
-  profile,
-  onProfileUpdate,
+  conversations, currentConversation, onSelectConversation,
+  onNewChat, onDeleteConversation, onRenameConversation,
+  isOpen, onClose, profile, onProfileUpdate,
 }: SidebarProps) => {
   const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
@@ -58,17 +43,13 @@ export const Sidebar = ({
     const date = new Date(dateString);
     const now = new Date();
     const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-    
     if (diffDays === 0) return 'Today';
     if (diffDays === 1) return 'Yesterday';
     if (diffDays < 7) return `${diffDays} days ago`;
     return date.toLocaleDateString();
   };
 
-  // Truncate title to 15 chars max
-  const truncateTitle = (title: string) => {
-    return title.length > 15 ? title.slice(0, 15) + '...' : title;
-  };
+  const truncateTitle = (title: string) => title.length > 15 ? title.slice(0, 15) + '...' : title;
 
   const filteredConversations = conversations.filter(conv =>
     conv.title.toLowerCase().includes(searchQuery.toLowerCase())
@@ -77,22 +58,16 @@ export const Sidebar = ({
   const startEditing = (conv: Conversation, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingId(conv.id);
-    setEditTitle(conv.title.slice(0, 15)); // Limit to 15 chars
+    setEditTitle(conv.title.slice(0, 15));
   };
 
   const saveEdit = () => {
-    if (editingId && editTitle.trim()) {
-      // Enforce 15 char limit
-      onRenameConversation(editingId, editTitle.trim().slice(0, 15));
-    }
+    if (editingId && editTitle.trim()) onRenameConversation(editingId, editTitle.trim().slice(0, 15));
     setEditingId(null);
     setEditTitle('');
   };
 
-  const cancelEdit = () => {
-    setEditingId(null);
-    setEditTitle('');
-  };
+  const cancelEdit = () => { setEditingId(null); setEditTitle(''); };
 
   const handleDelete = (convId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -102,11 +77,13 @@ export const Sidebar = ({
   const handleSelectConversation = (conv: Conversation) => {
     if (!editingId) {
       onSelectConversation(conv);
-      // Auto-close sidebar on mobile only (< 1024px = lg breakpoint)
-      if (window.innerWidth < 1024) {
-        onClose();
-      }
+      if (window.innerWidth < 1024) onClose();
     }
+  };
+
+  const handleNewChat = () => {
+    onNewChat();
+    if (window.innerWidth < 1024) onClose();
   };
 
   return (
@@ -114,17 +91,11 @@ export const Sidebar = ({
       {/* Mobile overlay */}
       <AnimatePresence>
         {isOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 lg:hidden"
-            onClick={onClose}
-          />
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 lg:hidden" onClick={onClose} />
         )}
       </AnimatePresence>
 
-      {/* Sidebar */}
       <motion.aside
         initial={false}
         animate={{ x: isOpen ? 0 : -280 }}
@@ -132,51 +103,27 @@ export const Sidebar = ({
         className={cn(
           "fixed lg:relative z-50 w-[280px] h-full flex flex-col",
           "bg-sidebar border-r border-sidebar-border",
-          "top-0 left-0" // Ensure it's at the top
+          "top-0 left-0"
         )}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-sidebar-border">
-          <motion.div 
-            className="flex items-center gap-2"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-          >
+          <motion.div className="flex items-center gap-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <div className="w-8 h-8 rounded-full overflow-hidden xai-glow">
               <img src={xaiLogo} alt="X-AI" className="w-full h-full object-cover" />
             </div>
             <span className="font-display font-semibold text-lg xai-gradient-text">X-AI</span>
           </motion.div>
-          
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            className="lg:hidden"
-            aria-label="Close sidebar"
-          >
+          <Button variant="ghost" size="icon" onClick={onClose} className="lg:hidden" aria-label="Close sidebar">
             <PanelLeftClose className="h-5 w-5" />
           </Button>
         </div>
 
         {/* New Chat Button */}
         <div className="p-3">
-          <Button
-            variant="xai"
-            className="w-full justify-start gap-2"
-            onClick={onNewChat}
-          >
+          <Button variant="xai" className="w-full justify-start gap-2" onClick={handleNewChat}>
             <Plus className="h-4 w-4" />
             New Chat
-          </Button>
-
-          <Button
-            variant="glass"
-            className="w-full justify-start gap-2 mt-2"
-            onClick={onNewImageChat}
-          >
-            <ImageIcon className="h-4 w-4" />
-            Image Generator
           </Button>
         </div>
 
@@ -184,12 +131,7 @@ export const Sidebar = ({
         <div className="px-3 pb-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search conversations..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 bg-secondary/50"
-            />
+            <Input placeholder="Search conversations..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 bg-secondary/50" />
           </div>
         </div>
 
@@ -198,14 +140,7 @@ export const Sidebar = ({
           <div className="space-y-1 pb-4">
             <AnimatePresence mode="popLayout">
               {filteredConversations.map((conv, index) => (
-                <motion.div
-                  key={conv.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ delay: index * 0.02 }}
-                  layout
-                >
+                <motion.div key={conv.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ delay: index * 0.02 }} layout>
                   <div
                     onClick={() => handleSelectConversation(conv)}
                     className={cn(
@@ -216,42 +151,16 @@ export const Sidebar = ({
                     )}
                   >
                     <MessageSquare className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                    
                     <div className="flex-1 min-w-0 overflow-hidden">
                       {editingId === conv.id ? (
                         <div className="flex items-center gap-1">
-                          <Input
-                            value={editTitle}
-                            onChange={(e) => setEditTitle(e.target.value.slice(0, 15))}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') saveEdit();
-                              if (e.key === 'Escape') cancelEdit();
-                            }}
-                            className="h-6 text-sm px-1"
-                            maxLength={15}
-                            autoFocus
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 flex-shrink-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              saveEdit();
-                            }}
-                          >
+                          <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value.slice(0, 15))}
+                            onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit(); }}
+                            className="h-6 text-sm px-1" maxLength={15} autoFocus onClick={(e) => e.stopPropagation()} />
+                          <Button variant="ghost" size="icon" className="h-6 w-6 flex-shrink-0" onClick={(e) => { e.stopPropagation(); saveEdit(); }}>
                             <Check className="h-3 w-3 text-xai-cyan" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 flex-shrink-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              cancelEdit();
-                            }}
-                          >
+                          <Button variant="ghost" size="icon" className="h-6 w-6 flex-shrink-0" onClick={(e) => { e.stopPropagation(); cancelEdit(); }}>
                             <X className="h-3 w-3 text-muted-foreground" />
                           </Button>
                         </div>
@@ -262,22 +171,12 @@ export const Sidebar = ({
                         </>
                       )}
                     </div>
-                    
-                    {/* Edit and Delete icons - Always visible */}
                     {!editingId && (
                       <div className="flex items-center gap-0.5 flex-shrink-0 opacity-60 group-hover/item:opacity-100 transition-opacity">
-                        <button
-                          onClick={(e) => startEditing(conv, e)}
-                          className="p-1.5 rounded hover:bg-secondary/80 transition-colors"
-                          title="Rename chat"
-                        >
+                        <button onClick={(e) => startEditing(conv, e)} className="p-1.5 rounded hover:bg-secondary/80 transition-colors" title="Rename chat">
                           <Pencil className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
                         </button>
-                        <button
-                          onClick={(e) => handleDelete(conv.id, e)}
-                          className="p-1.5 rounded hover:bg-destructive/20 transition-colors"
-                          title="Delete chat"
-                        >
+                        <button onClick={(e) => handleDelete(conv.id, e)} className="p-1.5 rounded hover:bg-destructive/20 transition-colors" title="Delete chat">
                           <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
                         </button>
                       </div>
@@ -288,18 +187,10 @@ export const Sidebar = ({
             </AnimatePresence>
 
             {filteredConversations.length === 0 && (
-              <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="text-center py-8 text-muted-foreground"
-              >
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-8 text-muted-foreground">
                 <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">
-                  {searchQuery ? 'No matches found' : 'No conversations yet'}
-                </p>
-                <p className="text-xs">
-                  {searchQuery ? 'Try a different search' : 'Start a new chat to begin'}
-                </p>
+                <p className="text-sm">{searchQuery ? 'No matches found' : 'No conversations yet'}</p>
+                <p className="text-xs">{searchQuery ? 'Try a different search' : 'Start a new chat to begin'}</p>
               </motion.div>
             )}
           </div>
@@ -307,12 +198,8 @@ export const Sidebar = ({
 
         {/* User Section */}
         <div className="p-3 border-t border-sidebar-border">
-          <motion.button
-            onClick={() => setProfileOpen(true)}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="w-full flex items-center gap-3 p-2 rounded-lg bg-sidebar-accent/50 hover:bg-sidebar-accent transition-colors"
-          >
+          <motion.button onClick={() => setProfileOpen(true)} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+            className="w-full flex items-center gap-3 p-2 rounded-lg bg-sidebar-accent/50 hover:bg-sidebar-accent transition-colors">
             <div className="w-8 h-8 rounded-full overflow-hidden bg-gradient-to-br from-xai-cyan to-xai-purple flex items-center justify-center">
               {profile?.avatar_url ? (
                 <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
@@ -323,9 +210,7 @@ export const Sidebar = ({
               )}
             </div>
             <div className="flex-1 min-w-0 text-left">
-              <p className="text-sm font-medium truncate">
-                {profile?.full_name || user?.email}
-              </p>
+              <p className="text-sm font-medium truncate">{profile?.full_name || user?.email}</p>
             </div>
           </motion.button>
         </div>
@@ -336,32 +221,19 @@ export const Sidebar = ({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete chat?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete this conversation and its messages.
-            </AlertDialogDescription>
+            <AlertDialogDescription>This will permanently delete this conversation and its messages.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => {
-                if (confirmDeleteId) onDeleteConversation(confirmDeleteId);
-                setConfirmDeleteId(null);
-              }}
-            >
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { if (confirmDeleteId) onDeleteConversation(confirmDeleteId); setConfirmDeleteId(null); }}>
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Profile Popup */}
-      <ProfilePopup
-        isOpen={profileOpen}
-        onClose={() => setProfileOpen(false)}
-        profile={profile}
-        onProfileUpdate={onProfileUpdate}
-      />
+      <ProfilePopup isOpen={profileOpen} onClose={() => setProfileOpen(false)} profile={profile} onProfileUpdate={onProfileUpdate} />
     </>
   );
 };

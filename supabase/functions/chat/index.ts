@@ -304,13 +304,48 @@ Keep response brief.`;
       });
 
       if (!response.ok) {
+        const errBody = await response.text();
+        console.error("Lovable AI gateway error:", response.status, errBody);
         if (response.status === 429) {
           return new Response(
             JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment." }),
             { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
-        throw new Error("AI service temporarily unavailable");
+        if (response.status === 402) {
+          return new Response(
+            JSON.stringify({ error: "AI usage limit reached. Please add credits." }),
+            { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        // Fall through to Mistral for text-only retry if multimodal fails
+        console.warn("Multimodal AI failed, attempting text-only fallback...");
+        const textOnlyMessages = formattedMessages.map((msg: any) => {
+          if (Array.isArray(msg.content)) {
+            const textParts = msg.content.filter((p: any) => p.type === 'text');
+            return { role: msg.role, content: textParts.map((p: any) => p.text).join('\n') + '\n[Note: User attached image(s) but image analysis is temporarily unavailable]' };
+          }
+          return msg;
+        });
+
+        const MISTRAL_KEY = Deno.env.get("MISTRAL_API_KEY");
+        if (MISTRAL_KEY) {
+          const fallbackRes = await fetch("https://api.mistral.ai/v1/chat/completions", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${MISTRAL_KEY}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: "mistral-large-latest",
+              messages: [{ role: "system", content: systemContent }, ...textOnlyMessages],
+              stream: true,
+            }),
+          });
+          if (fallbackRes.ok) {
+            return new Response(fallbackRes.body, {
+              headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
+            });
+          }
+        }
+        throw new Error("AI service temporarily unavailable. Please try again.");
       }
 
       return new Response(response.body, {
