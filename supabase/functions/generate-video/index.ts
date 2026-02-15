@@ -34,10 +34,10 @@ serve(async (req) => {
       if (data?.user?.id) userId = data.user.id;
     }
 
-    console.log(`Generating video with Leonardo: "${prompt}"`);
+    console.log(`Generating video with Leonardo text-to-video: "${prompt}"`);
 
-    // First generate a base image, then animate it
-    const createRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations", {
+    // Use Leonardo's direct text-to-video endpoint (Motion 2.0)
+    const createRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations-text-to-video", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${LEONARDO_API_KEY}`,
@@ -46,108 +46,70 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         prompt,
-        width: 832,
         height: 480,
-        num_images: 1,
-        alchemy: true,
-        promptEnhance: true,
+        width: 832,
+        isPublic: false,
+        frameInterpolation: true,
       }),
     });
 
     if (!createRes.ok) {
       const errText = await createRes.text();
-      console.error("Leonardo image create error:", createRes.status, errText);
-      throw new Error(`Video generation failed (${createRes.status}). Please try again.`);
+      console.error("Leonardo text-to-video error:", createRes.status, errText);
+      
+      // If text-to-video not available, fallback to image → motion SVD
+      console.log("Falling back to image → motion SVD approach...");
+      return await imageToMotionFallback(req, prompt, LEONARDO_API_KEY, SUPABASE_URL, SERVICE_ROLE_KEY, userId);
     }
 
     const createData = await createRes.json();
-    const generationId = createData.sdGenerationJob?.generationId;
+    const generationId = createData.motionVideoGenerationJob?.generationId
+      || createData.textToVideoGenerationJob?.generationId
+      || createData.generationId;
+
     if (!generationId) {
-      console.error("No generationId:", JSON.stringify(createData));
-      throw new Error("Failed to start video generation");
+      console.error("No generationId from text-to-video:", JSON.stringify(createData));
+      // Fallback
+      return await imageToMotionFallback(req, prompt, LEONARDO_API_KEY, SUPABASE_URL, SERVICE_ROLE_KEY, userId);
     }
 
-    console.log(`Base image generation started, ID: ${generationId}`);
+    console.log(`Text-to-video generation started, ID: ${generationId}`);
 
-    // Poll for base image completion
-    let baseImageId = "";
-    for (let i = 0; i < 30; i++) {
+    // Poll for completion (up to 150 seconds)
+    let videoUrl = "";
+    for (let i = 0; i < 50; i++) {
       await new Promise(r => setTimeout(r, 3000));
       const pollRes = await fetch(`https://cloud.leonardo.ai/api/rest/v1/generations/${generationId}`, {
         headers: { Authorization: `Bearer ${LEONARDO_API_KEY}`, Accept: "application/json" },
       });
 
-      if (pollRes.ok) {
-        const pollData = await pollRes.json();
-        const gen = pollData.generations_by_pk;
-        if (gen?.status === "COMPLETE" && gen.generated_images?.[0]) {
-          baseImageId = gen.generated_images[0].id;
-          console.log("Base image ready, ID:", baseImageId);
+      if (!pollRes.ok) continue;
+      const pollData = await pollRes.json();
+      const gen = pollData.generations_by_pk;
+
+      if (gen?.status === "COMPLETE") {
+        // Check for video URL in generated_images
+        const videoItem = gen.generated_images?.find((img: any) => img.motionMP4URL || img.url?.endsWith(".mp4"));
+        if (videoItem?.motionMP4URL) {
+          videoUrl = videoItem.motionMP4URL;
           break;
         }
-        if (gen?.status === "FAILED") throw new Error("Base image generation failed");
-      }
-    }
-
-    if (!baseImageId) throw new Error("Base image generation timed out");
-
-    // Now create motion video from the base image
-    const motionRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations-motion-svd", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LEONARDO_API_KEY}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        generatedImageId: baseImageId,
-        isPublic: false,
-        motionStrength: 5,
-      }),
-    });
-
-    if (!motionRes.ok) {
-      const errText = await motionRes.text();
-      console.error("Leonardo motion error:", motionRes.status, errText);
-      throw new Error("Video animation failed. Please try again.");
-    }
-
-    const motionData = await motionRes.json();
-    const motionGenId = motionData.motionSvdGenerationJob?.generationId;
-    if (!motionGenId) throw new Error("Failed to start video animation");
-
-    console.log(`Motion generation started, ID: ${motionGenId}`);
-
-    // Poll for video completion (up to 120 seconds)
-    let videoUrl = "";
-    for (let i = 0; i < 40; i++) {
-      await new Promise(r => setTimeout(r, 3000));
-      const pollRes = await fetch(`https://cloud.leonardo.ai/api/rest/v1/generations/${motionGenId}`, {
-        headers: { Authorization: `Bearer ${LEONARDO_API_KEY}`, Accept: "application/json" },
-      });
-
-      if (pollRes.ok) {
-        const pollData = await pollRes.json();
-        const gen = pollData.generations_by_pk;
-        if (gen?.status === "COMPLETE") {
-          const video = gen.generated_images?.find((img: any) => img.motionMP4URL);
-          if (video?.motionMP4URL) {
-            videoUrl = video.motionMP4URL;
-            break;
-          }
+        if (videoItem?.url) {
+          videoUrl = videoItem.url;
+          break;
         }
-        if (gen?.status === "FAILED") throw new Error("Video generation failed. Please try again.");
       }
+      if (gen?.status === "FAILED") throw new Error("Video generation failed. Please try again.");
     }
 
     if (!videoUrl) throw new Error("Video generation timed out. Please try again.");
 
     // Download and upload to storage
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
     const videoRes = await fetch(videoUrl);
     if (!videoRes.ok) throw new Error("Failed to download generated video");
 
-    const videoBytes = new Uint8Array(await (await videoRes.blob()).arrayBuffer());
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+    const videoBytes = new Uint8Array(await videoRes.arrayBuffer());
     const path = `${userId}/generated/vid-${Date.now()}.mp4`;
     const { error: uploadError } = await admin.storage
       .from("chat-files")
@@ -168,3 +130,119 @@ serve(async (req) => {
     });
   }
 });
+
+// Fallback: generate image first, then apply motion SVD
+async function imageToMotionFallback(
+  _req: Request, prompt: string, apiKey: string,
+  supabaseUrl: string, serviceRoleKey: string, userId: string
+) {
+  console.log("Using image → motion SVD fallback");
+
+  // Step 1: Generate base image
+  const imgRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      prompt,
+      modelId: "6bef9f1b-29cb-40c7-b9df-32b51c1f67d3",
+      width: 832,
+      height: 480,
+      num_images: 1,
+      alchemy: true,
+    }),
+  });
+
+  if (!imgRes.ok) {
+    const errText = await imgRes.text();
+    throw new Error(`Base image generation failed (${imgRes.status}): ${errText}`);
+  }
+
+  const imgData = await imgRes.json();
+  const genId = imgData.sdGenerationJob?.generationId;
+  if (!genId) throw new Error("No generation ID for base image");
+
+  // Poll for base image
+  let imageId = "";
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 3000));
+    const pollRes = await fetch(`https://cloud.leonardo.ai/api/rest/v1/generations/${genId}`, {
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+    });
+    if (!pollRes.ok) continue;
+    const pollData = await pollRes.json();
+    const gen = pollData.generations_by_pk;
+    if (gen?.status === "COMPLETE" && gen.generated_images?.[0]) {
+      imageId = gen.generated_images[0].id;
+      break;
+    }
+    if (gen?.status === "FAILED") throw new Error("Base image generation failed");
+  }
+
+  if (!imageId) throw new Error("Base image generation timed out");
+  console.log("Base image ready, ID:", imageId);
+
+  // Step 2: Apply motion SVD using imageId (per Leonardo docs)
+  const motionRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations-motion-svd", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      imageId: imageId,
+      isPublic: false,
+      motionStrength: 5,
+    }),
+  });
+
+  if (!motionRes.ok) {
+    const errText = await motionRes.text();
+    throw new Error(`Motion SVD failed (${motionRes.status}): ${errText}`);
+  }
+
+  const motionData = await motionRes.json();
+  const motionGenId = motionData.motionSvdGenerationJob?.generationId;
+  if (!motionGenId) throw new Error("No motion generation ID");
+
+  // Poll for video
+  let videoUrl = "";
+  for (let i = 0; i < 40; i++) {
+    await new Promise(r => setTimeout(r, 3000));
+    const pollRes = await fetch(`https://cloud.leonardo.ai/api/rest/v1/generations/${motionGenId}`, {
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+    });
+    if (!pollRes.ok) continue;
+    const pollData = await pollRes.json();
+    const gen = pollData.generations_by_pk;
+    if (gen?.status === "COMPLETE") {
+      const video = gen.generated_images?.find((img: any) => img.motionMP4URL);
+      if (video?.motionMP4URL) { videoUrl = video.motionMP4URL; break; }
+    }
+    if (gen?.status === "FAILED") throw new Error("Video generation failed");
+  }
+
+  if (!videoUrl) throw new Error("Video generation timed out");
+
+  // Upload
+  const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
+  const dlRes = await fetch(videoUrl);
+  if (!dlRes.ok) throw new Error("Failed to download video");
+  const videoBytes = new Uint8Array(await dlRes.arrayBuffer());
+  const path = `${userId}/generated/vid-${Date.now()}.mp4`;
+  const { error } = await admin.storage
+    .from("chat-files")
+    .upload(path, videoBytes, { contentType: "video/mp4", upsert: false });
+  if (error) throw error;
+
+  const ref = `storage:chat-files/${path}`;
+  console.log("Video (fallback) uploaded:", ref);
+
+  return new Response(JSON.stringify({ video: ref }), {
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}

@@ -65,11 +65,11 @@ serve(async (req) => {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
     const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const STABILITY_API_KEY = Deno.env.get("STABILITY_API_KEY");
     const LEONARDO_API_KEY = Deno.env.get("LEONARDO_API_KEY");
+    const STABILITY_API_KEY = Deno.env.get("STABILITY_API_KEY");
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) throw new Error("Backend is not configured");
-    if (!STABILITY_API_KEY && !LEONARDO_API_KEY) throw new Error("Image generation API key not configured");
+    if (!LEONARDO_API_KEY && !STABILITY_API_KEY) throw new Error("Image generation API key not configured");
 
     // Auth
     const authHeader = req.headers.get("Authorization") || "";
@@ -118,38 +118,76 @@ serve(async (req) => {
     const enhancedPrompt = stylePrompt ? `${prompt}, ${stylePrompt}` : prompt;
     const dims = ASPECT_RATIO_MAP[aspectRatio] || ASPECT_RATIO_MAP["1:1"];
 
-    // Try Stability AI first, then Leonardo as fallback
     let imgBytes: Uint8Array | null = null;
     let imgMime = "image/png";
 
-    if (STABILITY_API_KEY) {
-      console.log(`Generating image with Stability AI: "${enhancedPrompt}"`);
+    // ===== PRIMARY: Leonardo AI =====
+    if (LEONARDO_API_KEY) {
+      console.log(`[PRIMARY] Leonardo AI: "${enhancedPrompt}"`);
+      try {
+        const createRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LEONARDO_API_KEY}`,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            prompt: enhancedPrompt,
+            modelId: "6bef9f1b-29cb-40c7-b9df-32b51c1f67d3",
+            width: dims.width,
+            height: dims.height,
+            num_images: 1,
+            alchemy: true,
+          }),
+        });
+
+        if (!createRes.ok) {
+          const errText = await createRes.text();
+          console.error("Leonardo create error:", createRes.status, errText);
+          throw new Error(`Leonardo create failed: ${createRes.status}`);
+        }
+
+        const createData = await createRes.json();
+        const generationId = createData.sdGenerationJob?.generationId;
+        if (!generationId) throw new Error("No generation ID from Leonardo");
+
+        console.log("Leonardo generation started, ID:", generationId);
+
+        // Poll for completion (up to 90 seconds)
+        for (let i = 0; i < 30; i++) {
+          await new Promise(r => setTimeout(r, 3000));
+          const pollRes = await fetch(`https://cloud.leonardo.ai/api/rest/v1/generations/${generationId}`, {
+            headers: { Authorization: `Bearer ${LEONARDO_API_KEY}`, Accept: "application/json" },
+          });
+          if (!pollRes.ok) continue;
+          const pollData = await pollRes.json();
+          const gen = pollData.generations_by_pk;
+          if (gen?.status === "COMPLETE" && gen.generated_images?.[0]?.url) {
+            console.log("Leonardo image ready, downloading...");
+            const dlRes = await fetch(gen.generated_images[0].url);
+            if (dlRes.ok) {
+              imgBytes = new Uint8Array(await dlRes.arrayBuffer());
+              imgMime = "image/png";
+            }
+            break;
+          }
+          if (gen?.status === "FAILED") throw new Error("Leonardo generation failed");
+        }
+      } catch (e) {
+        console.error("Leonardo AI failed:", e);
+      }
+    }
+
+    // ===== FALLBACK 1: Stability AI =====
+    if (!imgBytes && STABILITY_API_KEY) {
+      console.log(`[FALLBACK] Stability AI: "${enhancedPrompt}"`);
       try {
         const formData = new FormData();
         formData.append("prompt", enhancedPrompt);
         formData.append("output_format", "png");
-        formData.append("width", String(dims.width));
-        formData.append("height", String(dims.height));
 
-        if (referenceImageUrl) {
-          // Download reference image for img2img
-          try {
-            const refRes = await fetch(referenceImageUrl);
-            if (refRes.ok) {
-              const refBlob = await refRes.blob();
-              formData.append("image", refBlob);
-              formData.append("strength", "0.65");
-            }
-          } catch (e) {
-            console.warn("Could not fetch reference image:", e);
-          }
-        }
-
-        const endpoint = referenceImageUrl
-          ? "https://api.stability.ai/v2beta/stable-image/generate/sd3"
-          : "https://api.stability.ai/v2beta/stable-image/generate/sd3";
-
-        const response = await fetch(endpoint, {
+        const response = await fetch("https://api.stability.ai/v2beta/stable-image/generate/sd3", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${STABILITY_API_KEY}`,
@@ -170,59 +208,9 @@ serve(async (req) => {
       }
     }
 
-    // Fallback to Leonardo AI
-    if (!imgBytes && LEONARDO_API_KEY) {
-      console.log(`Falling back to Leonardo AI: "${enhancedPrompt}"`);
-      try {
-        const createRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${LEONARDO_API_KEY}`,
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify({
-            prompt: enhancedPrompt,
-            width: dims.width,
-            height: dims.height,
-            num_images: 1,
-            alchemy: true,
-            promptEnhance: true,
-          }),
-        });
-
-        if (!createRes.ok) throw new Error(`Leonardo create failed: ${createRes.status}`);
-        const createData = await createRes.json();
-        const generationId = createData.sdGenerationJob?.generationId;
-        if (!generationId) throw new Error("No generation ID from Leonardo");
-
-        // Poll for completion
-        for (let i = 0; i < 30; i++) {
-          await new Promise(r => setTimeout(r, 3000));
-          const pollRes = await fetch(`https://cloud.leonardo.ai/api/rest/v1/generations/${generationId}`, {
-            headers: { Authorization: `Bearer ${LEONARDO_API_KEY}`, Accept: "application/json" },
-          });
-          if (!pollRes.ok) continue;
-          const pollData = await pollRes.json();
-          const gen = pollData.generations_by_pk;
-          if (gen?.status === "COMPLETE" && gen.generated_images?.[0]?.url) {
-            const dlRes = await fetch(gen.generated_images[0].url);
-            if (dlRes.ok) {
-              imgBytes = new Uint8Array(await dlRes.arrayBuffer());
-              imgMime = "image/png";
-            }
-            break;
-          }
-          if (gen?.status === "FAILED") throw new Error("Leonardo generation failed");
-        }
-      } catch (e) {
-        console.error("Leonardo AI failed:", e);
-      }
-    }
-
-    // Fallback to Pollinations.ai (free, no API key)
+    // ===== FALLBACK 2: Pollinations.ai (free, no key) =====
     if (!imgBytes) {
-      console.log("Falling back to Pollinations.ai");
+      console.log("[FALLBACK] Pollinations.ai");
       try {
         const polUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(enhancedPrompt)}?width=${dims.width}&height=${dims.height}&nologo=true`;
         const polRes = await fetch(polUrl);
