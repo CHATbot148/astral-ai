@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, Sparkles, AlertCircle, Video } from "lucide-react";
+import { Loader2, Sparkles, AlertCircle, Video, Lock } from "lucide-react";
+import { useSubscription } from "@/hooks/useSubscription";
 
 export type VideoGenOptions = {
   prompt: string;
@@ -26,6 +27,7 @@ const PROMPT_SUGGESTIONS = [
 ];
 
 export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPrompt = "" }: Props) => {
+  const { canGenerateVideo, remainingVideos, tier, tierConfig } = useSubscription();
   const [prompt, setPrompt] = useState(initialPrompt);
   const [isWorking, setIsWorking] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -142,11 +144,24 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
             )}
           </AnimatePresence>
 
+          {/* Limit info */}
+          {!canGenerateVideo && (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/30">
+              <Lock className="h-4 w-4 text-destructive shrink-0" />
+              <p className="text-sm text-destructive">
+                {tier === 'free' ? 'Video generation requires a paid plan. Please upgrade.' : `Daily video limit reached (${tierConfig.limits.videosPerDay}/day). Upgrade for more.`}
+              </p>
+            </div>
+          )}
+          {canGenerateVideo && (
+            <p className="text-xs text-muted-foreground">{remainingVideos} video{remainingVideos !== 1 ? 's' : ''} remaining today</p>
+          )}
+
           <div className="flex justify-end pt-2">
             <Button
               variant="xai"
               onClick={run}
-              disabled={isWorking || !prompt.trim()}
+              disabled={isWorking || !prompt.trim() || !canGenerateVideo}
               className="gap-2 min-w-[140px]"
             >
               {isWorking ? (

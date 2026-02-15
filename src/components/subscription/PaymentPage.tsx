@@ -92,14 +92,37 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
       const tierToSubscribe = promoDiscount?.tier as SubscriptionTier || selectedTier;
 
       if (promoApplied && promoDiscount) {
-        // Redeem the promo code
+        // Redeem the promo code - re-validate server-side
         const { data: code } = await supabase
           .from('promo_codes')
-          .select('id')
+          .select('id, current_uses, max_uses, is_active, expires_at')
           .eq('code', promoCode.trim().toUpperCase())
-          .single();
+          .eq('is_active', true)
+          .maybeSingle();
 
-        if (code && user) {
+        if (!code || code.current_uses >= code.max_uses || (code.expires_at && new Date(code.expires_at) < new Date())) {
+          toast({ title: 'Promo code is no longer valid', variant: 'destructive' });
+          setPromoApplied(false);
+          setPromoDiscount(null);
+          setIsProcessing(false);
+          return;
+        }
+
+        if (user) {
+          // Check if already redeemed
+          const { data: existing } = await supabase
+            .from('promo_code_redemptions')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('promo_code_id', code.id)
+            .maybeSingle();
+
+          if (existing) {
+            toast({ title: 'You already used this code', variant: 'destructive' });
+            setIsProcessing(false);
+            return;
+          }
+
           await supabase.from('promo_code_redemptions').insert({
             user_id: user.id,
             promo_code_id: code.id,

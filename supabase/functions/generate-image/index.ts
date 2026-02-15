@@ -87,9 +87,24 @@ serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
-    // Daily limit
+    // Subscription tier check + daily limit
     if (userId !== "anonymous") {
-      const dailyLimit = userEmail === CEO_EMAIL ? DAILY_LIMIT_CEO : DAILY_LIMIT_REGULAR;
+      // Fetch user's subscription
+      const { data: sub } = await admin
+        .from("subscriptions")
+        .select("tier, status, expires_at")
+        .eq("user_id", userId)
+        .eq("status", "active")
+        .maybeSingle();
+
+      const tier = (sub && sub.status === "active" && (!sub.expires_at || new Date(sub.expires_at) > new Date()))
+        ? sub.tier : "free";
+
+      const tierLimits: Record<string, number> = {
+        free: 5, basic: 10, pro: 25, ultimate: 999999,
+      };
+
+      const dailyLimit = userEmail === CEO_EMAIL ? DAILY_LIMIT_CEO : (tierLimits[tier] || 5);
       const today = new Date(); today.setHours(0, 0, 0, 0);
       const { count } = await admin
         .from("generated_images")
@@ -99,7 +114,7 @@ serve(async (req) => {
 
       if ((count || 0) >= dailyLimit) {
         return new Response(JSON.stringify({
-          error: "Daily image generation limit reached",
+          error: `Daily image limit reached (${dailyLimit}/day). Upgrade your plan for more.`,
           limit_reached: true, remaining: 0, limit: dailyLimit,
         }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }

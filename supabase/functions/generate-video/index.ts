@@ -36,12 +36,36 @@ serve(async (req) => {
       if (data?.user?.email) userEmail = data.user.email;
     }
 
-    // Enforce daily video generation limits
+    // Subscription tier check + daily video limits
     const CEO_EMAIL = "khaleelktn@gmail.com";
-    const dailyLimit = userEmail === CEO_EMAIL ? 5 : 1;
     
     if (userId !== "anonymous") {
       const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+      
+      // Fetch user's subscription
+      const { data: sub } = await admin
+        .from("subscriptions")
+        .select("tier, status, expires_at")
+        .eq("user_id", userId)
+        .eq("status", "active")
+        .maybeSingle();
+
+      const tier = (sub && sub.status === "active" && (!sub.expires_at || new Date(sub.expires_at) > new Date()))
+        ? sub.tier : "free";
+
+      // Free tier cannot generate videos at all
+      if (tier === "free") {
+        return new Response(JSON.stringify({
+          error: "Video generation requires a paid plan. Please upgrade.",
+          limit_reached: true,
+        }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      const tierLimits: Record<string, number> = {
+        free: 0, basic: 2, pro: 8, ultimate: 999999,
+      };
+      const dailyLimit = userEmail === CEO_EMAIL ? 20 : (tierLimits[tier] || 0);
+
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       
@@ -52,8 +76,16 @@ serve(async (req) => {
         .gte("created_at", today.toISOString());
       
       if ((count || 0) >= dailyLimit) {
-        throw new Error(`Daily video generation limit reached (${dailyLimit}/day). Try again tomorrow!`);
+        return new Response(JSON.stringify({
+          error: `Daily video limit reached (${dailyLimit}/day). Upgrade for more.`,
+          limit_reached: true,
+        }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
+    } else {
+      // Anonymous users cannot generate videos
+      return new Response(JSON.stringify({
+        error: "Please sign in and subscribe to generate videos.",
+      }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     console.log(`Generating video with Leonardo text-to-video: "${prompt}"`);
