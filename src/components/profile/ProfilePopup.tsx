@@ -357,7 +357,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
           apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
           Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ text: "Hi, I'm X-AI", voiceId }),
+        body: JSON.stringify({ text: "Hi, I'm XAI, choose your preferred voice and let's proceed on our adventure", voiceId }),
       });
       if (!resp.ok) throw new Error(`TTS request failed (${resp.status})`);
       const contentType = resp.headers.get("content-type") || "";

@@ -504,7 +504,7 @@ export const ChatContainer = () => {
           <AnimatePresence mode="wait">
             {displayMessages.length === 0 ? (
               <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <WelcomeScreen onSuggestionClick={handleSend} />
+                <WelcomeScreen onSuggestionClick={handleSend} onGenerateImage={() => openImageDialog()} />
               </motion.div>
             ) : (
               <motion.div key="messages" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto">
