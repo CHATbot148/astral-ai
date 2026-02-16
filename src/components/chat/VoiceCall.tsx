@@ -68,6 +68,13 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const stopCurrentAudio = useCallback(() => {
+    if (currentAudioRef.current) {
+      try { (currentAudioRef.current as any).stop(); } catch {}
+      currentAudioRef.current = null;
+    }
+  }, []);
+
   const speakResponse = useCallback(async (text: string) => {
     if (!isActiveRef.current) return;
     setStatus("speaking");
@@ -113,7 +120,12 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
       const source = ctx.createBufferSource();
       source.buffer = audioBuffer;
-      source.connect(ctx.destination);
+
+      // Apply gain node to boost volume
+      const gainNode = ctx.createGain();
+      gainNode.gain.value = 3.0; // 3x volume boost
+      source.connect(gainNode);
+      gainNode.connect(ctx.destination);
 
       // Store source so we can stop it on interruption or end call
       currentAudioRef.current = source as any;
@@ -313,9 +325,12 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
       let silenceStart: number | null = null;
+      let hasSpoken = false;
       const SILENCE_THRESHOLD = 15;
-      const SILENCE_DURATION = 1800;
-      const MAX_RECORD_TIME = 30000;
+      const SPEECH_THRESHOLD = 25;
+      const SILENCE_DURATION = 2300;
+      const MAX_RECORD_TIME = 50000;
+      const MAX_INITIAL_SILENCE = 8000; // Stop after 8s if user never speaks
       const recordStart = Date.now();
 
       const checkSilence = () => {
@@ -333,9 +348,28 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         analyser.getByteFrequencyData(dataArray);
         const avg = dataArray.reduce((sum, v) => sum + v, 0) / dataArray.length;
 
+        // Detect if user has spoken at all
+        if (avg >= SPEECH_THRESHOLD) {
+          hasSpoken = true;
+          // If AI is currently speaking, interrupt it immediately
+          if (currentAudioRef.current) {
+            stopCurrentAudio();
+            setStatus("listening");
+          }
+        }
+
         if (avg < SILENCE_THRESHOLD) {
           if (!silenceStart) silenceStart = Date.now();
-          else if (Date.now() - silenceStart > SILENCE_DURATION) {
+          const elapsed = Date.now() - silenceStart;
+          
+          // If user spoke then went silent, use normal silence duration
+          if (hasSpoken && elapsed > SILENCE_DURATION) {
+            mediaRecorder.stop();
+            audioContext.close().catch(() => {});
+            return;
+          }
+          // If user never spoke, stop after extended silence
+          if (!hasSpoken && elapsed > MAX_INITIAL_SILENCE) {
             mediaRecorder.stop();
             audioContext.close().catch(() => {});
             return;
@@ -352,7 +386,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       console.error("MediaRecorder error:", error);
       toast({ title: "Recording failed", variant: "destructive" });
     }
-  }, [processAudio, toast]);
+  }, [processAudio, stopCurrentAudio, toast]);
 
   const startCall = useCallback(async () => {
     setStatus("connecting");
@@ -439,9 +473,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       if (mediaRecorderRef.current?.state === "recording") {
         mediaRecorderRef.current.stop();
       }
-      if (currentAudioRef.current) {
-        currentAudioRef.current.pause();
-      }
+      stopCurrentAudio();
       setStatus("idle");
     } else if (isConnected) {
       startListening();

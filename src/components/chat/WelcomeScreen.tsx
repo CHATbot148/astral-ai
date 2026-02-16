@@ -1,9 +1,10 @@
 import { motion } from 'framer-motion';
-import { Code, Brain, FileText, Zap } from 'lucide-react';
+import { Code, Brain, FileText, ImagePlus } from 'lucide-react';
 import xaiLogo from '@/assets/xai-logo.png';
 
 interface WelcomeScreenProps {
   onSuggestionClick: (suggestion: string) => void;
+  onGenerateImage?: () => void;
 }
 
 const suggestions = [
@@ -23,13 +24,14 @@ const suggestions = [
     description: 'Summarize and extract insights',
   },
   {
-    icon: Zap,
-    title: 'Solve problems',
-    description: 'Help me debug this error',
+    icon: ImagePlus,
+    title: 'Generate Image',
+    description: 'Create an AI-generated image',
+    isImageAction: true,
   },
 ];
 
-export const WelcomeScreen = ({ onSuggestionClick }: WelcomeScreenProps) => {
+export const WelcomeScreen = ({ onSuggestionClick, onGenerateImage }: WelcomeScreenProps) => {
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-4 py-8">
       {/* Logo */}
@@ -84,7 +86,7 @@ export const WelcomeScreen = ({ onSuggestionClick }: WelcomeScreenProps) => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.5 + index * 0.1 }}
-            onClick={() => onSuggestionClick(suggestion.description)}
+            onClick={() => (suggestion as any).isImageAction && onGenerateImage ? onGenerateImage() : onSuggestionClick(suggestion.description)}
             className="group p-4 rounded-xl xai-glass hover:bg-secondary/50 transition-all duration-300 text-left"
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
