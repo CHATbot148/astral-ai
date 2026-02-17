@@ -21,7 +21,7 @@
    },
    smart_friendly: {
      name: 'Smart & Friendly',
-     description: 'Balanced, helpful, and conversational. The default X-AI personality.',
+     description: 'Balanced, helpful, and conversational. The default Astraz personality.',
    },
    highly_courteous: {
      name: 'Highly Courteous',

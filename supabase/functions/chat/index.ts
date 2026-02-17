@@ -56,7 +56,7 @@ VOICE MODE ACTIVE - STRICT FORMATTING RULES:
 - Numbers should be written as words when short (one, two, three)
 `;
 
-// Web search intent patterns
+// Web search intent patterns - expanded for better detection
 const WEB_SEARCH_PATTERNS = [
   /search (?:for |the web for |online for )?(.+)/i,
   /look up (.+)/i,
@@ -67,6 +67,10 @@ const WEB_SEARCH_PATTERNS = [
   /who is (.+)/i,
   /when (?:is|was|did) (.+)/i,
   /where (?:is|was|can I find) (.+)/i,
+  /(?:current|live|latest|today'?s?) (?:score|scores|result|results|standings?|match|game) (?:of |for |in |between )?(.+)/i,
+  /(?:what|who) (?:is|are|was|were) (.+?) (?:playing|facing|going against|matched with)/i,
+  /(?:next|upcoming) (?:match|game|fixture) (?:of |for )?(.+)/i,
+  /(?:score|result)s? (?:of |for |in )?(.+)/i,
 ];
 
 const IMAGE_FETCH_PATTERNS = [
@@ -74,6 +78,13 @@ const IMAGE_FETCH_PATTERNS = [
   /(?:can you |please )?(?:find|get|fetch) (?:an? )?(?:image|picture|photo)s? of (.+)/i,
   /what does (.+) look like/i,
   /images? of (.+)/i,
+];
+
+const VIDEO_FETCH_PATTERNS = [
+  /show me (?:a )?video(?:s)? (?:of |about |on )?(.+)/i,
+  /(?:find|get|search for) (?:a )?video(?:s)? (?:of |about |on )?(.+)/i,
+  /video(?:s)? (?:of |about |on )(.+)/i,
+  /(?:can you |please )?(?:find|get) (?:a )?video (?:tutorial|guide)? (?:on |about |for )?(.+)/i,
 ];
 
 // Image generation detection - be very specific
@@ -86,8 +97,21 @@ const IMAGE_GENERATION_PATTERNS = [
   /^(?:can you |please )?(?:generate|create|make|draw) (?:an? )?(?:image|picture|photo|illustration)/i,
 ];
 
-// Style keywords for image generation
 const STYLE_KEYWORDS = ['sketch', 'anime', 'cinematic', 'photoreal', 'realistic', 'cartoon', 'painting', 'watercolor', 'oil painting', '3d render'];
+
+// Detect if user is asking about real-time/current events that need fresh web data
+function needsFreshWebSearch(text: string): boolean {
+  const realTimePatterns = [
+    /(?:current|live|today|right now|ongoing|latest|recent)/i,
+    /(?:score|scores|result|results|standings|match|game|fixture)/i,
+    /(?:weather|temperature|forecast)/i,
+    /(?:stock|price|market|trading)/i,
+    /(?:news|headline|breaking)/i,
+    /(?:who (?:is|are) .+ playing|next match|upcoming game)/i,
+    /(?:what time|when does|schedule)/i,
+  ];
+  return realTimePatterns.some(p => p.test(text));
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -101,7 +125,6 @@ serve(async (req) => {
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    // Derive user id from JWT
     const authHeader = req.headers.get("Authorization") || "";
     const jwt = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
 
@@ -150,20 +173,19 @@ serve(async (req) => {
     
     let searchContext = "";
     let mediaContext = "";
+    let videoContext = "";
     let shouldGenerateImage = false;
     let imagePrompt = "";
     let detectedStyle = "photoreal";
 
-    // Check for image generation request - be very strict
+    // Check for image generation request
     for (const pattern of IMAGE_GENERATION_PATTERNS) {
       if (pattern.test(lastContent)) {
         shouldGenerateImage = true;
-        // Extract prompt by removing the trigger words
         imagePrompt = lastContent
           .replace(/^(generate|create|make|draw|visuali[sz]e)\s*(me\s*)?(an?\s*)?(image|picture|photo|illustration|art|artwork)?\s*(of\s*)?/i, '')
           .trim() || lastContent;
         
-        // Detect style from content
         for (const style of STYLE_KEYWORDS) {
           if (lastContent.toLowerCase().includes(style)) {
             if (style === 'sketch') detectedStyle = 'sketch';
@@ -179,6 +201,10 @@ serve(async (req) => {
 
     // Check for web search intent (only if not generating image)
     if (!shouldGenerateImage) {
+      // Auto-detect real-time queries even without explicit search keywords
+      const isRealTimeQuery = needsFreshWebSearch(lastContent);
+      let searchTriggered = false;
+
       for (const pattern of WEB_SEARCH_PATTERNS) {
         const match = lastContent.match(pattern);
         if (match) {
@@ -186,13 +212,27 @@ serve(async (req) => {
           try {
             const searchResults = await performWebSearch(SUPABASE_URL!, query, "web");
             if (searchResults.length > 0) {
-              searchContext = `\n\n[Web Search Results for "${query}"]:\n` +
+              searchContext = `\n\n[Web Search Results for "${query}" - USE THESE AS YOUR PRIMARY SOURCE OF TRUTH]:\n` +
                 searchResults.map((r: any, i: number) => `${i + 1}. ${r.title}\n   ${r.snippet}\n   Source: ${r.url}`).join("\n\n");
             }
           } catch (e) {
             console.error("Web search error:", e);
           }
+          searchTriggered = true;
           break;
+        }
+      }
+
+      // If it's a real-time query but no pattern matched, still search
+      if (!searchTriggered && isRealTimeQuery) {
+        try {
+          const searchResults = await performWebSearch(SUPABASE_URL!, lastContent, "web");
+          if (searchResults.length > 0) {
+            searchContext = `\n\n[Web Search Results - USE THESE AS YOUR PRIMARY SOURCE OF TRUTH]:\n` +
+              searchResults.map((r: any, i: number) => `${i + 1}. ${r.title}\n   ${r.snippet}\n   Source: ${r.url}`).join("\n\n");
+          }
+        } catch (e) {
+          console.error("Auto web search error:", e);
         }
       }
 
@@ -213,29 +253,48 @@ serve(async (req) => {
           break;
         }
       }
+
+      // Check for video fetch intent
+      for (const pattern of VIDEO_FETCH_PATTERNS) {
+        const match = lastContent.match(pattern);
+        if (match) {
+          const query = match[1].trim();
+          try {
+            const videoResults = await performWebSearch(SUPABASE_URL!, query, "videos");
+            if (videoResults.length > 0) {
+              videoContext = `\n\n[Web Videos for "${query}" - display these as video cards with thumbnails]:\n` +
+                videoResults.slice(0, 4).map((r: any, i: number) => 
+                  `${i + 1}. [VIDEO_CARD:${r.title}|${r.url}|${r.thumbnail}|${r.duration || ''}|${r.source || 'YouTube'}]`
+                ).join("\n");
+            }
+          } catch (e) {
+            console.error("Video search error:", e);
+          }
+          break;
+        }
+      }
     }
 
     // Get mode-specific prompt
     const modePrompt = MODE_PROMPTS[aiMode] || MODE_PROMPTS['smart_friendly'];
-    
-    // Voice mode restrictions
     const voiceRestrictions = isVoiceMode ? VOICE_MODE_RESTRICTIONS : '';
-    
-    // Follow-up questions instruction
     const followUpInstruction = followUpQuestions 
       ? '\n- When appropriate, ask thoughtful follow-up questions.'
       : '\n- Do NOT ask follow-up questions unless absolutely necessary.';
 
     // Build system prompt
-    let systemContent = `You are X-AI, an intelligent AI assistant created by X-Tech.
+    let systemContent = `You are Astraz, an intelligent AI assistant created by X-Tech.
 
 About X-Tech:
 - Founded September 29th, 2023 by Khaleel Abdallah, a 15-year-old high schooler from Nigeria
-- Currently owns X-AI and WishVerse
+- Currently owns Astraz and WishVerse
 - WishVerse is a wish-making platform
 
-About You (X-AI):
-- Helpful, friendly AI assistant
+About You (Astraz):
+- Your name is Astraz — always refer to yourself as Astraz
+- You are a helpful, friendly AI assistant
+- You have NEVER been called "X-AI" or any other name — you have always been Astraz
+- If asked about your name or identity, say you are Astraz, created by X-Tech
 - Access to real-time web search and image finding
 ${modePrompt}${voiceRestrictions}${followUpInstruction}
 
@@ -244,10 +303,13 @@ IMPORTANT RESPONSE GUIDELINES:
 2. STRUCTURE: Break long text into readable paragraphs with spacing.
 3. PROPER NUMBERING: Use sequential numbers (1, 2, 3...) not repeating 1.
 4. CODE: Always wrap in triple backticks with language name.
-5. LINKS: Use markdown format [text](url)
+5. LINKS: Use markdown format [text](url) — keep URLs SHORT, never paste raw long URLs
 6. IMAGES FROM WEB: Format as ![description](url) - NEVER put 2+ images on same line
-7. GIFs: Max 2 per message, NEVER show the URL as text, only the image
-8. Each paragraph should have a blank line before it for readability${timeContext}${userMemory}${searchContext}${mediaContext}`;
+7. VIDEOS FROM WEB: When you have video results, format them as [VIDEO_CARD:title|url|thumbnail|duration|source]
+8. GIFs: Max 2 per message, NEVER show the URL as text, only the image
+9. Each paragraph should have a blank line before it for readability
+10. WEB SEARCH RESULTS: When using search results, ALWAYS cite sources at the end with [Sources] section listing numbered URLs
+11. REAL-TIME DATA: When search results are provided, use them as your PRIMARY source — do NOT make up scores, dates, or facts${timeContext}${userMemory}${searchContext}${mediaContext}${videoContext}`;
 
     // Add image generation guidance if detected
     if (shouldGenerateImage) {
@@ -262,7 +324,7 @@ Keep response brief.`;
       systemContent += `\n\nAttachments: ${fileContext}. Analyze and discuss them as needed.`;
     }
 
-    // Check if any message has images - use multimodal model if so
+    // Check if any message has images
     const hasImages = messages.some(
       (msg: { imageUrls?: string[] }) => msg.imageUrls && msg.imageUrls.length > 0
     );
@@ -283,13 +345,11 @@ Keep response brief.`;
       }
     );
 
-    // Use Mistral Pixtral for multimodal (images), Mistral Large for text-only
     if (hasImages) {
       if (!MISTRAL_API_KEY) {
         throw new Error("MISTRAL_API_KEY is not configured");
       }
 
-      // Mistral Pixtral supports vision/multimodal
       const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -312,7 +372,6 @@ Keep response brief.`;
             { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
-        // Fallback to text-only Mistral if Pixtral fails
         console.warn("Pixtral failed, falling back to text-only...");
         const textOnlyMessages = formattedMessages.map((msg: any) => {
           if (Array.isArray(msg.content)) {
@@ -344,7 +403,6 @@ Keep response brief.`;
       });
     }
 
-    // Use Mistral AI for text-only
     if (!MISTRAL_API_KEY) {
       throw new Error("MISTRAL_API_KEY is not configured");
     }
@@ -399,7 +457,7 @@ async function performWebSearch(supabaseUrl: string, query: string, type: string
         apikey: Deno.env.get("SUPABASE_ANON_KEY") ?? "",
         Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")}`,
       },
-      body: JSON.stringify({ query, type, count: type === "images" ? 8 : 5 }),
+      body: JSON.stringify({ query, type, count: type === "images" ? 8 : type === "videos" ? 6 : 5 }),
     });
 
     if (!response.ok) throw new Error("Search failed");

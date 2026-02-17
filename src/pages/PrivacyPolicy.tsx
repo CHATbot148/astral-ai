@@ -20,14 +20,14 @@ const PrivacyPolicy = () => {
           <section>
             <h2 className="text-xl font-display font-semibold">1. Introduction</h2>
             <p className="text-muted-foreground">
-              Welcome to X-AI. By using our services, you agree to these terms and our privacy practices. 
+              Welcome to Astraz. By using our services, you agree to these terms and our privacy practices. 
               Please read them carefully before subscribing to any paid plan.
             </p>
           </section>
 
           <section>
             <h2 className="text-xl font-display font-semibold">2. Subscription Plans</h2>
-            <p className="text-muted-foreground">X-AI offers the following subscription tiers:</p>
+            <p className="text-muted-foreground">Astraz offers the following subscription tiers:</p>
             <ul className="text-muted-foreground list-disc pl-5 space-y-1">
               <li><strong>Free</strong>: 5 low-quality images/day, no video, watermarks applied.</li>
               <li><strong>Basic (₦5,000/mo)</strong>: 10 medium-quality images/day, 2 low-quality videos/day, watermarks applied.</li>
@@ -80,7 +80,7 @@ const PrivacyPolicy = () => {
           <section>
             <h2 className="text-xl font-display font-semibold">7. Watermarks</h2>
             <p className="text-muted-foreground">
-              All generated media on Free and Basic plans includes a 50% transparent X-AI watermark. 
+              All generated media on Free and Basic plans includes a 50% transparent Astraz watermark. 
               Pro users have no watermarks on videos but retain image watermarks. 
               Ultimate users have no watermarks on any media.
             </p>
@@ -89,7 +89,7 @@ const PrivacyPolicy = () => {
           <section>
             <h2 className="text-xl font-display font-semibold">8. Content Policy</h2>
             <p className="text-muted-foreground">
-              Users are responsible for the content they generate. X-AI reserves the right to suspend accounts 
+              Users are responsible for the content they generate. Astraz reserves the right to suspend accounts 
               that violate our content guidelines. Generated content should not be used for illegal, harmful, 
               or misleading purposes.
             </p>

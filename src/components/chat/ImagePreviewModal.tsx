@@ -19,7 +19,7 @@ export const ImagePreviewModal = ({ isOpen, imageUrl, onClose }: ImagePreviewMod
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `x-ai-image-${Date.now()}.png`;
+      a.download = `astraz-image-${Date.now()}.png`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -34,7 +34,7 @@ export const ImagePreviewModal = ({ isOpen, imageUrl, onClose }: ImagePreviewMod
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'X-AI Generated Image',
+          title: 'Astraz Generated Image',
           url: imageUrl,
         });
       } catch {

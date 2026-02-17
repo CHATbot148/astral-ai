@@ -10,7 +10,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { supabase } from '@/integrations/supabase/client';
 import { lovable } from '@/integrations/lovable';
 import { z } from 'zod';
-import xaiLogo from '@/assets/xai-logo.png';
+import astrazLogo from '@/assets/astraz-logo.png';
 
 const emailSchema = z.string().email('Please enter a valid email address');
 const passwordSchema = z.string().min(6, 'Password must be at least 6 characters');
@@ -107,7 +107,7 @@ const Auth = () => {
       if (data?.error) throw new Error(data.error);
 
       toast({
-        title: 'Welcome to X-AI!',
+        title: 'Welcome to Astraz!',
         description: 'Your account has been created. Please log in.',
       });
 
@@ -294,9 +294,9 @@ const Auth = () => {
             className="flex items-center gap-3 mb-8"
           >
             <div className="w-12 h-12 rounded-full overflow-hidden xai-glow">
-              <img src={xaiLogo} alt="X-AI" className="w-full h-full object-cover" />
+              <img src={astrazLogo} alt="Astraz" className="w-full h-full object-cover" />
             </div>
-            <span className="text-2xl font-display font-bold xai-gradient-text">X-AI</span>
+            <span className="text-2xl font-display font-bold xai-gradient-text">Astraz</span>
           </motion.div>
 
           <AnimatePresence mode="wait">
@@ -314,8 +314,8 @@ const Auth = () => {
                   </h1>
                   <p className="text-muted-foreground">
                     {isLogin
-                      ? 'Sign in to continue to X-AI'
-                      : 'Sign Up to X-AI to continue.'}
+                      ? 'Sign in to continue to Astraz'
+                      : 'Sign Up to Astraz to continue.'}
                   </p>
                 </div>
 
@@ -706,7 +706,7 @@ const Auth = () => {
             aria-label="Toggle theme"
           >
             <div className="w-48 md:w-56 lg:w-64 h-48 md:h-56 lg:h-64 rounded-full overflow-hidden xai-glow">
-              <img src={xaiLogo} alt="X-AI" className="w-full h-full object-cover" />
+              <img src={astrazLogo} alt="Astraz" className="w-full h-full object-cover" />
             </div>
             <motion.div
               className="absolute -inset-8 rounded-full bg-gradient-to-br from-xai-cyan/20 to-xai-purple/20 blur-3xl -z-10"
