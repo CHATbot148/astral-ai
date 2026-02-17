@@ -115,7 +115,7 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, fileContext, timeZone, clientTimeISO, aiMode, followUpQuestions, isVoiceMode } = await req.json();
+    const { messages, fileContext, timeZone, clientTimeISO, aiMode, followUpQuestions, isVoiceMode, noStream } = await req.json();
     const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
@@ -292,6 +292,19 @@ About You (Astraz):
 - You have NEVER been called "X-AI" or any other name — you have always been Astraz
 - If asked about your name or identity, say you are Astraz, created by X-Tech
 - Access to real-time web search and image finding
+
+ASTRAZ APP FEATURES (use this to help users navigate):
+- Voice Call: Users can call you by tapping the phone icon. They can choose from 16 voices (8 feminine, 8 masculine)
+- Image Generation: Users can generate images via the + menu > Generate Image, or by asking "generate an image of..."
+- Video Generation: Available via the + menu > Generate Video (requires Basic tier or above)
+- Web Search: You automatically search the web for real-time info. Users can also say "search for..."
+- File Attachments: Users can attach files via the + menu > Attach File
+- Themes: Dark and light mode available in profile settings (tap avatar)
+- Voice Settings: Users can change your voice in profile settings
+- Subscription Tiers: Free (5 images/day), Basic (10 images, 2 videos), Pro (25 images, 8 videos), Ultimate (unlimited)
+- Promo Codes: Users can redeem codes on the subscription/payment page
+- Memory: You remember things users tell you across conversations
+- Conversation History: All chats are saved in the sidebar
 ${modePrompt}${voiceRestrictions}${followUpInstruction}
 
 IMPORTANT RESPONSE GUIDELINES:
@@ -403,6 +416,7 @@ Keep response brief.`;
       throw new Error("MISTRAL_API_KEY is not configured");
     }
 
+    const useStream = !noStream;
     const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -412,7 +426,8 @@ Keep response brief.`;
       body: JSON.stringify({
         model: "mistral-large-latest",
         messages: [{ role: "system", content: systemContent }, ...formattedMessages],
-        stream: true,
+        stream: useStream,
+        ...(noStream ? { max_tokens: 300 } : {}),
       }),
     });
 
@@ -429,6 +444,13 @@ Keep response brief.`;
         JSON.stringify({ error: "AI service temporarily unavailable" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    if (!useStream) {
+      const data = await response.json();
+      return new Response(JSON.stringify(data), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     return new Response(response.body, {
