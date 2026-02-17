@@ -1,16 +1,33 @@
 // Smart media type detection for chat messages
-export type MediaType = "text" | "gif" | "image" | "video";
+export type MediaType = "text" | "gif" | "image" | "video" | "video_card";
 
 export interface DetectedMedia {
   type: MediaType;
   url?: string;
   alt?: string;
+  thumbnail?: string;
+  duration?: string;
+  source?: string;
 }
 
 // Clean markdown media format: ![alt](url)
 export function cleanMarkdownMedia(message: string): { cleanText: string; mediaItems: DetectedMedia[] } {
   const mediaItems: DetectedMedia[] = [];
   
+  // Match VIDEO_CARD tags: [VIDEO_CARD:title|url|thumbnail|duration|source]
+  const videoCardRegex = /\[VIDEO_CARD:([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|([^\]]*)\]/g;
+  let vcMatch;
+  while ((vcMatch = videoCardRegex.exec(message)) !== null) {
+    mediaItems.push({
+      type: 'video_card',
+      alt: vcMatch[1] || 'Video',
+      url: vcMatch[2] || '',
+      thumbnail: vcMatch[3] || '',
+      duration: vcMatch[4] || '',
+      source: vcMatch[5] || 'YouTube',
+    });
+  }
+
   // Match markdown images/gifs: ![alt](url)
   const mdImageRegex = /!\[([^\]]*)\]\((https?:\/\/[^\s\)]+)\)/g;
   let match;
@@ -28,15 +45,17 @@ export function cleanMarkdownMedia(message: string): { cleanText: string; mediaI
     }
   }
   
-  // Remove markdown image syntax and any standalone URLs for detected media
-  let cleanText = message.replace(mdImageRegex, '');
+  // Remove VIDEO_CARD tags
+  let cleanText = message.replace(videoCardRegex, '');
+  // Remove markdown image syntax
+  cleanText = cleanText.replace(mdImageRegex, '');
   
   // Remove standalone giphy/tenor URLs that appear as text
   cleanText = cleanText.replace(/\n?https?:\/\/[^\s]*(?:giphy|tenor)[^\s]*/gi, '');
   
   // Remove any raw media URLs that were already captured
   for (const item of mediaItems) {
-    if (item.url) {
+    if (item.url && item.type !== 'video_card') {
       cleanText = cleanText.replace(new RegExp(`(?<!\\()${item.url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\))`, 'g'), '');
     }
   }
