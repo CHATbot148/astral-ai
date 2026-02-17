@@ -210,7 +210,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const clientTimeISO = new Date().toISOString();
 
-      // Chat — collect full response then speak (send full conversation history)
+      // Chat — use non-streaming for faster voice response
       const chatResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
         method: "POST",
         headers: {
@@ -221,6 +221,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         body: JSON.stringify({
           messages: conversationHistoryRef.current,
           isVoiceMode: true,
+          noStream: true,
           timeZone: userTimeZone,
           clientTimeISO,
         }),
@@ -228,30 +229,8 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
       if (!chatResponse.ok) throw new Error("Chat failed");
 
-      const reader = chatResponse.body?.getReader();
-      if (!reader) throw new Error("No reader");
-
-      const decoder = new TextDecoder();
-      let fullResponse = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (!isActiveRef.current) { reader.cancel(); return; }
-
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split("\n");
-
-        for (const line of lines) {
-          if (line.startsWith("data: ") && line !== "data: [DONE]") {
-            try {
-              const json = JSON.parse(line.slice(6));
-              const content = json.choices?.[0]?.delta?.content;
-              if (content) fullResponse += content;
-            } catch {}
-          }
-        }
-      }
+      const chatData = await chatResponse.json();
+      const fullResponse = chatData.choices?.[0]?.message?.content || chatData.content || "";
 
       if (fullResponse && isActiveRef.current) {
         // Add assistant response to conversation history

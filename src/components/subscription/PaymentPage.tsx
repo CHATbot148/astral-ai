@@ -195,7 +195,7 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
                     <Input
                       value={promoCode}
                       onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
-                      placeholder="XPRO-FREE-XXXXX"
+                      placeholder="ASTRAZ-P-XXXXXX"
                       className="pl-9 uppercase"
                       disabled={promoApplied}
                     />
