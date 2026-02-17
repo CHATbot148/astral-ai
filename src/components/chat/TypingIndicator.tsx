@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import xaiLogo from '@/assets/xai-logo.png';
+import astrazLogo from '@/assets/astraz-logo.png';
 
 export const TypingIndicator = ({ label }: { label?: string }) => {
   return (
@@ -9,13 +9,11 @@ export const TypingIndicator = ({ label }: { label?: string }) => {
       exit={{ opacity: 0, y: -10 }}
       className="flex gap-3 px-4 py-4 max-w-full overflow-hidden"
     >
-      {/* Avatar */}
       <div className="w-8 h-8 rounded-full overflow-hidden bg-gradient-to-br from-xai-cyan to-xai-purple flex-shrink-0">
-        <img src={xaiLogo} alt="X-AI" className="w-full h-full object-cover" />
+        <img src={astrazLogo} alt="Astraz" className="w-full h-full object-cover" />
       </div>
 
       <div className="flex flex-col justify-center min-w-0">
-        {/* Typing Dots */}
         <div className="flex items-center gap-1.5 py-1">
           {[0, 0.15, 0.3].map((delay, i) => (
             <motion.span
@@ -26,7 +24,6 @@ export const TypingIndicator = ({ label }: { label?: string }) => {
             />
           ))}
         </div>
-
         {label && <div className="text-xs text-muted-foreground truncate">{label}</div>}
       </div>
     </motion.div>

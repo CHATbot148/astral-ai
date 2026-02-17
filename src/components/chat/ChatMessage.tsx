@@ -9,7 +9,7 @@ import { MediaRenderer } from './MediaRenderer';
 import { resolveFileUrl } from '@/lib/storageRef';
 import { extractMediaFromMessage } from '@/utils/mediaDetector';
 import { useToast } from '@/hooks/use-toast';
-import xaiLogo from '@/assets/xai-logo.png';
+import astrazLogo from '@/assets/astraz-logo.png';
 
 interface ChatMessageProps {
   role: 'user' | 'assistant';
@@ -198,21 +198,22 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
          // Inline code
          line = line.replace(/`([^`]+)`/g, '<code class="bg-muted px-1.5 py-0.5 rounded text-sm font-mono">$1</code>');
          
-         // Markdown links
-         line = line.replace(
-           /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, 
-           '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-xai-cyan hover:underline inline-flex items-center gap-1">$1<svg class="w-3 h-3 inline-block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>'
-         );
-         
-         // Plain URLs
-         line = line.replace(
-           /(?<!\])\((https?:\/\/[^\s\)]+)\)|(?<!["\(])(https?:\/\/[^\s<]+)(?!["\)])/g,
-           (match, p1, p2) => {
-             const url = p1 || p2;
-             if (!url) return match;
-             return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-xai-cyan hover:underline inline-flex items-center gap-1">${url}<svg class="w-3 h-3 inline-block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>`;
-           }
-         );
+          // Markdown links
+          line = line.replace(
+            /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, 
+            '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-xai-cyan hover:underline break-all">$1 ↗</a>'
+          );
+          
+          // Plain URLs - make them break properly on mobile
+          line = line.replace(
+            /(?<!\])\((https?:\/\/[^\s\)]+)\)|(?<!["\(])(https?:\/\/[^\s<]+)(?!["\)])/g,
+            (match, p1, p2) => {
+              const url = p1 || p2;
+              if (!url) return match;
+              const shortUrl = url.length > 50 ? url.slice(0, 47) + '...' : url;
+              return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-xai-cyan hover:underline break-all">${shortUrl} ↗</a>`;
+            }
+          );
          
          // Headers
          if (line.startsWith('### ')) {
@@ -304,7 +305,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
             </span>
           )
         ) : (
-          <img src={xaiLogo} alt="X-AI" className="w-full h-full object-cover" />
+          <img src={astrazLogo} alt="Astraz" className="w-full h-full object-cover" />
         )}
       </motion.div>
 
@@ -315,7 +316,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
       )}>
         <div className={cn("flex items-center gap-2", isUser ? "justify-end" : "justify-start")}>
           <span className="font-semibold text-sm">
-            {isUser ? (userName || 'You') : 'X-AI'}
+            {isUser ? (userName || 'You') : 'Astraz'}
           </span>
           {isStreaming && (
             <span className="flex gap-1">
@@ -401,7 +402,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
                               const blobUrl = URL.createObjectURL(blob);
                               const a = document.createElement('a');
                               a.href = blobUrl;
-                              a.download = `x-ai-image-${Date.now()}.png`;
+                              a.download = `astraz-image-${Date.now()}.png`;
                               document.body.appendChild(a);
                               a.click();
                               document.body.removeChild(a);
@@ -451,8 +452,8 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
 
         <motion.div 
           className={cn(
-            "text-foreground leading-relaxed inline-block",
-            isUser ? "bg-secondary rounded-2xl rounded-tr-sm px-4 py-2 max-w-[85%] break-words" : "max-w-full"
+    "text-foreground leading-relaxed inline-block overflow-hidden",
+            isUser ? "bg-secondary rounded-2xl rounded-tr-sm px-4 py-2 max-w-[85%] break-words" : "max-w-full break-words overflow-wrap-anywhere"
           )}
           layout
         >

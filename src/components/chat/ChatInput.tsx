@@ -522,7 +522,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
       </div>
 
       <p className="text-center text-[10px] sm:text-xs text-muted-foreground mt-2">
-        X-AI can make mistakes. Consider checking important information.
+        Astraz can make mistakes. Consider checking important information.
       </p>
     </div>
   );

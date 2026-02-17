@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Code, Brain, FileText, ImagePlus } from 'lucide-react';
-import xaiLogo from '@/assets/xai-logo.png';
+import astrazLogo from '@/assets/astraz-logo.png';
 
 interface WelcomeScreenProps {
   onSuggestionClick: (suggestion: string) => void;
@@ -43,7 +43,7 @@ export const WelcomeScreen = ({ onSuggestionClick, onGenerateImage }: WelcomeScr
       >
         <div className="relative">
           <div className="w-24 h-24 rounded-full overflow-hidden xai-glow xai-float">
-            <img src={xaiLogo} alt="XAI" className="w-full h-full object-cover" />
+            <img src={astrazLogo} alt="Astraz" className="w-full h-full object-cover" />
           </div>
           <motion.div
             className="absolute -inset-4 rounded-full bg-gradient-to-br from-xai-cyan/20 to-xai-purple/20 blur-xl -z-10"
@@ -60,7 +60,7 @@ export const WelcomeScreen = ({ onSuggestionClick, onGenerateImage }: WelcomeScr
         transition={{ delay: 0.2 }}
         className="text-4xl md:text-5xl font-display font-bold mb-4 text-center"
       >
-        Welcome to <span className="xai-gradient-text">XAI</span>
+        Welcome to <span className="xai-gradient-text">Astraz</span>
       </motion.h1>
 
       <motion.p
@@ -69,7 +69,7 @@ export const WelcomeScreen = ({ onSuggestionClick, onGenerateImage }: WelcomeScr
         transition={{ delay: 0.3 }}
         className="text-lg text-muted-foreground text-center max-w-md mb-12"
       >
-        Your intelligent AI assistant by X-Tech.
+        Your intelligent AI assistant.
         How can I help you today?
       </motion.p>
 

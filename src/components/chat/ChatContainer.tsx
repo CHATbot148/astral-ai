@@ -17,7 +17,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { makeStorageRef, resolveFileUrl } from '@/lib/storageRef';
 import { cn } from '@/lib/utils';
-import xaiLogo from '@/assets/xai-logo.png';
+import astrazLogo from '@/assets/astraz-logo.png';
 import { getAISettings } from '@/lib/aiSettings';
 
 // Memory extraction patterns
@@ -71,9 +71,9 @@ export const ChatContainer = () => {
 
   useEffect(() => {
     if (currentConversation?.title) {
-      document.title = `${currentConversation.title.slice(0, 15)} | X-AI`;
+      document.title = `${currentConversation.title.slice(0, 15)} | Astraz`;
     } else {
-      document.title = 'X-AI | Intelligent Assistant';
+      document.title = 'Astraz | Intelligent AI Assistant';
     }
   }, [currentConversation]);
 
@@ -524,7 +524,7 @@ export const ChatContainer = () => {
                 {(isGeneratingImage || isGeneratingVideo) && (
                   <div className="flex items-center gap-3 px-6 py-4">
                     <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
-                      <img src={xaiLogo} alt="X-AI" className="w-full h-full object-cover" />
+                      <img src={astrazLogo} alt="Astraz" className="w-full h-full object-cover" />
                     </div>
                     <motion.span className="text-xai-cyan font-medium" animate={{ opacity: [1, 0.5, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>
                       {isGeneratingVideo ? '🎬 Generating video...' : '🎨 Generating image...'}

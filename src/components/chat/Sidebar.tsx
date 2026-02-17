@@ -12,7 +12,7 @@ import { Conversation } from '@/hooks/useConversations';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
 import { ProfilePopup } from '@/components/profile/ProfilePopup';
-import xaiLogo from '@/assets/xai-logo.png';
+import astrazLogo from '@/assets/astraz-logo.png';
 
 interface SidebarProps {
   conversations: Conversation[];
@@ -110,9 +110,9 @@ export const Sidebar = ({
         <div className="flex items-center justify-between p-4 border-b border-sidebar-border">
           <motion.div className="flex items-center gap-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <div className="w-8 h-8 rounded-full overflow-hidden xai-glow">
-              <img src={xaiLogo} alt="X-AI" className="w-full h-full object-cover" />
+              <img src={astrazLogo} alt="Astraz" className="w-full h-full object-cover" />
             </div>
-            <span className="font-display font-semibold text-lg xai-gradient-text">X-AI</span>
+            <span className="font-display font-semibold text-lg xai-gradient-text">Astraz</span>
           </motion.div>
           <Button variant="ghost" size="icon" onClick={onClose} className="lg:hidden" aria-label="Close sidebar">
             <PanelLeftClose className="h-5 w-5" />

@@ -357,7 +357,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
           apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
           Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ text: "Hi, I'm XAI, choose your preferred voice and let's proceed on our adventure", voiceId }),
+        body: JSON.stringify({ text: "Hi, I'm Astraz, choose your preferred voice and let's proceed on our adventure", voiceId }),
       });
       if (!resp.ok) throw new Error(`TTS request failed (${resp.status})`);
       const contentType = resp.headers.get("content-type") || "";
@@ -381,7 +381,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = blobUrl;
-      a.download = `x-ai-${prompt.slice(0, 20).replace(/\s+/g, '-')}-${Date.now()}.${ext}`;
+      a.download = `astraz-${prompt.slice(0, 20).replace(/\s+/g, '-')}-${Date.now()}.${ext}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
