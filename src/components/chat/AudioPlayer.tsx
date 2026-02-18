@@ -16,7 +16,7 @@ export const AudioPlayer = ({ text, onClose }: AudioPlayerProps) => {
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const { toast } = useToast();
 
@@ -29,7 +29,6 @@ export const AudioPlayer = ({ text, onClose }: AudioPlayerProps) => {
 
   const generateAudio = async () => {
     setIsLoading(true);
-    setError(null);
 
     // Deepgram voices: asteria, luna, athena (feminine), orion, zeus, helios (masculine)
     const voiceId = localStorage.getItem("xai-tts-voice") || "asteria";
@@ -85,20 +84,10 @@ export const AudioPlayer = ({ text, onClose }: AudioPlayerProps) => {
     } catch (err) {
       // Suppress benign abort/pause errors that happen during normal operation
       const msg = err instanceof Error ? err.message : String(err);
-      const isAbortError =
-        (err instanceof DOMException && err.name === 'AbortError') ||
-        msg.toLowerCase().includes('abort') ||
-        msg.toLowerCase().includes('interrupted') ||
-        msg.toLowerCase().includes('the play() request was interrupted');
-
-      if (isAbortError) {
-        console.log("TTS playback interrupted (non-error):", msg);
-        // Don't show error UI for abort — it's normal when user navigates or closes
-      } else {
-        console.error("TTS error:", err);
-        setError(msg || "Failed to generate audio");
-        toast({ title: "Text-to-speech failed", description: msg, variant: "destructive" });
-      }
+      console.error("TTS error:", msg);
+      // Never show errors in the player UI — only in toasts for critical failures
+      // Most TTS errors are benign (abort, permission, large payload) and audio still works
+      toast({ title: "Text-to-speech failed", description: msg, variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
@@ -138,7 +127,7 @@ export const AudioPlayer = ({ text, onClose }: AudioPlayerProps) => {
       exit={{ opacity: 0, y: 10 }}
       className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl bg-secondary border border-border max-w-full overflow-hidden"
     >
-      {!audioUrl && !isLoading && !error && (
+      {!audioUrl && !isLoading && (
         <Button variant="ghost" size="sm" onClick={generateAudio} className="gap-2 text-xai-cyan hover:text-xai-cyan">
           <Volume2 className="h-4 w-4" />
           Listen
@@ -150,10 +139,6 @@ export const AudioPlayer = ({ text, onClose }: AudioPlayerProps) => {
           <Loader2 className="h-4 w-4 animate-spin text-xai-cyan flex-shrink-0" />
           <span className="text-sm text-muted-foreground truncate">Generating…</span>
         </div>
-      )}
-
-      {error && (
-        <div className="flex items-center gap-2 px-2 text-destructive text-xs truncate max-w-[200px]">{error}</div>
       )}
 
       {audioUrl && !isLoading && (

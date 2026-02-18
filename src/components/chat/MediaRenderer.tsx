@@ -86,7 +86,7 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
 
       {/* Video Cards Grid */}
       {videoCards.length > 0 && (
-        <div className="grid grid-cols-2 gap-2 w-full max-w-[500px]">
+        <div className="grid grid-cols-2 gap-2 w-full max-w-[600px]">
           {videoCards.map((item, index) => (
             <motion.a
               key={`vc-${index}`}
@@ -98,7 +98,7 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
               transition={{ delay: index * 0.1 }}
               className="group relative rounded-lg overflow-hidden border border-border bg-secondary hover:border-primary/50 transition-colors"
             >
-              <div className="relative aspect-video bg-muted max-h-[120px] sm:max-h-[160px]">
+              <div className="relative aspect-video bg-muted max-h-[140px] sm:max-h-[180px]">
                 {item.thumbnail ? (
                   <img
                     src={item.thumbnail}

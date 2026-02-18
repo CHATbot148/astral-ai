@@ -56,22 +56,26 @@
      }
    };
  
-   const deleteMemory = async (id: string) => {
-     setDeletingId(id);
-     try {
-       const { error } = await supabase
-         .from('user_memory')
-         .delete()
-         .eq('id', id);
-       
-       if (error) throw error;
-       setMemories(prev => prev.filter(m => m.id !== id));
-     } catch (error) {
-       toast({ title: 'Failed to delete memory', variant: 'destructive' });
-     } finally {
-       setDeletingId(null);
-     }
-   };
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
+
+  const deleteMemory = async (id: string) => {
+    setDeletingId(id);
+    setConfirmDeleteId(null);
+    try {
+      const { error } = await supabase
+        .from('user_memory')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+      setMemories(prev => prev.filter(m => m.id !== id));
+    } catch (error) {
+      toast({ title: 'Failed to delete memory', variant: 'destructive' });
+    } finally {
+      setDeletingId(null);
+    }
+  };
  
    const addMemory = async () => {
      if (!user || !newKey.trim() || !newValue.trim()) return;
@@ -100,21 +104,21 @@
      }
    };
  
-   const clearAllMemories = async () => {
-     if (!user) return;
-     
-     try {
-       const { error } = await supabase
-         .from('user_memory')
-         .delete()
-         .eq('user_id', user.id);
-       
-       if (error) throw error;
-       setMemories([]);
-     } catch (error) {
-       toast({ title: 'Failed to clear memories', variant: 'destructive' });
-     }
-   };
+  const clearAllMemories = async () => {
+    if (!user) return;
+    setConfirmClearAll(false);
+    try {
+      const { error } = await supabase
+        .from('user_memory')
+        .delete()
+        .eq('user_id', user.id);
+      
+      if (error) throw error;
+      setMemories([]);
+    } catch (error) {
+      toast({ title: 'Failed to clear memories', variant: 'destructive' });
+    }
+  };
  
    return (
      <AnimatePresence>
@@ -149,7 +153,7 @@
                  </div>
  
                  <p className="text-sm text-muted-foreground mb-4">
-                   X-AI remembers important information you share. This helps personalize your experience.
+                   Astraz remembers important information you share. This helps personalize your experience.
                  </p>
  
                  {/* Add Memory */}
@@ -219,46 +223,70 @@
                  ) : (
                    <div className="space-y-2">
                      {memories.map((memory) => (
-                       <motion.div
-                         key={memory.id}
-                         initial={{ opacity: 0, x: -10 }}
-                         animate={{ opacity: 1, x: 0 }}
-                         className="flex items-start justify-between gap-3 p-3 rounded-lg bg-secondary/50 border border-border group"
-                       >
+                        <motion.div
+                          key={memory.id}
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          className="relative flex items-start justify-between gap-3 p-3 rounded-lg bg-secondary/50 border border-border group"
+                        >
                          <div className="flex-1 min-w-0">
                            <p className="text-sm font-medium text-xai-cyan">{memory.key}</p>
                            <p className="text-sm text-foreground truncate">{memory.value}</p>
                          </div>
-                         <Button
-                           variant="ghost"
-                           size="icon"
-                           className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
-                           onClick={() => deleteMemory(memory.id)}
-                           disabled={deletingId === memory.id}
-                         >
-                           {deletingId === memory.id ? (
-                             <Loader2 className="h-4 w-4 animate-spin" />
-                           ) : (
-                             <Trash2 className="h-4 w-4" />
-                           )}
-                         </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
+                            onClick={() => setConfirmDeleteId(memory.id)}
+                            disabled={deletingId === memory.id}
+                          >
+                            {deletingId === memory.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
+                          </Button>
+                          {confirmDeleteId === memory.id && (
+                            <motion.div
+                              initial={{ opacity: 0, scale: 0.9 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              className="absolute right-0 top-full mt-1 z-10 p-2 rounded-lg bg-popover border border-border shadow-lg flex items-center gap-2"
+                            >
+                              <span className="text-xs text-muted-foreground whitespace-nowrap">Delete?</span>
+                              <Button variant="destructive" size="sm" className="h-6 px-2 text-xs" onClick={() => deleteMemory(memory.id)}>Yes</Button>
+                              <Button variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={() => setConfirmDeleteId(null)}>No</Button>
+                            </motion.div>
+                          )}
                        </motion.div>
                      ))}
                    </div>
                  )}
  
                  {/* Clear All */}
-                 {memories.length > 0 && (
-                   <Button
-                     variant="ghost"
-                     size="sm"
-                     className="w-full mt-4 text-destructive hover:text-destructive hover:bg-destructive/10"
-                     onClick={clearAllMemories}
-                   >
-                     <Trash2 className="h-4 w-4 mr-2" />
-                     Clear all memories
-                   </Button>
-                 )}
+                  {memories.length > 0 && !confirmClearAll && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full mt-4 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => setConfirmClearAll(true)}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Clear all memories
+                    </Button>
+                  )}
+                  {confirmClearAll && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="mt-4 p-3 rounded-lg border border-destructive/50 bg-destructive/5"
+                    >
+                      <p className="text-xs text-muted-foreground mb-2">Are you sure you want to delete all memories? This cannot be undone.</p>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => setConfirmClearAll(false)}>Cancel</Button>
+                        <Button variant="destructive" size="sm" onClick={clearAllMemories}>Delete All</Button>
+                      </div>
+                    </motion.div>
+                  )}
                </div>
              </div>
            </motion.div>

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Crown, Zap, Sparkles, AlertTriangle, Loader2 } from 'lucide-react';
+import { Crown, Zap, Sparkles, AlertTriangle, Loader2, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useSubscription, TIER_CONFIGS, SubscriptionTier } from '@/hooks/useSubscription';
 import { useAuth } from '@/hooks/useAuth';
@@ -27,14 +28,35 @@ export const ManageSubscription = ({ onUpgrade }: ManageSubscriptionProps) => {
   const { toast } = useToast();
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelPassword, setCancelPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
   const { cancelSubscription } = useSubscription();
 
   const handleCancel = async () => {
+    if (!cancelPassword.trim()) {
+      setPasswordError('Password is required');
+      return;
+    }
     setIsCancelling(true);
+    setPasswordError('');
+    
     try {
-      const { refundEligible, fee } = await cancelSubscription();
+      // Verify password by attempting sign in
+      const email = user?.email;
+      if (!email) throw new Error('No email found');
+      
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password: cancelPassword,
+      });
+      
+      if (signInError) {
+        setPasswordError('Incorrect password');
+        setIsCancelling(false);
+        return;
+      }
 
-      // Subscription emails disabled for now
+      const { refundEligible, fee } = await cancelSubscription();
 
       if (refundEligible) {
         toast({ title: 'Subscription cancelled', description: 'Full refund will be processed.' });
@@ -42,6 +64,7 @@ export const ManageSubscription = ({ onUpgrade }: ManageSubscriptionProps) => {
         toast({ title: 'Subscription cancelled', description: `A ${formatNGN(fee)} cancellation fee applies.` });
       }
       setShowCancelConfirm(false);
+      setCancelPassword('');
     } catch {
       toast({ title: 'Failed to cancel', variant: 'destructive' });
     } finally {
@@ -127,10 +150,24 @@ export const ManageSubscription = ({ onUpgrade }: ManageSubscriptionProps) => {
               </div>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShowCancelConfirm(false)}>Keep Plan</Button>
+              <Button variant="outline" size="sm" onClick={() => { setShowCancelConfirm(false); setCancelPassword(''); setPasswordError(''); }}>Keep Plan</Button>
               <Button variant="destructive" size="sm" onClick={handleCancel} disabled={isCancelling}>
                 {isCancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm Cancel'}
               </Button>
+            </div>
+            <div className="mt-3">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <Lock className="h-3 w-3 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Enter your password to confirm</span>
+              </div>
+              <Input
+                type="password"
+                placeholder="Your account password"
+                value={cancelPassword}
+                onChange={(e) => { setCancelPassword(e.target.value); setPasswordError(''); }}
+                className="h-8 text-sm"
+              />
+              {passwordError && <p className="text-xs text-destructive mt-1">{passwordError}</p>}
             </div>
           </motion.div>
         )}
