@@ -110,6 +110,97 @@ const CodeBlock = ({ language, code }: { language: string; code: string }) => {
   );
 };
 
+// Parse markdown table from lines
+function parseMarkdownTable(lines: string[]): { headers: string[]; rows: string[][] } | null {
+  if (lines.length < 2) return null;
+  const parseRow = (line: string) => 
+    line.split('|').map(c => c.trim()).filter((_, i, a) => i > 0 && i < a.length);
+  const headers = parseRow(lines[0]);
+  if (headers.length === 0) return null;
+  if (!lines[1].match(/^\|?[\s-:|]+\|?$/)) return null;
+  const rows = lines.slice(2).map(parseRow);
+  return { headers, rows };
+}
+
+// Split text into text parts and table parts
+function splitTextAndTables(
+  text: string, 
+  parts: Array<{ type: 'text' | 'code' | 'media' | 'table'; content: string; language?: string; tableData?: { headers: string[]; rows: string[][] } }>
+) {
+  const lines = text.split('\n');
+  let buffer: string[] = [];
+  let tableLines: string[] = [];
+  let inTable = false;
+
+  const flushBuffer = () => {
+    const t = buffer.join('\n').trim();
+    if (t) parts.push({ type: 'text', content: t });
+    buffer = [];
+  };
+
+  const flushTable = () => {
+    const parsed = parseMarkdownTable(tableLines);
+    if (parsed) {
+      parts.push({ type: 'table', content: '', tableData: parsed });
+    } else {
+      buffer.push(...tableLines);
+      flushBuffer();
+    }
+    tableLines = [];
+  };
+
+  for (const line of lines) {
+    const isTableLine = line.trim().startsWith('|') && line.trim().endsWith('|') && line.includes('|');
+    if (isTableLine) {
+      if (!inTable) {
+        flushBuffer();
+        inTable = true;
+      }
+      tableLines.push(line);
+    } else {
+      if (inTable) {
+        flushTable();
+        inTable = false;
+      }
+      buffer.push(line);
+    }
+  }
+  if (inTable) flushTable();
+  flushBuffer();
+}
+
+// ChatGPT-style table component
+const TableBlock = ({ data }: { data: { headers: string[]; rows: string[][] } }) => {
+  return (
+    <div className="my-3 rounded-lg border border-border overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border">
+              {data.headers.map((h, i) => (
+                <th key={i} className="text-left px-4 py-3 font-semibold text-foreground whitespace-nowrap">
+                  <span dangerouslySetInnerHTML={{ __html: h.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.rows.map((row, ri) => (
+              <tr key={ri} className="border-b border-border last:border-0">
+                {row.map((cell, ci) => (
+                  <td key={ci} className="px-4 py-3 text-foreground/90 align-top whitespace-normal">
+                    <span dangerouslySetInnerHTML={{ __html: cell.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
 // Inline sources chip like ChatGPT
 const SourcesChip = ({ sources }: { sources: { title: string; url: string; favicon: string }[] }) => {
   const [expanded, setExpanded] = useState(false);
@@ -213,7 +304,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
       }
     }
 
-    const parts: Array<{ type: 'text' | 'code' | 'media'; content: string; language?: string }> = [];
+    const parts: Array<{ type: 'text' | 'code' | 'media' | 'table'; content: string; language?: string; tableData?: { headers: string[]; rows: string[][] } }> = [];
     const codeBlockRegex = /```(\w+)?\n?([\s\S]*?)```/g;
     
     let lastIndex = 0;
@@ -222,7 +313,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
     while ((match = codeBlockRegex.exec(mainText)) !== null) {
       if (match.index > lastIndex) {
         const textPart = mainText.slice(lastIndex, match.index).trim();
-        if (textPart) parts.push({ type: 'text', content: textPart });
+        if (textPart) splitTextAndTables(textPart, parts);
       }
       parts.push({ type: 'code', language: match[1] || 'code', content: match[2].trim() });
       lastIndex = match.index + match[0].length;
@@ -230,7 +321,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
     
     if (lastIndex < mainText.length) {
       const textPart = mainText.slice(lastIndex).trim();
-      if (textPart) parts.push({ type: 'text', content: textPart });
+      if (textPart) splitTextAndTables(textPart, parts);
     }
     
     return { parts, mediaItems, sources };
@@ -515,6 +606,8 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
           {parsedContent.parts.map((part, index) => 
             part.type === 'code' ? (
               <CodeBlock key={index} language={part.language || 'code'} code={part.content} />
+            ) : part.type === 'table' && part.tableData ? (
+              <TableBlock key={index} data={part.tableData} />
             ) : (
               <div key={index} className="whitespace-pre-wrap break-words">{formatText(part.content)}</div>
             )
