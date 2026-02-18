@@ -172,30 +172,32 @@ function splitTextAndTables(
 // ChatGPT-style table component
 const TableBlock = ({ data }: { data: { headers: string[]; rows: string[][] } }) => {
   return (
-    <div className="my-3 rounded-lg border border-border overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border">
-              {data.headers.map((h, i) => (
-                <th key={i} className="text-left px-4 py-3 font-semibold text-foreground whitespace-nowrap">
-                  <span dangerouslySetInnerHTML={{ __html: h.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {data.rows.map((row, ri) => (
-              <tr key={ri} className="border-b border-border last:border-0">
-                {row.map((cell, ci) => (
-                  <td key={ci} className="px-4 py-3 text-foreground/90 align-top whitespace-normal">
-                    <span dangerouslySetInnerHTML={{ __html: cell.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
-                  </td>
+    <div className="my-3 -mx-1 max-w-[calc(100vw-7rem)] sm:max-w-full">
+      <div className="rounded-lg border border-border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-secondary/40">
+                {data.headers.map((h, i) => (
+                  <th key={i} className="text-left px-4 py-2.5 font-semibold text-foreground whitespace-nowrap">
+                    <span dangerouslySetInnerHTML={{ __html: h.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {data.rows.map((row, ri) => (
+                <tr key={ri} className="border-b border-border last:border-0">
+                  {row.map((cell, ci) => (
+                    <td key={ci} className="px-4 py-2.5 text-foreground/90 align-top" style={{ minWidth: '120px' }}>
+                      <span dangerouslySetInnerHTML={{ __html: cell.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
