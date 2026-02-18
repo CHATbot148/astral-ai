@@ -416,7 +416,8 @@ Keep response brief.`;
       throw new Error("MISTRAL_API_KEY is not configured");
     }
 
-    const useStream = !noStream;
+    // Voice mode always streams with short max_tokens for fast response
+    const useStream = isVoiceMode ? true : !noStream;
     const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -427,7 +428,7 @@ Keep response brief.`;
         model: "mistral-large-latest",
         messages: [{ role: "system", content: systemContent }, ...formattedMessages],
         stream: useStream,
-        ...(noStream ? { max_tokens: 300 } : {}),
+        ...(isVoiceMode ? { max_tokens: 200 } : noStream ? { max_tokens: 300 } : {}),
       }),
     });
 

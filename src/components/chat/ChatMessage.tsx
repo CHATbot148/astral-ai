@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { Copy, Check, ThumbsUp, ThumbsDown, Heart, Sparkles, FileText, Volume2, Download, Pencil } from 'lucide-react';
+import { Copy, Check, ThumbsUp, ThumbsDown, Heart, Sparkles, FileText, Volume2, Download, Pencil, Globe, ChevronDown, ChevronUp } from 'lucide-react';
 import { useEffect, useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -110,6 +110,49 @@ const CodeBlock = ({ language, code }: { language: string; code: string }) => {
   );
 };
 
+// Inline sources chip like ChatGPT
+const SourcesChip = ({ sources }: { sources: { title: string; url: string; favicon: string }[] }) => {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="mt-2">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary border border-border text-xs font-medium hover:bg-secondary/80 transition-colors"
+      >
+        {sources.slice(0, 3).map((s, i) => (
+          <img key={i} src={s.favicon} alt="" className="w-3.5 h-3.5 rounded-sm" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+        ))}
+        <span>Sources</span>
+        {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+      </button>
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mt-2 space-y-1.5 overflow-hidden"
+          >
+            {sources.map((s, i) => (
+              <a
+                key={i}
+                href={s.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-secondary/80 transition-colors group"
+              >
+                <img src={s.favicon} alt="" className="w-4 h-4 rounded-sm flex-shrink-0" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                <span className="text-xs text-muted-foreground group-hover:text-foreground truncate">{s.title}</span>
+                <Globe className="h-3 w-3 text-muted-foreground flex-shrink-0 ml-auto" />
+              </a>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
 export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, userName, onEdit, canEdit = true }: ChatMessageProps) => {
   const [copied, setCopied] = useState(false);
   const [reaction, setReaction] = useState<Reaction>(null);
@@ -146,39 +189,51 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
 
   // Parse content using the new media detector
   const parsedContent = useMemo(() => {
-    // First extract media items using the smart detector
     const { cleanText, mediaItems } = extractMediaFromMessage(content);
-    
+
+    // Extract [Sources] section
+    let mainText = cleanText;
+    const sources: { title: string; url: string; favicon: string }[] = [];
+    const sourcesMatch = cleanText.match(/\n\n?\[?Sources?\]?:?\s*\n([\s\S]+?)$/i);
+    if (sourcesMatch) {
+      mainText = cleanText.slice(0, sourcesMatch.index!).trim();
+      const sourceLines = sourcesMatch[1].split('\n').filter(l => l.trim());
+      for (const line of sourceLines) {
+        const urlMatch = line.match(/(https?:\/\/[^\s\)]+)/);
+        if (urlMatch) {
+          const url = urlMatch[1];
+          try {
+            const hostname = new URL(url).hostname;
+            const title = line.replace(/^\d+\.\s*/, '').replace(url, '').replace(/[-–—:]\s*$/, '').trim() || hostname;
+            sources.push({ title, url, favicon: `https://www.google.com/s2/favicons?domain=${hostname}&sz=16` });
+          } catch {
+            sources.push({ title: url, url, favicon: '' });
+          }
+        }
+      }
+    }
+
     const parts: Array<{ type: 'text' | 'code' | 'media'; content: string; language?: string }> = [];
     const codeBlockRegex = /```(\w+)?\n?([\s\S]*?)```/g;
     
     let lastIndex = 0;
     let match;
     
-    while ((match = codeBlockRegex.exec(cleanText)) !== null) {
+    while ((match = codeBlockRegex.exec(mainText)) !== null) {
       if (match.index > lastIndex) {
-        const textPart = cleanText.slice(lastIndex, match.index).trim();
-        if (textPart) {
-          parts.push({ type: 'text', content: textPart });
-        }
+        const textPart = mainText.slice(lastIndex, match.index).trim();
+        if (textPart) parts.push({ type: 'text', content: textPart });
       }
-      parts.push({ 
-        type: 'code', 
-        language: match[1] || 'code', 
-        content: match[2].trim() 
-      });
+      parts.push({ type: 'code', language: match[1] || 'code', content: match[2].trim() });
       lastIndex = match.index + match[0].length;
     }
     
-    if (lastIndex < cleanText.length) {
-      const textPart = cleanText.slice(lastIndex).trim();
-      if (textPart) {
-        parts.push({ type: 'text', content: textPart });
-      }
+    if (lastIndex < mainText.length) {
+      const textPart = mainText.slice(lastIndex).trim();
+      if (textPart) parts.push({ type: 'text', content: textPart });
     }
     
-    // Add media items as a separate entry if any exist
-    return { parts, mediaItems };
+    return { parts, mediaItems, sources };
   }, [content]);
 
   // Format text with markdown-like features
@@ -465,6 +520,11 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
             )
           )}
         </motion.div>
+
+        {/* Inline Sources - ChatGPT style */}
+        {!isUser && parsedContent.sources.length > 0 && (
+          <SourcesChip sources={parsedContent.sources} />
+        )}
 
         {/* Audio Player */}
         <AnimatePresence>
