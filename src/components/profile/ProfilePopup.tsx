@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ImageCropper } from '@/components/chat/ImageCropper';
 import { resolveFileUrl } from '@/lib/storageRef';
 import { MemoryPopup } from './MemoryPopup';
-import { AIMode, AISettings, modeDescriptions, getAISettings, saveAISettings } from '@/lib/aiSettings';
+import { AIMode, AISettings, TypingStyle, modeDescriptions, typingStyleDescriptions, getAISettings, saveAISettings } from '@/lib/aiSettings';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ManageSubscription } from '@/components/subscription/ManageSubscription';
 import { UpgradeDialog } from '@/components/subscription/UpgradeDialog';
@@ -114,6 +114,10 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
     if (isOpen && profile?.full_name) {
       setName(profile.full_name);
     }
+    if (isOpen) {
+      // Re-read AI settings fresh when popup opens to prevent stale state
+      setAiSettings(getAISettings());
+    }
     if (!isOpen) {
       setSelectedImage(null);
       setShowCropper(false);
@@ -140,43 +144,38 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
     setIsLoadingGallery(true);
     
     try {
-      // Load images
-      const { data: images } = await supabase
-        .from('generated_images')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(50);
+      // Load images and videos in parallel
+      const [{ data: images }, { data: videos }] = await Promise.all([
+        supabase
+          .from('generated_images')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(50),
+        supabase
+          .from('generated_videos')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(50),
+      ]);
       
-      // Load videos
-      const { data: videos } = await supabase
-        .from('generated_videos')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(50);
+      // Create items WITHOUT resolving URLs yet (fast)
+      const imageItems: GalleryItem[] = (images || []).map((img) => ({
+        id: img.id,
+        prompt: img.prompt,
+        url: img.image_url,
+        created_at: img.created_at,
+        type: 'image' as const,
+      }));
       
-      const imageItems: GalleryItem[] = await Promise.all(
-        (images || []).map(async (img) => ({
-          id: img.id,
-          prompt: img.prompt,
-          url: img.image_url,
-          resolvedUrl: await resolveFileUrl(img.image_url, { expiresIn: 60 * 60 }),
-          created_at: img.created_at,
-          type: 'image' as const,
-        }))
-      );
-      
-      const videoItems: GalleryItem[] = await Promise.all(
-        (videos || []).map(async (vid) => ({
-          id: vid.id,
-          prompt: vid.prompt,
-          url: vid.video_url,
-          resolvedUrl: await resolveFileUrl(vid.video_url, { expiresIn: 60 * 60 }),
-          created_at: vid.created_at,
-          type: 'video' as const,
-        }))
-      );
+      const videoItems: GalleryItem[] = (videos || []).map((vid) => ({
+        id: vid.id,
+        prompt: vid.prompt,
+        url: vid.video_url,
+        created_at: vid.created_at,
+        type: 'video' as const,
+      }));
       
       // Merge and sort by date
       const all = [...imageItems, ...videoItems].sort(
@@ -184,6 +183,18 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       );
       
       setGalleryItems(all);
+      
+      // Resolve URLs in background (lazy load)
+      const resolveInBackground = async () => {
+        const resolved = await Promise.all(
+          all.map(async (item) => ({
+            ...item,
+            resolvedUrl: await resolveFileUrl(item.url, { expiresIn: 60 * 60 }),
+          }))
+        );
+        setGalleryItems(resolved);
+      };
+      resolveInBackground();
     } catch (error) {
       console.error('Failed to load gallery:', error);
     } finally {
@@ -642,18 +653,49 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
         />
       </div>
 
-      <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 border border-border">
-        <div className="flex items-center gap-3">
-          <Sparkles className="h-5 w-5 text-muted-foreground" />
-          <div>
-            <p className="text-sm font-medium">Typing Animation</p>
-            <p className="text-xs text-muted-foreground">Show words as they're generated. Off = display all at once.</p>
+      <div className="p-3 rounded-lg bg-secondary/50 border border-border space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Sparkles className="h-5 w-5 text-muted-foreground" />
+            <div>
+              <p className="text-sm font-medium">Typing Animation</p>
+              <p className="text-xs text-muted-foreground">How responses appear on screen</p>
+            </div>
           </div>
+          <Checkbox
+            checked={aiSettings.typingAnimation}
+            onCheckedChange={(checked) => handleAISettingsChange({ typingAnimation: !!checked })}
+          />
         </div>
-        <Checkbox
-          checked={aiSettings.typingAnimation}
-          onCheckedChange={(checked) => handleAISettingsChange({ typingAnimation: !!checked })}
-        />
+
+        {aiSettings.typingAnimation && (
+          <div className="space-y-1.5 pt-1 border-t border-border">
+            <p className="text-xs text-muted-foreground pt-2">Animation Style</p>
+            {(Object.keys(typingStyleDescriptions) as TypingStyle[]).map((style) => {
+              const { name, description } = typingStyleDescriptions[style];
+              const isSelected = aiSettings.typingStyle === style;
+              return (
+                <button
+                  key={style}
+                  onClick={() => handleAISettingsChange({ typingStyle: style })}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-all text-sm ${
+                    isSelected ? 'bg-xai-cyan/10 text-xai-cyan' : 'hover:bg-secondary text-muted-foreground'
+                  }`}
+                >
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                    isSelected ? 'border-xai-cyan bg-xai-cyan' : 'border-muted-foreground'
+                  }`}>
+                    {isSelected && <Check className="h-2.5 w-2.5 text-white" />}
+                  </div>
+                  <div>
+                    <p className={`font-medium ${isSelected ? 'text-xai-cyan' : 'text-foreground'}`}>{name}</p>
+                    <p className="text-xs text-muted-foreground">{description}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <Button variant="outline" className="w-full justify-start gap-3" onClick={() => setShowMemoryPopup(true)}>
