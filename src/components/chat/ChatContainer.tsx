@@ -46,6 +46,7 @@ export const ChatContainer = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
+  const [streamingStyle, setStreamingStyle] = useState<string>('typewriter');
   const [profile, setProfile] = useState<{ full_name: string | null; avatar_url: string | null } | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
@@ -371,7 +372,35 @@ export const ChatContainer = () => {
       const decoder = new TextDecoder();
       let fullContent = '';
       let buffer = '';
-      const showTyping = getAISettings().typingAnimation;
+      const settings = getAISettings();
+      const showTyping = settings.typingAnimation;
+      const typingStyle = settings.typingStyle || 'typewriter';
+      setStreamingStyle(typingStyle);
+
+      // For word-by-word and line-fade, we'll batch updates
+      let wordQueue: string[] = [];
+      let displayedContent = '';
+      let wordInterval: ReturnType<typeof setInterval> | null = null;
+
+      if (showTyping && typingStyle === 'word_by_word') {
+        wordInterval = setInterval(() => {
+          if (wordQueue.length > 0) {
+            const nextWord = wordQueue.shift()!;
+            displayedContent += nextWord;
+            setStreamingContent(displayedContent);
+          }
+        }, 80);
+      }
+
+      if (showTyping && typingStyle === 'line_fade') {
+        wordInterval = setInterval(() => {
+          if (wordQueue.length > 0) {
+            const nextChunk = wordQueue.shift()!;
+            displayedContent += nextChunk;
+            setStreamingContent(displayedContent);
+          }
+        }, 200);
+      }
 
       while (true) {
         const { done, value } = await reader.read();
@@ -392,7 +421,20 @@ export const ChatContainer = () => {
             const content = parsed.choices?.[0]?.delta?.content;
             if (content) {
               fullContent += content;
-              if (showTyping) setStreamingContent(fullContent);
+              if (showTyping) {
+                if (typingStyle === 'typewriter' || typingStyle === 'slide_up') {
+                  setStreamingContent(fullContent);
+                } else if (typingStyle === 'word_by_word') {
+                  // Split new content into words preserving spaces
+                  const words = content.match(/\S+\s*/g) || [content];
+                  wordQueue.push(...words);
+                } else if (typingStyle === 'line_fade') {
+                  // Split by sentences/lines
+                  const sentences = content.split(/(?<=[.!?\n])\s*/);
+                  wordQueue.push(...sentences);
+                }
+                // instant style: don't update streaming at all
+              }
             }
           } catch {
             buffer = line + '\n' + buffer;
@@ -400,6 +442,15 @@ export const ChatContainer = () => {
           }
         }
       }
+
+      // Flush remaining word queue
+      if (wordInterval) {
+        clearInterval(wordInterval);
+        if (wordQueue.length > 0) {
+          displayedContent += wordQueue.join('');
+        }
+      }
+      setStreamingContent('');
 
       if (fullContent) {
         const imageGenMatch = fullContent.match(/\[GENERATE_IMAGE:([^\]]+)\]/);

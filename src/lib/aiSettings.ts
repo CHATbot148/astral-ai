@@ -1,18 +1,29 @@
- export type AIMode = 'professional' | 'smart_friendly' | 'highly_courteous';
- 
- export interface AISettings {
-   mode: AIMode;
-   followUpQuestions: boolean;
-   typingAnimation: boolean;
- }
+export type AIMode = 'professional' | 'smart_friendly' | 'highly_courteous';
+export type TypingStyle = 'typewriter' | 'word_by_word' | 'line_fade' | 'slide_up' | 'instant';
+
+export interface AISettings {
+  mode: AIMode;
+  followUpQuestions: boolean;
+  typingAnimation: boolean;
+  typingStyle: TypingStyle;
+}
  
  const STORAGE_KEY = 'xai-ai-settings';
  
- export const defaultSettings: AISettings = {
-   mode: 'smart_friendly',
-   followUpQuestions: true,
-   typingAnimation: true,
- };
+export const defaultSettings: AISettings = {
+  mode: 'smart_friendly',
+  followUpQuestions: true,
+  typingAnimation: true,
+  typingStyle: 'typewriter',
+};
+
+export const typingStyleDescriptions: Record<TypingStyle, { name: string; description: string }> = {
+  typewriter: { name: 'Typewriter', description: 'Characters appear as they stream in real-time' },
+  word_by_word: { name: 'Word by Word', description: 'Words fade in one at a time smoothly' },
+  line_fade: { name: 'Line Fade', description: 'Each sentence fades in gracefully' },
+  slide_up: { name: 'Slide Up', description: 'Text slides up from below as it appears' },
+  instant: { name: 'Instant', description: 'Full response appears all at once, no animation' },
+};
  
  export const modeDescriptions: Record<AIMode, { name: string; description: string }> = {
    professional: {
@@ -29,17 +40,27 @@
    },
  };
  
- export function getAISettings(): AISettings {
-   try {
-     const stored = localStorage.getItem(STORAGE_KEY);
-     if (stored) {
-       return { ...defaultSettings, ...JSON.parse(stored) };
-     }
-   } catch {
-     // ignore
-   }
-   return defaultSettings;
- }
+export function getAISettings(): AISettings {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      // Validate mode to prevent silent resets
+      const validModes: AIMode[] = ['professional', 'smart_friendly', 'highly_courteous'];
+      const validStyles: TypingStyle[] = ['typewriter', 'word_by_word', 'line_fade', 'slide_up', 'instant'];
+      if (parsed.mode && !validModes.includes(parsed.mode)) {
+        parsed.mode = defaultSettings.mode;
+      }
+      if (parsed.typingStyle && !validStyles.includes(parsed.typingStyle)) {
+        parsed.typingStyle = defaultSettings.typingStyle;
+      }
+      return { ...defaultSettings, ...parsed };
+    }
+  } catch {
+    // ignore
+  }
+  return defaultSettings;
+}
  
  export function saveAISettings(settings: AISettings): void {
    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
