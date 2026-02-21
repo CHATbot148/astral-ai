@@ -598,6 +598,28 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
           />
         )}
 
+        {/* Reminder styled messages */}
+        {content.startsWith('[REMINDER_SET]') ? (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30"
+          >
+            <span className="text-red-500 font-semibold text-sm">
+              {content.replace('[REMINDER_SET] ', '')}
+            </span>
+          </motion.div>
+        ) : content.startsWith('[REMINDER]') ? (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30"
+          >
+            <span className="text-red-400 font-semibold text-sm">
+              {content.replace('[REMINDER] ', '')}
+            </span>
+          </motion.div>
+        ) : (
         <motion.div 
           className={cn(
     "text-foreground leading-relaxed inline-block overflow-hidden",
@@ -615,6 +637,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
             )
           )}
         </motion.div>
+        )}
 
         {/* Inline Sources - ChatGPT style */}
         {!isUser && parsedContent.sources.length > 0 && (

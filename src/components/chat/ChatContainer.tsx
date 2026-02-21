@@ -19,6 +19,7 @@ import { makeStorageRef, resolveFileUrl } from '@/lib/storageRef';
 import { cn } from '@/lib/utils';
 import astrazLogo from '@/assets/astraz-logo.png';
 import { getAISettings } from '@/lib/aiSettings';
+import { parseReminderRequest } from '@/lib/reminderParser';
 
 // Memory extraction patterns
 const MEMORY_PATTERNS = [
@@ -138,16 +139,7 @@ export const ChatContainer = () => {
   const isImageRequestLoose = (text: string) =>
     /(image|picture|photo|draw|generate|create|illustration|art)/i.test(text);
 
-  const parseReminderRequest = (text: string): { message: string; scheduledForISO: string } | null => {
-    const m = text.match(/(?:remind me|set a reminder|notify me|message me)(?:\s+(?:to|about|for))?\s+(.+?)\s+in\s+(\d+)\s+(minute|minutes|hour|hours|day|days)\b/i);
-    if (!m) return null;
-    const message = m[1].trim();
-    const amount = Number(m[2]);
-    const unit = m[3].toLowerCase();
-    if (!message || !Number.isFinite(amount) || amount <= 0) return null;
-    const ms = unit.startsWith('minute') ? amount * 60_000 : unit.startsWith('hour') ? amount * 3_600_000 : amount * 86_400_000;
-    return { message, scheduledForISO: new Date(Date.now() + ms).toISOString() };
-  };
+  // parseReminderRequest is now imported from @/lib/reminderParser
 
   const generateImageWithOptions = async (opts: ImageGenOptions): Promise<string | null> => {
     const { data, error } = await supabase.functions.invoke('generate-image', {
@@ -286,7 +278,7 @@ export const ChatContainer = () => {
             body: { message: reminder.message, scheduledFor: reminder.scheduledForISO, conversationId: convId, type: 'reminder' },
           });
           if (error || data?.error) throw error || new Error(data?.error);
-          await addMessage(convId, 'assistant', `✅ Got it — I'll remind you about "${reminder.message}" in a bit.`);
+          await addMessage(convId, 'assistant', `[REMINDER_SET] ⏰ Reminder set for ${reminder.displayTime}: "${reminder.message}"`);
         } catch (e) {
           toast({ title: 'Reminder failed', description: e instanceof Error ? e.message : 'Please try again', variant: 'destructive' });
         } finally {
