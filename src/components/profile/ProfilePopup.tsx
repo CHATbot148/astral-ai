@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, PanInfo } from 'framer-motion';
-import { X, LogOut, Trash2, Camera, Sun, Moon, Monitor, Check, User, Loader2, Volume2, ChevronRight, ChevronLeft, BarChart3, Images, Download, ExternalLink, Bot, Brain, MessageSquare, Sparkles, Video, Play, Shield } from 'lucide-react';
+import { X, LogOut, Trash2, Camera, Sun, Moon, Monitor, Check, User, Loader2, Volume2, ChevronRight, ChevronLeft, BarChart3, Images, Download, ExternalLink, Bot, Brain, MessageSquare, Sparkles, Video, Play, Shield, Bell } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
@@ -110,13 +111,21 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   // Upgrade dialog
   const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
   const [upgradeReason, setUpgradeReason] = useState<'image_limit' | 'video_limit' | 'general'>('general');
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [isTogglingNotifications, setIsTogglingNotifications] = useState(false);
   useEffect(() => {
     if (isOpen && profile?.full_name) {
       setName(profile.full_name);
     }
     if (isOpen) {
-      // Re-read AI settings fresh when popup opens to prevent stale state
       setAiSettings(getAISettings());
+      // Load notification preference
+      if (user) {
+        supabase.from('profiles').select('notifications_enabled').eq('user_id', user.id).single()
+          .then(({ data }) => {
+            if (data) setNotificationsEnabled(data.notifications_enabled);
+          });
+      }
     }
     if (!isOpen) {
       setSelectedImage(null);
@@ -414,6 +423,52 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
     saveAISettings(newSettings);
   };
 
+  const handleToggleNotifications = async (enabled: boolean) => {
+    if (!user) return;
+    setIsTogglingNotifications(true);
+    try {
+      if (enabled) {
+        // Request browser permission
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          toast({ title: 'Notification permission denied', description: 'Please allow notifications in your browser settings.', variant: 'destructive' });
+          setIsTogglingNotifications(false);
+          return;
+        }
+        // Register push subscription
+        const registration = await navigator.serviceWorker.ready;
+        const pushManager = (registration as any).pushManager;
+        if (pushManager) {
+          const subscription = await pushManager.subscribe({
+            userVisibleOnly: true,
+          });
+          const subJson = subscription.toJSON();
+          if (subJson.endpoint && subJson.keys) {
+            await supabase.from('push_subscriptions').upsert({
+              user_id: user.id,
+              endpoint: subJson.endpoint,
+              p256dh: subJson.keys.p256dh || '',
+              auth: subJson.keys.auth || '',
+            }, { onConflict: 'user_id,endpoint' });
+          }
+        }
+
+      } else {
+        // Remove push subscriptions
+        await supabase.from('push_subscriptions').delete().eq('user_id', user.id);
+      }
+      // Update profile
+      await supabase.from('profiles').update({ notifications_enabled: enabled }).eq('user_id', user.id);
+      setNotificationsEnabled(enabled);
+      toast({ title: enabled ? 'Notifications enabled' : 'Notifications disabled' });
+    } catch (error) {
+      console.error('Notification toggle error:', error);
+      toast({ title: 'Failed to update notifications', variant: 'destructive' });
+    } finally {
+      setIsTogglingNotifications(false);
+    }
+  };
+
   const voiceOptions = [
     { id: 'asteria', name: 'Asteria', desc: 'Feminine, Professional', gender: 'feminine' },
     { id: 'luna', name: 'Luna', desc: 'Feminine, Soft', gender: 'feminine' },
@@ -543,6 +598,22 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       <div>
         <label className="text-sm text-muted-foreground mb-1.5 block">Email</label>
         <Input value={user?.email || ''} disabled className="bg-secondary/50" />
+      </div>
+
+      {/* Push Notifications */}
+      <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 border border-border">
+        <div className="flex items-center gap-3">
+          <Bell className="h-5 w-5 text-muted-foreground" />
+          <div>
+            <p className="text-sm font-medium">Push Notifications</p>
+            <p className="text-xs text-muted-foreground">Get notified when reminders are due</p>
+          </div>
+        </div>
+        <Switch
+          checked={notificationsEnabled}
+          onCheckedChange={handleToggleNotifications}
+          disabled={isTogglingNotifications}
+        />
       </div>
 
       {/* Subscription Management */}

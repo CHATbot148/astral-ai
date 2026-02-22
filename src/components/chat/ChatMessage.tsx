@@ -20,6 +20,7 @@ interface ChatMessageProps {
   userName?: string | null;
   onEdit?: (content: string) => void;
   canEdit?: boolean;
+  onNotificationAction?: (action: 'accept' | 'cancel', data: any) => void;
 }
 
 type Reaction = 'like' | 'dislike' | 'love' | 'sparkle' | null;
@@ -246,7 +247,7 @@ const SourcesChip = ({ sources }: { sources: { title: string; url: string; favic
   );
 };
 
-export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, userName, onEdit, canEdit = true }: ChatMessageProps) => {
+export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, userName, onEdit, canEdit = true, onNotificationAction }: ChatMessageProps) => {
   const [copied, setCopied] = useState(false);
   const [reaction, setReaction] = useState<Reaction>(null);
   const [showReactions, setShowReactions] = useState(false);
@@ -598,8 +599,34 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
           />
         )}
 
-        {/* Reminder styled messages */}
-        {content.startsWith('[REMINDER_SET]') ? (
+        {/* Notification approval prompt */}
+        {content.startsWith('[NOTIFICATION_PROMPT]') ? (() => {
+          let promptData: any = {};
+          try {
+            promptData = JSON.parse(content.replace('[NOTIFICATION_PROMPT] ', ''));
+          } catch {}
+          return (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="inline-block px-4 py-3 rounded-xl bg-secondary border border-border space-y-3"
+            >
+              <p className="text-sm text-foreground">
+                🔔 I'd like to set a reminder for <strong>{promptData.displayTime}</strong>: "{promptData.message}". 
+                Would you like to enable push notifications so I can notify you?
+              </p>
+              <div className="flex gap-2">
+                <Button size="sm" variant="xai" onClick={() => onNotificationAction?.('accept', promptData)}>
+                  Accept
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => onNotificationAction?.('cancel', promptData)}>
+                  No, just remind in chat
+                </Button>
+              </div>
+            </motion.div>
+          );
+        })()
+        : content.startsWith('[REMINDER_SET]') ? (
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}

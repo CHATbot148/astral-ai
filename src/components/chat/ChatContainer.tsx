@@ -233,6 +233,50 @@ export const ChatContainer = () => {
     setIsGeneratingVideo(false);
   };
 
+  const handleNotificationAction = async (action: 'accept' | 'cancel', data: any) => {
+    if (!user || !currentConversation?.id) return;
+    const convId = currentConversation.id;
+
+    if (action === 'accept') {
+      try {
+        // Request notification permission
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          // Register push subscription
+          const registration = await navigator.serviceWorker.ready;
+          const pushManager = (registration as any).pushManager;
+          if (pushManager) {
+            const subscription = await pushManager.subscribe({ userVisibleOnly: true });
+            const subJson = subscription.toJSON();
+            if (subJson.endpoint && subJson.keys) {
+              await supabase.from('push_subscriptions').upsert({
+                user_id: user.id,
+                endpoint: subJson.endpoint,
+                p256dh: subJson.keys.p256dh || '',
+                auth: subJson.keys.auth || '',
+              }, { onConflict: 'user_id,endpoint' });
+            }
+          }
+          await supabase.from('profiles').update({ notifications_enabled: true }).eq('user_id', user.id);
+        }
+      } catch (e) {
+        console.error('Push subscription error:', e);
+      }
+    }
+
+    // Schedule the reminder regardless
+    try {
+      const { error } = await supabase.functions.invoke('schedule-notification', {
+        body: { message: data.message, scheduledFor: data.scheduledForISO, conversationId: convId, type: 'reminder' },
+      });
+      if (error) throw error;
+      await addMessage(convId, 'assistant', `[REMINDER_SET] ⏰ Reminder set for ${data.displayTime}: "${data.message}"${action === 'cancel' ? ' (chat only, no push notification)' : ''}`);
+      toast({ title: `Reminder set for ${data.displayTime}` });
+    } catch (e) {
+      toast({ title: 'Reminder failed', variant: 'destructive' });
+    }
+  };
+
   const handleSend = async (content: string, files?: File[]) => {
     if (editingMessageId && currentConversation?.id) {
       const messageIndex = messages.findIndex(m => m.id === editingMessageId);
@@ -273,6 +317,24 @@ export const ChatContainer = () => {
       // Reminders
       const reminder = user ? parseReminderRequest(content) : null;
       if (reminder && user) {
+        // Check if notifications are enabled
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('notifications_enabled')
+          .eq('user_id', user.id)
+          .single();
+        
+        const notificationsEnabled = profileData?.notifications_enabled ?? false;
+
+        if (!notificationsEnabled) {
+          // Show approval prompt - store reminder data for later
+          await addMessage(convId, 'assistant', 
+            `[NOTIFICATION_PROMPT] ${JSON.stringify({ message: reminder.message, scheduledForISO: reminder.scheduledForISO, displayTime: reminder.displayTime, conversationId: convId })}`
+          );
+          setIsLoading(false);
+          return;
+        }
+
         try {
           const { data, error } = await supabase.functions.invoke('schedule-notification', {
             body: { message: reminder.message, scheduledFor: reminder.scheduledForISO, conversationId: convId, type: 'reminder' },
@@ -558,7 +620,8 @@ export const ChatContainer = () => {
                   return (
                     <ChatMessage key={msg.id} role={msg.role} content={msg.content} isStreaming={msg.id === 'streaming'}
                       fileUrls={msg.file_urls} userAvatar={profile?.avatar_url} userName={profile?.full_name}
-                      onEdit={canEdit ? (content: string) => handleEditMessage(msg.id, content) : undefined} canEdit={canEdit} />
+                      onEdit={canEdit ? (content: string) => handleEditMessage(msg.id, content) : undefined} canEdit={canEdit}
+                      onNotificationAction={handleNotificationAction} />
                   );
                 })}
                 {isLoading && !streamingContent && !isGeneratingImage && !isGeneratingVideo && (
