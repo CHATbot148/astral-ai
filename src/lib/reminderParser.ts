@@ -6,11 +6,18 @@
 const TRIGGER_RE =
   /(?:remind me|set a reminder|notify me|message me|alert me|wake me up)(?:\s+(?:to|about|for|that))?\s+(.+)/i;
 
+/** Also match "remind me at 6pm to ..." where the time comes right after trigger */
+const TRIGGER_TIME_FIRST_RE =
+  /(?:remind me|set a reminder|notify me|message me|alert me|wake me up)\s+(?:at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)\s+(?:to|about|for|that)\s+(.+)/i;
+
 /** Relative: "in 30 minutes", "in 2 hours", "in 1 day" */
 const RELATIVE_RE = /\b(?:in|after)\s+(\d+)\s+(seconds?|minutes?|mins?|hours?|hrs?|days?)\b/i;
 
-/** Absolute: "at 3pm", "at 15:00", "at 10:30am" */
+/** Absolute: "at 3pm", "at 15:00", "at 10:30am", or standalone "6pm", "6:30pm" */
 const ABSOLUTE_RE = /\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i;
+
+/** Standalone time without "at": "6pm", "6:30pm", "18:00" - used as fallback */
+const STANDALONE_TIME_RE = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i;
 
 /** Tomorrow qualifier */
 const TOMORROW_RE = /\btomorrow\b/i;
@@ -27,10 +34,55 @@ export interface ParsedReminder {
   displayTime: string;
 }
 
+function buildTargetDate(hour: number, minute: number, meridiem: string | undefined, body: string): Date {
+  if (meridiem === 'pm' && hour < 12) hour += 12;
+  if (meridiem === 'am' && hour === 12) hour = 0;
+  // If no meridiem and hour <= 6, assume PM (common conversational pattern)
+  if (!meridiem && hour >= 1 && hour <= 6) hour += 12;
+
+  const now = new Date();
+  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0, 0);
+
+  if (TOMORROW_RE.test(body)) {
+    target.setDate(target.getDate() + 1);
+  } else if (TONIGHT_RE.test(body)) {
+    if (target <= now) target.setDate(target.getDate() + 1);
+  } else {
+    if (target <= now) target.setDate(target.getDate() + 1);
+  }
+
+  return target;
+}
+
+function cleanMessage(body: string, ...patterns: RegExp[]): string {
+  let msg = body;
+  for (const p of patterns) {
+    msg = msg.replace(p, '');
+  }
+  return msg.replace(TOMORROW_RE, '').replace(TONIGHT_RE, '').replace(/\s{2,}/g, ' ').trim();
+}
+
 /**
  * Returns null if the text isn't a reminder request.
  */
 export function parseReminderRequest(text: string): ParsedReminder | null {
+  // Try "remind me at 6pm to drink water" pattern first
+  const timeFirst = text.match(TRIGGER_TIME_FIRST_RE);
+  if (timeFirst) {
+    const hour = Number(timeFirst[1]);
+    const minute = timeFirst[2] ? Number(timeFirst[2]) : 0;
+    const meridiem = timeFirst[3]?.toLowerCase();
+    const message = timeFirst[4].trim();
+    if (!message) return null;
+
+    const target = buildTargetDate(hour, minute, meridiem, text);
+    return {
+      message,
+      scheduledForISO: target.toISOString(),
+      displayTime: target.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+  }
+
   const trigger = text.match(TRIGGER_RE);
   if (!trigger) return null;
 
@@ -50,7 +102,7 @@ export function parseReminderRequest(text: string): ParsedReminder | null {
     else if (unit.startsWith('day')) ms = amount * 86_400_000;
 
     const fireAt = new Date(Date.now() + ms);
-    const message = body.replace(RELATIVE_RE, '').replace(/\s{2,}/g, ' ').trim();
+    const message = cleanMessage(body, RELATIVE_RE);
     if (!message) return null;
 
     return {
@@ -60,39 +112,43 @@ export function parseReminderRequest(text: string): ParsedReminder | null {
     };
   }
 
-  // Try absolute
+  // Try absolute with "at"
   const abs = body.match(ABSOLUTE_RE);
   if (abs) {
-    let hour = Number(abs[1]);
+    const hour = Number(abs[1]);
     const minute = abs[2] ? Number(abs[2]) : 0;
     const meridiem = abs[3]?.toLowerCase();
 
-    if (meridiem === 'pm' && hour < 12) hour += 12;
-    if (meridiem === 'am' && hour === 12) hour = 0;
-    // If no meridiem and hour <= 6, assume PM (common conversational pattern)
-    if (!meridiem && hour >= 1 && hour <= 6) hour += 12;
-
-    const now = new Date();
-    const target = new Date(now);
-    target.setHours(hour, minute, 0, 0);
-
-    // If "tomorrow" is mentioned, always use tomorrow
-    if (TOMORROW_RE.test(body)) {
-      target.setDate(target.getDate() + 1);
-    } else if (TONIGHT_RE.test(body)) {
-      // tonight: if the time has passed, keep today (tonight at 8pm when it's 3pm is fine)
-      if (target <= now) target.setDate(target.getDate() + 1);
-    } else {
-      // Default: if the time has already passed today, schedule for tomorrow
-      if (target <= now) target.setDate(target.getDate() + 1);
+    const target = buildTargetDate(hour, minute, meridiem, body);
+    const message = cleanMessage(body, ABSOLUTE_RE);
+    
+    // If no message extracted, use the original body without the time as a fallback
+    if (!message) {
+      // Try to get message from original text
+      const fallbackMsg = text.replace(TRIGGER_RE, '').trim() || 'Reminder';
+      return {
+        message: fallbackMsg || 'Reminder',
+        scheduledForISO: target.toISOString(),
+        displayTime: target.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
     }
 
-    const message = body
-      .replace(ABSOLUTE_RE, '')
-      .replace(TOMORROW_RE, '')
-      .replace(TONIGHT_RE, '')
-      .replace(/\s{2,}/g, ' ')
-      .trim();
+    return {
+      message,
+      scheduledForISO: target.toISOString(),
+      displayTime: target.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+  }
+
+  // Try standalone time without "at" (e.g., "remind me to drink water 6pm")
+  const standalone = body.match(STANDALONE_TIME_RE);
+  if (standalone) {
+    const hour = Number(standalone[1]);
+    const minute = standalone[2] ? Number(standalone[2]) : 0;
+    const meridiem = standalone[3]?.toLowerCase();
+
+    const target = buildTargetDate(hour, minute, meridiem, body);
+    const message = cleanMessage(body, STANDALONE_TIME_RE);
     if (!message) return null;
 
     return {
