@@ -38,6 +38,41 @@ export const useConversations = () => {
     }
   }, [user]);
 
+  // Real-time subscription for new messages (e.g. reminders inserted by cron)
+  useEffect(() => {
+    if (!user) return;
+    
+    const channel = supabase
+      .channel('reminder-messages')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+        },
+        (payload) => {
+          const newMsg = payload.new as Message;
+          // Only add if it belongs to the current conversation and we don't already have it
+          setMessages(prev => {
+            if (prev.some(m => m.id === newMsg.id)) return prev;
+            if (!currentConversation || newMsg.conversation_id !== currentConversation.id) return prev;
+            // Show browser notification for reminder messages
+            if (newMsg.content.startsWith('[REMINDER]') && 'Notification' in window && Notification.permission === 'granted') {
+              const reminderText = newMsg.content.replace('[REMINDER] ', '');
+              new Notification('Astraz Reminder', { body: reminderText, icon: '/astraz-icon.png' });
+            }
+            return [...prev, newMsg];
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, currentConversation?.id]);
+
   const fetchConversations = async () => {
     try {
       const { data, error } = await supabase
