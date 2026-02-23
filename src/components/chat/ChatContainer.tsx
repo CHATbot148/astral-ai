@@ -239,12 +239,15 @@ export const ChatContainer = () => {
 
     if (action === 'accept') {
       try {
-        if ('Notification' in window) {
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+        if ('Notification' in window && !isIOS) {
           const permission = await Notification.requestPermission();
           if (permission === 'granted') {
             await supabase.from('profiles').update({ notifications_enabled: true }).eq('user_id', user.id);
           }
         }
+        // Always enable in DB for email fallback
+        await supabase.from('profiles').update({ notifications_enabled: true }).eq('user_id', user.id);
       } catch (e) {
         console.error('Notification permission error:', e);
       }
