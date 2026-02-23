@@ -254,6 +254,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
   const [showAudioPlayer, setShowAudioPlayer] = useState(false);
   const [resolvedFiles, setResolvedFiles] = useState<string[]>([]);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [notificationActed, setNotificationActed] = useState(false);
   const { toast } = useToast();
   const isUser = role === 'user';
 
@@ -615,14 +616,18 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
                 🔔 I'd like to set a reminder for <strong>{promptData.displayTime}</strong>: "{promptData.message}". 
                 Would you like to enable push notifications so I can notify you?
               </p>
-              <div className="flex gap-2">
-                <Button size="sm" variant="xai" onClick={() => onNotificationAction?.('accept', promptData)}>
-                  Accept
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => onNotificationAction?.('cancel', promptData)}>
-                  No, just remind in chat
-                </Button>
-              </div>
+              {!notificationActed ? (
+                <div className="flex gap-2">
+                  <Button size="sm" variant="xai" onClick={() => { setNotificationActed(true); onNotificationAction?.('accept', promptData); }}>
+                    Accept
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => { setNotificationActed(true); onNotificationAction?.('cancel', promptData); }}>
+                    No, just remind in chat
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">✅ Reminder scheduled</p>
+              )}
             </motion.div>
           );
         })()

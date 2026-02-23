@@ -428,39 +428,21 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
     setIsTogglingNotifications(true);
     try {
       if (enabled) {
-        // Request browser permission
+        if (!('Notification' in window)) {
+          toast({ title: 'Notifications not supported', description: 'Your browser does not support notifications.', variant: 'destructive' });
+          setIsTogglingNotifications(false);
+          return;
+        }
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
           toast({ title: 'Notification permission denied', description: 'Please allow notifications in your browser settings.', variant: 'destructive' });
           setIsTogglingNotifications(false);
           return;
         }
-        // Register push subscription
-        const registration = await navigator.serviceWorker.ready;
-        const pushManager = (registration as any).pushManager;
-        if (pushManager) {
-          const subscription = await pushManager.subscribe({
-            userVisibleOnly: true,
-          });
-          const subJson = subscription.toJSON();
-          if (subJson.endpoint && subJson.keys) {
-            await supabase.from('push_subscriptions').upsert({
-              user_id: user.id,
-              endpoint: subJson.endpoint,
-              p256dh: subJson.keys.p256dh || '',
-              auth: subJson.keys.auth || '',
-            }, { onConflict: 'user_id,endpoint' });
-          }
-        }
-
-      } else {
-        // Remove push subscriptions
-        await supabase.from('push_subscriptions').delete().eq('user_id', user.id);
       }
       // Update profile
       await supabase.from('profiles').update({ notifications_enabled: enabled }).eq('user_id', user.id);
       setNotificationsEnabled(enabled);
-      toast({ title: enabled ? 'Notifications enabled' : 'Notifications disabled' });
     } catch (error) {
       console.error('Notification toggle error:', error);
       toast({ title: 'Failed to update notifications', variant: 'destructive' });
