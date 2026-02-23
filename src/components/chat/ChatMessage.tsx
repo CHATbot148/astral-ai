@@ -614,7 +614,7 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
             >
               <p className="text-sm text-foreground">
                 🔔 I'd like to set a reminder for <strong>{promptData.displayTime}</strong>: "{promptData.message}". 
-                Would you like to enable push notifications so I can notify you?
+                Would you like to enable notifications so I can alert you? (You'll get push notifications on supported devices, or email/chat reminders on iOS)
               </p>
               {!notificationActed ? (
                 <div className="flex gap-2">

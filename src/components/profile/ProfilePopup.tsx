@@ -423,16 +423,14 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
     saveAISettings(newSettings);
   };
 
+  const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+  const notificationsAvailable = 'Notification' in window && !isIOSDevice;
+
   const handleToggleNotifications = async (enabled: boolean) => {
     if (!user) return;
     setIsTogglingNotifications(true);
     try {
-      if (enabled) {
-        if (!('Notification' in window)) {
-          toast({ title: 'Notifications not supported', description: 'Your browser does not support notifications.', variant: 'destructive' });
-          setIsTogglingNotifications(false);
-          return;
-        }
+      if (enabled && notificationsAvailable) {
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
           toast({ title: 'Notification permission denied', description: 'Please allow notifications in your browser settings.', variant: 'destructive' });
@@ -440,9 +438,12 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
           return;
         }
       }
-      // Update profile
+      // Update profile — enables email reminders even if push isn't supported
       await supabase.from('profiles').update({ notifications_enabled: enabled }).eq('user_id', user.id);
       setNotificationsEnabled(enabled);
+      if (enabled && !notificationsAvailable) {
+        toast({ title: 'Email reminders enabled', description: 'Push notifications aren\'t available on this device, but you\'ll receive reminders via email and in chat.' });
+      }
     } catch (error) {
       console.error('Notification toggle error:', error);
       toast({ title: 'Failed to update notifications', variant: 'destructive' });
@@ -587,8 +588,12 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
         <div className="flex items-center gap-3">
           <Bell className="h-5 w-5 text-muted-foreground" />
           <div>
-            <p className="text-sm font-medium">Push Notifications</p>
-            <p className="text-xs text-muted-foreground">Get notified when reminders are due</p>
+            <p className="text-sm font-medium">Reminder Notifications</p>
+            <p className="text-xs text-muted-foreground">
+              {isIOSDevice 
+                ? 'Get reminders via email & in-chat alerts' 
+                : 'Get notified when reminders are due'}
+            </p>
           </div>
         </div>
         <Switch
