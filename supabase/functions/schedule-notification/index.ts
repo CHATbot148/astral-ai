@@ -99,22 +99,22 @@ serve(async (req) => {
 
 async function sendEmail(apiKey: string, to: string, message: string, type: string) {
   const subject = type === "reminder" 
-    ? "🔔 Reminder from X-AI" 
+    ? "🔔 Reminder from Astraz" 
     : type === "checkin" 
-    ? "👋 X-AI misses you!" 
-    : "💬 Message from X-AI";
+    ? "👋 Astraz misses you!" 
+    : "💬 Message from Astraz";
 
   const htmlContent = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
       <div style="background: linear-gradient(135deg, #00CED1, #9B59B6); padding: 20px; border-radius: 12px 12px 0 0;">
-        <h1 style="color: white; margin: 0; font-size: 24px;">X-AI</h1>
+        <h1 style="color: white; margin: 0; font-size: 24px;">Astraz</h1>
       </div>
       <div style="background: #f8f9fa; padding: 24px; border-radius: 0 0 12px 12px;">
         <p style="font-size: 16px; line-height: 1.6; color: #333;">${message}</p>
-        <a href="https://astraz.lovable.app" style="display: inline-block; background: linear-gradient(135deg, #00CED1, #9B59B6); color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 16px; font-weight: 500;">Open X-AI</a>
+        <a href="https://astraz.lovable.app" style="display: inline-block; background: linear-gradient(135deg, #00CED1, #9B59B6); color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 16px; font-weight: 500;">Open Astraz</a>
       </div>
       <p style="text-align: center; color: #888; font-size: 12px; margin-top: 16px;">
-        Sent by X-AI, a product of X-Tech
+        Sent by Astraz, a product of X-Tech
       </p>
     </div>
   `;
@@ -126,7 +126,7 @@ async function sendEmail(apiKey: string, to: string, message: string, type: stri
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      sender: { name: "Astraz", email: "khaleelktn@gmail.com" },
+      sender: { name: "Astraz", email: "xtechnly@gmail.com" },
       to: [{ email: to }],
       subject,
       htmlContent,

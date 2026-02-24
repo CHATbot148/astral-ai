@@ -10,6 +10,7 @@ import { useSubscription, TIER_CONFIGS } from '@/hooks/useSubscription';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { ImageCropper } from '@/components/chat/ImageCropper';
+import { cn } from '@/lib/utils';
 import { resolveFileUrl } from '@/lib/storageRef';
 import { MemoryPopup } from './MemoryPopup';
 import { AIMode, AISettings, TypingStyle, modeDescriptions, typingStyleDescriptions, getAISettings, saveAISettings } from '@/lib/aiSettings';
@@ -112,6 +113,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
   const [upgradeReason, setUpgradeReason] = useState<'image_limit' | 'video_limit' | 'general'>('general');
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [notificationPref, setNotificationPref] = useState<'push_and_email' | 'push_only' | 'email_only'>('push_and_email');
   const [isTogglingNotifications, setIsTogglingNotifications] = useState(false);
   useEffect(() => {
     if (isOpen && profile?.full_name) {
@@ -121,9 +123,12 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       setAiSettings(getAISettings());
       // Load notification preference
       if (user) {
-        supabase.from('profiles').select('notifications_enabled').eq('user_id', user.id).single()
+      supabase.from('profiles').select('notifications_enabled, notification_preference').eq('user_id', user.id).single()
           .then(({ data }) => {
-            if (data) setNotificationsEnabled(data.notifications_enabled);
+            if (data) {
+              setNotificationsEnabled(data.notifications_enabled);
+              setNotificationPref((data as any).notification_preference || 'push_and_email');
+            }
           });
       }
     }
@@ -438,7 +443,6 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
           return;
         }
       }
-      // Update profile — enables email reminders even if push isn't supported
       await supabase.from('profiles').update({ notifications_enabled: enabled }).eq('user_id', user.id);
       setNotificationsEnabled(enabled);
       if (enabled && !notificationsAvailable) {
@@ -449,6 +453,16 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
       toast({ title: 'Failed to update notifications', variant: 'destructive' });
     } finally {
       setIsTogglingNotifications(false);
+    }
+  };
+
+  const handleNotificationPrefChange = async (pref: 'push_and_email' | 'push_only' | 'email_only') => {
+    if (!user) return;
+    try {
+      await supabase.from('profiles').update({ notification_preference: pref } as any).eq('user_id', user.id);
+      setNotificationPref(pref);
+    } catch {
+      toast({ title: 'Failed to update preference', variant: 'destructive' });
     }
   };
 
@@ -583,24 +597,57 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
         <Input value={user?.email || ''} disabled className="bg-secondary/50" />
       </div>
 
-      {/* Push Notifications */}
-      <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 border border-border">
-        <div className="flex items-center gap-3">
-          <Bell className="h-5 w-5 text-muted-foreground" />
-          <div>
-            <p className="text-sm font-medium">Reminder Notifications</p>
-            <p className="text-xs text-muted-foreground">
-              {isIOSDevice 
-                ? 'Get reminders via email & in-chat alerts' 
-                : 'Get notified when reminders are due'}
-            </p>
+      {/* Reminder Notifications */}
+      <div className="p-3 rounded-lg bg-secondary/50 border border-border space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Bell className="h-5 w-5 text-muted-foreground" />
+            <div>
+              <p className="text-sm font-medium">Reminder Notifications</p>
+              <p className="text-xs text-muted-foreground">
+                {isIOSDevice 
+                  ? 'Get reminders via email & in-chat alerts' 
+                  : 'Get notified when reminders are due'}
+              </p>
+            </div>
           </div>
+          <Switch
+            checked={notificationsEnabled}
+            onCheckedChange={handleToggleNotifications}
+            disabled={isTogglingNotifications}
+          />
         </div>
-        <Switch
-          checked={notificationsEnabled}
-          onCheckedChange={handleToggleNotifications}
-          disabled={isTogglingNotifications}
-        />
+
+        {notificationsEnabled && (
+          <div className="pl-8 space-y-2 border-t border-border pt-2">
+            <p className="text-xs text-muted-foreground font-medium">Delivery method</p>
+            {([
+              { value: 'push_and_email' as const, label: 'Push & Email', desc: 'Both push notifications and email' },
+              { value: 'push_only' as const, label: 'Push only', desc: isIOSDevice ? 'In-chat alerts only' : 'Browser push notifications' },
+              { value: 'email_only' as const, label: 'Email only', desc: 'Email reminders to your inbox' },
+            ]).map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => handleNotificationPrefChange(opt.value)}
+                className={cn(
+                  "w-full flex items-center gap-3 p-2 rounded-lg text-left transition-colors",
+                  notificationPref === opt.value ? "bg-primary/10 border border-primary/30" : "hover:bg-secondary"
+                )}
+              >
+                <div className={cn(
+                  "w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                  notificationPref === opt.value ? "border-primary" : "border-muted-foreground"
+                )}>
+                  {notificationPref === opt.value && <div className="w-2 h-2 rounded-full bg-primary" />}
+                </div>
+                <div>
+                  <p className="text-sm font-medium">{opt.label}</p>
+                  <p className="text-xs text-muted-foreground">{opt.desc}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Subscription Management */}

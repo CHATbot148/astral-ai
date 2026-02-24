@@ -50,27 +50,19 @@ serve(async (req) => {
           });
         }
 
-        // Send push notification if user has subscriptions
-        const { data: subs } = await supabase
-          .from("push_subscriptions")
-          .select("*")
-          .eq("user_id", reminder.user_id);
+        // Check user's notification preference
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("notification_preference")
+          .eq("user_id", reminder.user_id)
+          .single();
 
-        if (subs && subs.length > 0) {
-          for (const sub of subs) {
-            try {
-              // Web Push via fetch (VAPID not needed for basic push)
-              // For production, you'd use web-push library with VAPID keys
-              console.log(`Push notification queued for user ${reminder.user_id}: ${reminder.message}`);
-            } catch (pushErr) {
-              console.error("Push error:", pushErr);
-            }
-          }
-        }
+        const pref = profileData?.notification_preference || "push_and_email";
+        const shouldEmail = pref === "push_and_email" || pref === "email_only";
 
         // Send email notification
         const BREVO_API_KEY = Deno.env.get("BREVO_API_KEY");
-        if (BREVO_API_KEY && reminder.email) {
+        if (BREVO_API_KEY && reminder.email && shouldEmail) {
           try {
             console.log(`Sending reminder email to ${reminder.email}: ${reminder.message}`);
             const emailRes = await fetch("https://api.brevo.com/v3/smtp/email", {
@@ -80,7 +72,7 @@ serve(async (req) => {
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({
-                sender: { name: "Astraz", email: "khaleelktn@gmail.com" },
+                sender: { name: "Astraz", email: "xtechnly@gmail.com" },
                 to: [{ email: reminder.email }],
                 subject: `🔔 Reminder: ${reminder.message}`,
                 htmlContent: `
