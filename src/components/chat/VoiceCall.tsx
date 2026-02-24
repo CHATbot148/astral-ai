@@ -305,9 +305,9 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
               fullResponse += content;
               sentenceBuffer += content;
 
-              // Detect sentence boundary (. ! ? or newline) with min length
-              const boundaryMatch = sentenceBuffer.match(/[.!?\n]/);
-              if (boundaryMatch && sentenceBuffer.length > 8) {
+              // Detect sentence boundary — fire TTS on very short fragments for speed
+              const boundaryMatch = sentenceBuffer.match(/[.!?,;\n]/);
+              if (boundaryMatch && sentenceBuffer.length > 4) {
                 const idx = sentenceBuffer.lastIndexOf(boundaryMatch[0]) + 1;
                 const sentence = sentenceBuffer.slice(0, idx);
                 sentenceBuffer = sentenceBuffer.slice(idx);
@@ -406,7 +406,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       let hasSpoken = false;
       const SILENCE_THRESHOLD = 15;
       const SPEECH_THRESHOLD = 25;
-      const SILENCE_DURATION = 1800; // Reduced from 2300ms
+      const SILENCE_DURATION = 1100; // Fast cutoff for near-instant response
       const MAX_RECORD_TIME = 50000;
       const MAX_INITIAL_SILENCE = 8000;
       const recordStart = Date.now();

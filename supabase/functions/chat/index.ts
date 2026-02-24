@@ -417,8 +417,9 @@ Keep response brief.`;
       throw new Error("MISTRAL_API_KEY is not configured");
     }
 
-    // Voice mode always streams with short max_tokens for fast response
+    // Voice mode: use faster model for near-instant responses
     const useStream = isVoiceMode ? true : !noStream;
+    const voiceModel = "mistral-small-latest"; // Much faster TTFT than large
     const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -426,10 +427,10 @@ Keep response brief.`;
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "mistral-large-latest",
+        model: isVoiceMode ? voiceModel : "mistral-large-latest",
         messages: [{ role: "system", content: systemContent }, ...formattedMessages],
         stream: useStream,
-        ...(isVoiceMode ? { max_tokens: 200 } : noStream ? { max_tokens: 300 } : {}),
+        ...(isVoiceMode ? { max_tokens: 150 } : noStream ? { max_tokens: 300 } : {}),
       }),
     });
 

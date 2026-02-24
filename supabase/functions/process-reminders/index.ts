@@ -68,18 +68,19 @@ serve(async (req) => {
           }
         }
 
-        // Also send email if available
+        // Send email notification
         const BREVO_API_KEY = Deno.env.get("BREVO_API_KEY");
         if (BREVO_API_KEY && reminder.email) {
           try {
-            await fetch("https://api.brevo.com/v3/smtp/email", {
+            console.log(`Sending reminder email to ${reminder.email}: ${reminder.message}`);
+            const emailRes = await fetch("https://api.brevo.com/v3/smtp/email", {
               method: "POST",
               headers: {
                 "api-key": BREVO_API_KEY,
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({
-                sender: { name: "Astraz", email: "noreply@astraz.app" },
+                sender: { name: "Astraz", email: "khaleelktn@gmail.com" },
                 to: [{ email: reminder.email }],
                 subject: `🔔 Reminder: ${reminder.message}`,
                 htmlContent: `
@@ -95,9 +96,17 @@ serve(async (req) => {
                 `,
               }),
             });
+            if (!emailRes.ok) {
+              const errText = await emailRes.text();
+              console.error("Brevo email error:", emailRes.status, errText);
+            } else {
+              console.log("Reminder email sent successfully to", reminder.email);
+            }
           } catch (emailErr) {
-            console.error("Email error:", emailErr);
+            console.error("Email send error:", emailErr);
           }
+        } else {
+          console.log("Skipping email: BREVO_API_KEY exists:", !!BREVO_API_KEY, "email:", reminder.email);
         }
 
         // Mark as sent
