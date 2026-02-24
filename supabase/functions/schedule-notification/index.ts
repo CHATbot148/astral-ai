@@ -126,7 +126,7 @@ async function sendEmail(apiKey: string, to: string, message: string, type: stri
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      sender: { name: "X-AI", email: "noreply@xai.app" },
+      sender: { name: "Astraz", email: "khaleelktn@gmail.com" },
       to: [{ email: to }],
       subject,
       htmlContent,
