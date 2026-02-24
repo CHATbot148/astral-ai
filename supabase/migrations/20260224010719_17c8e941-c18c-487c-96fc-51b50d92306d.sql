@@ -1,0 +1,1 @@
+ALTER TABLE public.profiles ADD COLUMN notification_preference text NOT NULL DEFAULT 'push_and_email' CHECK (notification_preference IN ('push_and_email', 'push_only', 'email_only'));

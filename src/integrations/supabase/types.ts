@@ -187,6 +187,7 @@ export type Database = {
           created_at: string
           full_name: string | null
           id: string
+          notification_preference: string
           notifications_enabled: boolean
           updated_at: string
           user_id: string
@@ -196,6 +197,7 @@ export type Database = {
           created_at?: string
           full_name?: string | null
           id?: string
+          notification_preference?: string
           notifications_enabled?: boolean
           updated_at?: string
           user_id: string
@@ -205,6 +207,7 @@ export type Database = {
           created_at?: string
           full_name?: string | null
           id?: string
+          notification_preference?: string
           notifications_enabled?: boolean
           updated_at?: string
           user_id?: string

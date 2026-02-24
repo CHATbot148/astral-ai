@@ -214,7 +214,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   // --- Main pipeline: STT → Stream LLM → Progressive TTS ---
   const processAudio = useCallback(async (audioBlob: Blob) => {
     if (!isActiveRef.current) return;
-    setStatus("processing");
+    setStatus("listening");
     stopMicLevelTracking();
 
     try {
