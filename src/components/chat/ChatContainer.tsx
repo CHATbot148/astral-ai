@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 import astrazLogo from '@/assets/astraz-logo.png';
 import { getAISettings } from '@/lib/aiSettings';
 import { parseReminderRequest } from '@/lib/reminderParser';
+import { subscribeToPush } from '@/utils/pushSubscription';
 
 // Memory extraction patterns
 const MEMORY_PATTERNS = [
@@ -239,11 +240,11 @@ export const ChatContainer = () => {
 
     if (action === 'accept') {
       try {
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-        if ('Notification' in window && !isIOS) {
+        const pushSupported = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
+        if (pushSupported) {
           const permission = await Notification.requestPermission();
           if (permission === 'granted') {
-            await supabase.from('profiles').update({ notifications_enabled: true }).eq('user_id', user.id);
+            await subscribeToPush(user.id);
           }
         }
         // Always enable in DB for email fallback
@@ -354,24 +355,39 @@ export const ChatContainer = () => {
         return Promise.all(urls.map((u) => resolveFileUrl(u, { expiresIn: 60 * 60 })));
       };
 
+      const resolvedFileUrls = await resolveUrls(fileUrls);
+      const imageUrls = resolvedFileUrls.filter((url) =>
+        url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) || url.startsWith('data:image/')
+      );
+      const videoFileUrls = resolvedFileUrls.filter((url) =>
+        url.match(/\.(mp4|webm|mov|avi)(\?.*)?$/i)
+      );
+
       const apiMessages = await Promise.all(
-        messages.map(async (m) => ({
-          role: m.role,
-          content: m.content,
-          imageUrls: m.role === 'user'
-            ? (await resolveUrls(m.file_urls)).filter((url) =>
-                url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) || url.startsWith('data:image/')
-              )
-            : [],
-        }))
+        messages.map(async (m) => {
+          const resolved = await resolveUrls(m.file_urls);
+          return {
+            role: m.role,
+            content: m.content,
+            imageUrls: m.role === 'user'
+              ? resolved.filter((url) =>
+                  url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) || url.startsWith('data:image/')
+                )
+              : [],
+            videoUrls: m.role === 'user'
+              ? resolved.filter((url) =>
+                  url.match(/\.(mp4|webm|mov|avi)(\?.*)?$/i)
+                )
+              : [],
+          };
+        })
       );
 
       apiMessages.push({
         role: 'user' as const,
         content,
-        imageUrls: (await resolveUrls(fileUrls)).filter((url) =>
-          url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) || url.startsWith('data:image/')
-        ),
+        imageUrls,
+        videoUrls: videoFileUrls,
       });
 
       const searchIntent = /(search (?:for |the web for |online for )|look up |google |latest news|what(?:'s| is) happening)/i.test(content);

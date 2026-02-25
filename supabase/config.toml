@@ -5,3 +5,9 @@ verify_jwt = false
 
 [functions.process-reminders]
 verify_jwt = false
+
+[functions.send-push]
+verify_jwt = false
+
+[functions.get-vapid-key]
+verify_jwt = false

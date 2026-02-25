@@ -59,6 +59,30 @@ serve(async (req) => {
 
         const pref = profileData?.notification_preference || "push_and_email";
         const shouldEmail = pref === "push_and_email" || pref === "email_only";
+        const shouldPush = pref === "push_and_email" || pref === "push_only";
+
+        // Send Web Push notification
+        if (shouldPush) {
+          try {
+            const pushRes = await fetch(`${SUPABASE_URL}/functions/v1/send-push`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+              },
+              body: JSON.stringify({
+                userId: reminder.user_id,
+                title: "⏰ Reminder from Astraz",
+                body: reminder.message,
+                url: "/",
+              }),
+            });
+            const pushData = await pushRes.json();
+            console.log(`Push result for ${reminder.user_id}:`, pushData);
+          } catch (pushErr) {
+            console.error("Push notification error:", pushErr);
+          }
+        }
 
         // Send email notification
         const BREVO_API_KEY = Deno.env.get("BREVO_API_KEY");
@@ -84,6 +108,9 @@ serve(async (req) => {
                       <p style="font-size: 16px; color: #333;">${reminder.message}</p>
                       <a href="https://astraz.lovable.app" style="display: inline-block; background: linear-gradient(135deg, #00CED1, #9B59B6); color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 16px;">Open Astraz</a>
                     </div>
+                    <p style="text-align: center; color: #888; font-size: 12px; margin-top: 16px;">
+                      Sent by Astraz, a product of X-Tech
+                    </p>
                   </div>
                 `,
               }),
@@ -97,7 +124,7 @@ serve(async (req) => {
           } catch (emailErr) {
             console.error("Email send error:", emailErr);
           }
-        } else {
+        } else if (shouldEmail) {
           console.log("Skipping email: BREVO_API_KEY exists:", !!BREVO_API_KEY, "email:", reminder.email);
         }
 
