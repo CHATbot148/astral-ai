@@ -335,7 +335,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
         )}
       </AnimatePresence>
 
-      <input ref={fileInputRef} type="file" multiple onChange={handleFileChange} className="hidden" accept="image/*,.pdf,.doc,.docx,.txt" />
+      <input ref={fileInputRef} type="file" multiple onChange={handleFileChange} className="hidden" accept="image/*,video/*,.pdf,.doc,.docx,.txt" />
 
       {/* Input Bar */}
       <div className="flex items-end gap-2">

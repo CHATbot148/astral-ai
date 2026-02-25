@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ImageCropper } from '@/components/chat/ImageCropper';
 import { cn } from '@/lib/utils';
 import { resolveFileUrl } from '@/lib/storageRef';
+import { subscribeToPush } from '@/utils/pushSubscription';
 import { MemoryPopup } from './MemoryPopup';
 import { AIMode, AISettings, TypingStyle, modeDescriptions, typingStyleDescriptions, getAISettings, saveAISettings } from '@/lib/aiSettings';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -429,24 +430,33 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   };
 
   const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-  const notificationsAvailable = 'Notification' in window && !isIOSDevice;
+  const pushSupported = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
 
   const handleToggleNotifications = async (enabled: boolean) => {
     if (!user) return;
     setIsTogglingNotifications(true);
     try {
-      if (enabled && notificationsAvailable) {
+      if (enabled && pushSupported) {
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
           toast({ title: 'Notification permission denied', description: 'Please allow notifications in your browser settings.', variant: 'destructive' });
           setIsTogglingNotifications(false);
           return;
         }
+        // Subscribe to Web Push
+        const subscribed = await subscribeToPush(user.id);
+        if (subscribed) {
+          console.log('Web Push subscription successful');
+        } else {
+          console.warn('Web Push subscription failed, falling back to email');
+        }
       }
       await supabase.from('profiles').update({ notifications_enabled: enabled }).eq('user_id', user.id);
       setNotificationsEnabled(enabled);
-      if (enabled && !notificationsAvailable) {
+      if (enabled && !pushSupported) {
         toast({ title: 'Email reminders enabled', description: 'Push notifications aren\'t available on this device, but you\'ll receive reminders via email and in chat.' });
+      } else if (enabled) {
+        toast({ title: 'Notifications enabled', description: 'You\'ll receive push notifications and/or emails when reminders are due.' });
       }
     } catch (error) {
       console.error('Notification toggle error:', error);
@@ -605,9 +615,9 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
             <div>
               <p className="text-sm font-medium">Reminder Notifications</p>
               <p className="text-xs text-muted-foreground">
-                {isIOSDevice 
-                  ? 'Get reminders via email & in-chat alerts' 
-                  : 'Get notified when reminders are due'}
+                {pushSupported 
+                  ? 'Get push & email notifications for reminders' 
+                  : 'Get reminders via email & in-chat alerts'}
               </p>
             </div>
           </div>
@@ -623,7 +633,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
             <p className="text-xs text-muted-foreground font-medium">Delivery method</p>
             {([
               { value: 'push_and_email' as const, label: 'Push & Email', desc: 'Both push notifications and email' },
-              { value: 'push_only' as const, label: 'Push only', desc: isIOSDevice ? 'In-chat alerts only' : 'Browser push notifications' },
+              { value: 'push_only' as const, label: 'Push only', desc: pushSupported ? 'Browser push notifications' : 'In-chat alerts only' },
               { value: 'email_only' as const, label: 'Email only', desc: 'Email reminders to your inbox' },
             ]).map(opt => (
               <button

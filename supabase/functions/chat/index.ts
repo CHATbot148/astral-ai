@@ -339,21 +339,169 @@ Keep response brief.`;
       (msg: { imageUrls?: string[] }) => msg.imageUrls && msg.imageUrls.length > 0
     );
 
+    // Check if any message has videos
+    const hasVideos = messages.some(
+      (msg: { videoUrls?: string[] }) => msg.videoUrls && msg.videoUrls.length > 0
+    );
+
     // Build messages array
     const formattedMessages = messages.map(
-      (msg: { role: string; content: string; imageUrls?: string[] }) => {
-        if (msg.imageUrls && msg.imageUrls.length > 0) {
+      (msg: { role: string; content: string; imageUrls?: string[]; videoUrls?: string[] }) => {
+        if ((msg.imageUrls && msg.imageUrls.length > 0) || (msg.videoUrls && msg.videoUrls.length > 0)) {
           const content: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }> = [
             { type: "text", text: msg.content }
           ];
-          for (const url of msg.imageUrls) {
+          for (const url of (msg.imageUrls || [])) {
             content.push({ type: "image_url", image_url: { url } });
           }
+          // Video URLs are handled separately via Gemini
           return { role: msg.role, content };
         }
         return { role: msg.role, content: msg.content };
       }
     );
+
+    // === VIDEO ANALYSIS VIA GEMINI ===
+    if (hasVideos) {
+      const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+      if (!GEMINI_API_KEY) {
+        throw new Error("GEMINI_API_KEY is not configured for video analysis");
+      }
+
+      // Collect all video URLs from the last user message
+      const lastMsg = messages[messages.length - 1];
+      const videoUrls: string[] = lastMsg?.videoUrls || [];
+
+      if (videoUrls.length > 0) {
+        // Upload each video to Gemini Files API and get file URIs
+        const fileUris: string[] = [];
+        for (const videoUrl of videoUrls) {
+          try {
+            // Download the video
+            const videoRes = await fetch(videoUrl);
+            if (!videoRes.ok) {
+              console.error("Failed to download video:", videoUrl);
+              continue;
+            }
+            const videoBytes = await videoRes.arrayBuffer();
+            const contentType = videoRes.headers.get("content-type") || "video/mp4";
+
+            // Upload to Gemini Files API (resumable)
+            const startRes = await fetch(
+              `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${GEMINI_API_KEY}`,
+              {
+                method: "POST",
+                headers: {
+                  "X-Goog-Upload-Protocol": "resumable",
+                  "X-Goog-Upload-Command": "start",
+                  "X-Goog-Upload-Header-Content-Length": String(videoBytes.byteLength),
+                  "X-Goog-Upload-Header-Content-Type": contentType,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ file: { display_name: "user-video" } }),
+              }
+            );
+
+            const uploadUrl = startRes.headers.get("x-goog-upload-url");
+            if (!uploadUrl) {
+              console.error("Failed to get upload URL from Gemini");
+              continue;
+            }
+
+            // Upload the bytes
+            const uploadRes = await fetch(uploadUrl, {
+              method: "POST",
+              headers: {
+                "Content-Length": String(videoBytes.byteLength),
+                "X-Goog-Upload-Offset": "0",
+                "X-Goog-Upload-Command": "upload, finalize",
+              },
+              body: videoBytes,
+            });
+
+            const fileInfo = await uploadRes.json();
+            const fileUri = fileInfo?.file?.uri;
+            if (fileUri) {
+              fileUris.push(fileUri);
+              console.log("Video uploaded to Gemini:", fileUri);
+
+              // Wait for processing
+              const fileName = fileInfo.file.name;
+              let state = fileInfo.file.state;
+              let attempts = 0;
+              while (state === "PROCESSING" && attempts < 30) {
+                await new Promise(r => setTimeout(r, 2000));
+                const checkRes = await fetch(
+                  `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${GEMINI_API_KEY}`
+                );
+                const checkData = await checkRes.json();
+                state = checkData.state;
+                attempts++;
+              }
+              if (state !== "ACTIVE") {
+                console.error("Video processing timed out or failed:", state);
+              }
+            }
+          } catch (err) {
+            console.error("Video upload error:", err);
+          }
+        }
+
+        if (fileUris.length > 0) {
+          // Build Gemini request with video file URIs
+          const geminiParts: any[] = [];
+          for (const uri of fileUris) {
+            geminiParts.push({ fileData: { mimeType: "video/mp4", fileUri: uri } });
+          }
+          geminiParts.push({ text: lastMsg.content || "Analyze this video and describe what you see." });
+
+          const geminiMessages = [
+            { role: "user", parts: [{ text: systemContent }] },
+            { role: "model", parts: [{ text: "Understood. I'm Astraz and will follow these guidelines." }] },
+          ];
+
+          // Add conversation history (text only)
+          for (const msg of formattedMessages.slice(0, -1)) {
+            const role = msg.role === "assistant" ? "model" : "user";
+            const text = typeof msg.content === "string" ? msg.content : 
+              (Array.isArray(msg.content) ? msg.content.filter((p: any) => p.type === "text").map((p: any) => p.text).join("\n") : "");
+            if (text) geminiMessages.push({ role, parts: [{ text }] });
+          }
+
+          // Add the video + user message
+          geminiMessages.push({ role: "user", parts: geminiParts });
+
+          const geminiRes = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                contents: geminiMessages,
+                generationConfig: { maxOutputTokens: 2048 },
+              }),
+            }
+          );
+
+          if (!geminiRes.ok) {
+            const errText = await geminiRes.text();
+            console.error("Gemini video analysis error:", geminiRes.status, errText);
+            throw new Error("Video analysis failed");
+          }
+
+          const geminiData = await geminiRes.json();
+          const responseText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "I couldn't analyze the video.";
+
+          // Return as SSE stream format for consistency
+          const encoder = new TextEncoder();
+          const ssePayload = `data: ${JSON.stringify({ choices: [{ delta: { content: responseText } }] })}\n\ndata: [DONE]\n\n`;
+
+          return new Response(encoder.encode(ssePayload), {
+            headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
+          });
+        }
+      }
+    }
 
     if (hasImages) {
       if (!MISTRAL_API_KEY) {
