@@ -185,7 +185,7 @@ export const useConversations = () => {
 
       if (error) throw error;
 
-      setMessages(prev => [...prev, data as Message]);
+      setMessages(prev => prev.some(msg => msg.id === (data as Message).id) ? prev : [...prev, data as Message]);
 
       // Update conversation timestamp and title if first user message
       if (role === 'user') {
