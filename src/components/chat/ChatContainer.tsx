@@ -51,7 +51,7 @@ export const ChatContainer = () => {
   const [streamingStyle, setStreamingStyle] = useState<string>('typewriter');
   const [profile, setProfile] = useState<{ full_name: string | null; avatar_url: string | null } | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
+  const [typingLabel, setTypingLabel] = useState<string | undefined>(undefined);
   const [showVoiceCall, setShowVoiceCall] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -232,6 +232,7 @@ export const ChatContainer = () => {
     setIsLoading(false);
     setIsGeneratingImage(false);
     setIsGeneratingVideo(false);
+    setTypingLabel(undefined);
   };
 
   const handleNotificationAction = async (action: 'accept' | 'cancel', data: any) => {
@@ -286,7 +287,7 @@ export const ChatContainer = () => {
 
     setIsLoading(true);
     setStreamingContent('');
-    setIsSearching(false);
+    setTypingLabel(undefined);
     abortControllerRef.current = new AbortController();
 
     try {
@@ -393,7 +394,14 @@ export const ChatContainer = () => {
       const searchIntent = /(search (?:for |the web for |online for )|look up |google |latest news|what(?:'s| is) happening)/i.test(content);
       const imageIntent = /(show me (?:an? )?(?:image|picture|photo)|what does .+ look like)/i.test(content);
       const videoIntent = /(show me (?:a )?video|video tutorial)/i.test(content);
-      setIsSearching(searchIntent || imageIntent || videoIntent);
+      const hasUploadedVideoFiles = (files || []).some((file) => file.type.startsWith('video/'));
+      setTypingLabel(
+        hasUploadedVideoFiles
+          ? 'Reviewing video…'
+          : (searchIntent || imageIntent || videoIntent)
+            ? 'Searching the web…'
+            : undefined
+      );
 
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
@@ -551,7 +559,7 @@ export const ChatContainer = () => {
       toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to send message', variant: 'destructive' });
     } finally {
       setIsLoading(false);
-      setIsSearching(false);
+      setTypingLabel(undefined);
       setIsGeneratingImage(false);
       abortControllerRef.current = null;
     }
@@ -629,7 +637,7 @@ export const ChatContainer = () => {
                   );
                 })}
                 {isLoading && !streamingContent && !isGeneratingImage && !isGeneratingVideo && (
-                  <TypingIndicator label={isSearching ? 'Searching the web…' : undefined} />
+                  <TypingIndicator label={typingLabel} />
                 )}
                 {(isGeneratingImage || isGeneratingVideo) && (
                   <div className="flex items-center gap-3 px-6 py-4">

@@ -344,6 +344,11 @@ Keep response brief.`;
       (msg: { videoUrls?: string[] }) => msg.videoUrls && msg.videoUrls.length > 0
     );
 
+    const isGifUrl = (url: string) => /\.gif(\?.*)?$/i.test(url) || /giphy|tenor/i.test(url);
+    const hasGifs = messages.some(
+      (msg: { imageUrls?: string[] }) => (msg.imageUrls || []).some((url) => isGifUrl(url))
+    );
+
     // Build messages array
     const formattedMessages = messages.map(
       (msg: { role: string; content: string; imageUrls?: string[]; videoUrls?: string[] }) => {
@@ -354,37 +359,40 @@ Keep response brief.`;
           for (const url of (msg.imageUrls || [])) {
             content.push({ type: "image_url", image_url: { url } });
           }
-          // Video URLs are handled separately via Gemini
+          // Video/GIF URLs are handled via Gemini when applicable
           return { role: msg.role, content };
         }
         return { role: msg.role, content: msg.content };
       }
     );
 
-    // === VIDEO ANALYSIS VIA GEMINI ===
-    if (hasVideos) {
+    // === VIDEO/GIF ANALYSIS VIA GEMINI ===
+    if (hasVideos || hasGifs) {
       const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
       if (!GEMINI_API_KEY) {
         throw new Error("GEMINI_API_KEY is not configured for video analysis");
       }
 
-      // Collect all video URLs from the last user message
+      // Collect video/GIF URLs from the last user message
       const lastMsg = messages[messages.length - 1];
       const videoUrls: string[] = lastMsg?.videoUrls || [];
+      const gifUrls: string[] = (lastMsg?.imageUrls || []).filter((url: string) => isGifUrl(url));
+      const mediaUrls = [...videoUrls, ...gifUrls];
 
-      if (videoUrls.length > 0) {
-        // Upload each video to Gemini Files API and get file URIs
-        const fileUris: string[] = [];
-        for (const videoUrl of videoUrls) {
+      if (mediaUrls.length > 0) {
+        // Upload each media file to Gemini Files API and get file URIs
+        const fileUris: Array<{ uri: string; mimeType: string }> = [];
+        for (const mediaUrl of mediaUrls) {
           try {
-            // Download the video
-            const videoRes = await fetch(videoUrl);
-            if (!videoRes.ok) {
-              console.error("Failed to download video:", videoUrl);
+            // Download media
+            const mediaRes = await fetch(mediaUrl);
+            if (!mediaRes.ok) {
+              console.error("Failed to download media:", mediaUrl);
               continue;
             }
-            const videoBytes = await videoRes.arrayBuffer();
-            const contentType = videoRes.headers.get("content-type") || "video/mp4";
+            const mediaBytes = await mediaRes.arrayBuffer();
+            const fallbackMime = isGifUrl(mediaUrl) ? "image/gif" : "video/mp4";
+            const contentType = mediaRes.headers.get("content-type") || fallbackMime;
 
             // Upload to Gemini Files API (resumable)
             const startRes = await fetch(
@@ -394,11 +402,11 @@ Keep response brief.`;
                 headers: {
                   "X-Goog-Upload-Protocol": "resumable",
                   "X-Goog-Upload-Command": "start",
-                  "X-Goog-Upload-Header-Content-Length": String(videoBytes.byteLength),
+                  "X-Goog-Upload-Header-Content-Length": String(mediaBytes.byteLength),
                   "X-Goog-Upload-Header-Content-Type": contentType,
                   "Content-Type": "application/json",
                 },
-                body: JSON.stringify({ file: { display_name: "user-video" } }),
+                body: JSON.stringify({ file: { display_name: "user-media" } }),
               }
             );
 
@@ -408,24 +416,23 @@ Keep response brief.`;
               continue;
             }
 
-            // Upload the bytes
+            // Upload bytes
             const uploadRes = await fetch(uploadUrl, {
               method: "POST",
               headers: {
-                "Content-Length": String(videoBytes.byteLength),
+                "Content-Length": String(mediaBytes.byteLength),
                 "X-Goog-Upload-Offset": "0",
                 "X-Goog-Upload-Command": "upload, finalize",
               },
-              body: videoBytes,
+              body: mediaBytes,
             });
 
             const fileInfo = await uploadRes.json();
             const fileUri = fileInfo?.file?.uri;
             if (fileUri) {
-              fileUris.push(fileUri);
-              console.log("Video uploaded to Gemini:", fileUri);
+              fileUris.push({ uri: fileUri, mimeType: contentType });
 
-              // Wait for processing
+              // Wait for processing (mostly needed for video)
               const fileName = fileInfo.file.name;
               let state = fileInfo.file.state;
               let attempts = 0;
@@ -439,21 +446,21 @@ Keep response brief.`;
                 attempts++;
               }
               if (state !== "ACTIVE") {
-                console.error("Video processing timed out or failed:", state);
+                console.error("Media processing timed out or failed:", state);
               }
             }
           } catch (err) {
-            console.error("Video upload error:", err);
+            console.error("Media upload error:", err);
           }
         }
 
         if (fileUris.length > 0) {
-          // Build Gemini request with video file URIs
+          // Build Gemini request with uploaded media file URIs
           const geminiParts: any[] = [];
-          for (const uri of fileUris) {
-            geminiParts.push({ fileData: { mimeType: "video/mp4", fileUri: uri } });
+          for (const file of fileUris) {
+            geminiParts.push({ fileData: { mimeType: file.mimeType, fileUri: file.uri } });
           }
-          geminiParts.push({ text: lastMsg.content || "Analyze this video and describe what you see." });
+          geminiParts.push({ text: lastMsg.content || "Analyze this media and describe what you see." });
 
           const geminiMessages = [
             { role: "user", parts: [{ text: systemContent }] },
