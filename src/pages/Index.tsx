@@ -16,13 +16,14 @@ const Index = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="aurora-bg" />
         <div className="flex flex-col items-center gap-4">
-          <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-xai-cyan to-xai-purple flex items-center justify-center xai-glow xai-pulse">
-            <span className="font-display font-bold text-2xl text-primary-foreground">X</span>
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-xai-cyan via-primary to-xai-purple flex items-center justify-center xai-glow xai-pulse shadow-lg shadow-primary/20">
+            <span className="font-display font-bold text-2xl text-primary-foreground tracking-tight">A</span>
           </div>
           <Loader2 className="h-6 w-6 animate-spin text-xai-cyan" />
+          <p className="text-xs text-muted-foreground animate-pulse">Loading Astraz…</p>
         </div>
       </div>
     );

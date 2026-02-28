@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Copy, Check, ThumbsUp, ThumbsDown, Heart, Sparkles, FileText, Volume2, Download, Pencil, Globe, ChevronDown, ChevronUp } from 'lucide-react';
-import { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { AudioPlayer } from './AudioPlayer';
@@ -15,6 +15,7 @@ interface ChatMessageProps {
   role: 'user' | 'assistant';
   content: string;
   isStreaming?: boolean;
+  streamingStyle?: string;
   fileUrls?: string[] | null;
   userAvatar?: string | null;
   userName?: string | null;
@@ -247,7 +248,26 @@ const SourcesChip = ({ sources }: { sources: { title: string; url: string; favic
   );
 };
 
-export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, userName, onEdit, canEdit = true, onNotificationAction }: ChatMessageProps) => {
+// Animated per-line reveal for line_fade and slide_down styles
+const AnimatedLines = ({ text, style, formatText }: { text: string; style: string; formatText: (t: string) => React.ReactNode }) => {
+  const lines = text.split('\n');
+  return (
+    <div className="whitespace-pre-wrap break-words">
+      {lines.map((line, i) => (
+        <motion.div
+          key={i}
+          initial={{ opacity: 0, ...(style === 'slide_down' ? { y: -8 } : {}) }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: i * 0.04, ease: 'easeOut' }}
+        >
+          {formatText(line)}
+        </motion.div>
+      ))}
+    </div>
+  );
+};
+
+export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUrls, userAvatar, userName, onEdit, canEdit = true, onNotificationAction }: ChatMessageProps) => {
   const [copied, setCopied] = useState(false);
   const [reaction, setReaction] = useState<Reaction>(null);
   const [showReactions, setShowReactions] = useState(false);
@@ -280,8 +300,6 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
     setReaction(prev => prev === r ? null : r);
     setShowReactions(false);
   };
-
-
   // Parse content using the new media detector
   const parsedContent = useMemo(() => {
     const { cleanText, mediaItems } = extractMediaFromMessage(content);
@@ -652,23 +670,24 @@ export const ChatMessage = ({ role, content, isStreaming, fileUrls, userAvatar, 
             </span>
           </motion.div>
         ) : (
-        <motion.div 
+        <div 
           className={cn(
     "text-foreground leading-relaxed inline-block overflow-hidden",
             isUser ? "bg-secondary rounded-2xl rounded-tr-sm px-4 py-2 max-w-[85%] break-words" : "max-w-full break-words overflow-wrap-anywhere"
           )}
-          layout
         >
           {parsedContent.parts.map((part, index) => 
             part.type === 'code' ? (
               <CodeBlock key={index} language={part.language || 'code'} code={part.content} />
             ) : part.type === 'table' && part.tableData ? (
               <TableBlock key={index} data={part.tableData} />
+            ) : isStreaming && (streamingStyle === 'line_fade' || streamingStyle === 'slide_down') ? (
+              <AnimatedLines key={index} text={part.content} style={streamingStyle} formatText={formatText} />
             ) : (
               <div key={index} className="whitespace-pre-wrap break-words">{formatText(part.content)}</div>
             )
           )}
-        </motion.div>
+        </div>
         )}
 
         {/* Inline Sources - ChatGPT style */}

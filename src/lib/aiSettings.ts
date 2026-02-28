@@ -1,5 +1,5 @@
 export type AIMode = 'professional' | 'smart_friendly' | 'highly_courteous';
-export type TypingStyle = 'typewriter' | 'word_by_word' | 'line_fade' | 'slide_up' | 'instant';
+export type TypingStyle = 'typewriter' | 'word_by_word' | 'line_fade' | 'slide_down' | 'normal';
 
 export interface AISettings {
   mode: AIMode;
@@ -14,15 +14,15 @@ export const defaultSettings: AISettings = {
   mode: 'smart_friendly',
   followUpQuestions: true,
   typingAnimation: true,
-  typingStyle: 'typewriter',
+  typingStyle: 'normal',
 };
 
 export const typingStyleDescriptions: Record<TypingStyle, { name: string; description: string }> = {
-  typewriter: { name: 'Typewriter', description: 'Characters appear as they stream in real-time' },
-  word_by_word: { name: 'Word by Word', description: 'Words fade in one at a time smoothly' },
-  line_fade: { name: 'Line Fade', description: 'Each sentence fades in gracefully' },
-  slide_up: { name: 'Slide Up', description: 'Text slides up from below as it appears' },
-  instant: { name: 'Instant', description: 'Full response appears all at once, no animation' },
+  normal: { name: 'Normal', description: 'Smooth streaming like ChatGPT — text flows in naturally' },
+  typewriter: { name: 'Typewriter', description: 'Character by character, like typing on a keyboard' },
+  word_by_word: { name: 'Word by Word', description: 'Reveals one word at a time' },
+  line_fade: { name: 'Line Fade', description: 'Each line fades in smoothly' },
+  slide_down: { name: 'Slide Down', description: 'Lines appear top to bottom with a fade' },
 };
  
  export const modeDescriptions: Record<AIMode, { name: string; description: string }> = {
@@ -47,7 +47,7 @@ export function getAISettings(): AISettings {
       const parsed = JSON.parse(stored);
       // Validate mode to prevent silent resets
       const validModes: AIMode[] = ['professional', 'smart_friendly', 'highly_courteous'];
-      const validStyles: TypingStyle[] = ['typewriter', 'word_by_word', 'line_fade', 'slide_up', 'instant'];
+      const validStyles: TypingStyle[] = ['typewriter', 'word_by_word', 'line_fade', 'slide_down', 'normal'];
       if (parsed.mode && !validModes.includes(parsed.mode)) {
         parsed.mode = defaultSettings.mode;
       }
