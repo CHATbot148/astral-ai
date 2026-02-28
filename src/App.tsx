@@ -9,6 +9,7 @@ import { ThemeProvider } from "@/hooks/useTheme";
 import { SubscriptionProvider } from "@/hooks/useSubscription";
 
 import { SplashScreen } from "@/components/SplashScreen";
+import { ConnectionStatus } from "@/components/ConnectionStatus";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
@@ -49,6 +50,7 @@ const App = () => {
           <SubscriptionProvider>
             <TooltipProvider>
               {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
+              <ConnectionStatus />
               <Toaster />
               <Sonner />
               <BrowserRouter>

@@ -443,30 +443,35 @@ export const ChatContainer = () => {
       const typingStyle = settings.typingStyle || 'typewriter';
       setStreamingStyle(typingStyle);
 
-      // For word-by-word and line-fade, we'll batch updates
+      // Queues for animated styles
+      let charQueue: string[] = [];
       let wordQueue: string[] = [];
       let displayedContent = '';
-      let wordInterval: ReturnType<typeof setInterval> | null = null;
+      let animInterval: ReturnType<typeof setInterval> | null = null;
+
+      if (showTyping && typingStyle === 'typewriter') {
+        animInterval = setInterval(() => {
+          // Drain multiple chars per tick for "extremely fast" feel
+          const batch = charQueue.splice(0, 3);
+          if (batch.length > 0) {
+            displayedContent += batch.join('');
+            setStreamingContent(displayedContent);
+          }
+        }, 15);
+      }
 
       if (showTyping && typingStyle === 'word_by_word') {
-        wordInterval = setInterval(() => {
+        animInterval = setInterval(() => {
           if (wordQueue.length > 0) {
             const nextWord = wordQueue.shift()!;
             displayedContent += nextWord;
             setStreamingContent(displayedContent);
           }
-        }, 80);
+        }, 60);
       }
 
-      if (showTyping && typingStyle === 'line_fade') {
-        wordInterval = setInterval(() => {
-          if (wordQueue.length > 0) {
-            const nextChunk = wordQueue.shift()!;
-            displayedContent += nextChunk;
-            setStreamingContent(displayedContent);
-          }
-        }, 200);
-      }
+      // line_fade & slide_down: we stream full content but ChatMessage handles per-line animation
+      // normal: stream full content directly (ChatGPT-like)
 
       while (true) {
         const { done, value } = await reader.read();
@@ -488,18 +493,15 @@ export const ChatContainer = () => {
             if (content) {
               fullContent += content;
               if (showTyping) {
-                if (typingStyle === 'typewriter' || typingStyle === 'slide_up') {
-                  setStreamingContent(fullContent);
+                if (typingStyle === 'typewriter') {
+                  charQueue.push(...content.split(''));
                 } else if (typingStyle === 'word_by_word') {
-                  // Split new content into words preserving spaces
                   const words = content.match(/\S+\s*/g) || [content];
                   wordQueue.push(...words);
-                } else if (typingStyle === 'line_fade') {
-                  // Split by sentences/lines
-                  const sentences = content.split(/(?<=[.!?\n])\s*/);
-                  wordQueue.push(...sentences);
+                } else {
+                  // normal, line_fade, slide_down
+                  setStreamingContent(fullContent);
                 }
-                // instant style: don't update streaming at all
               }
             }
           } catch {
@@ -509,12 +511,11 @@ export const ChatContainer = () => {
         }
       }
 
-      // Flush remaining word queue
-      if (wordInterval) {
-        clearInterval(wordInterval);
-        if (wordQueue.length > 0) {
-          displayedContent += wordQueue.join('');
-        }
+      // Flush remaining queues
+      if (animInterval) {
+        clearInterval(animInterval);
+        if (charQueue.length > 0) displayedContent += charQueue.join('');
+        if (wordQueue.length > 0) displayedContent += wordQueue.join('');
       }
       setStreamingContent('');
 
@@ -631,6 +632,7 @@ export const ChatContainer = () => {
                   const canEdit = msg.role === 'user' && userMsgIndex >= userMessages.length - 3;
                   return (
                     <ChatMessage key={msg.id} role={msg.role} content={msg.content} isStreaming={msg.id === 'streaming'}
+                      streamingStyle={msg.id === 'streaming' ? streamingStyle : undefined}
                       fileUrls={msg.file_urls} userAvatar={profile?.avatar_url} userName={profile?.full_name}
                       onEdit={canEdit ? (content: string) => handleEditMessage(msg.id, content) : undefined} canEdit={canEdit}
                       onNotificationAction={handleNotificationAction} />
