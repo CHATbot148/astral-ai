@@ -115,7 +115,7 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, fileContext, timeZone, clientTimeISO, aiMode, followUpQuestions, isVoiceMode, noStream } = await req.json();
+    const { messages, fileContext, timeZone, clientTimeISO, aiMode, followUpQuestions, isVoiceMode, noStream, forceWebSearch, webSearchQuery } = await req.json();
     const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
@@ -170,6 +170,7 @@ serve(async (req) => {
     let searchContext = "";
     let mediaContext = "";
     let videoContext = "";
+    let webSources: Array<{ title: string; url: string }> = [];
     let shouldGenerateImage = false;
     let imagePrompt = "";
     let detectedStyle = "photoreal";
@@ -197,34 +198,42 @@ serve(async (req) => {
 
     // Check for web search intent (only if not generating image)
     if (!shouldGenerateImage) {
-      // Auto-detect real-time queries even without explicit search keywords
+      const shouldForceSearch = Boolean(forceWebSearch);
+      const forcedQuery = typeof webSearchQuery === "string" && webSearchQuery.trim()
+        ? webSearchQuery.trim()
+        : lastContent;
       const isRealTimeQuery = needsFreshWebSearch(lastContent);
       let searchTriggered = false;
 
       for (const pattern of WEB_SEARCH_PATTERNS) {
         const match = lastContent.match(pattern);
-        if (match) {
-          const query = match[1].trim();
-          try {
-            const searchResults = await performWebSearch(SUPABASE_URL!, query, "web");
-            if (searchResults.length > 0) {
-              searchContext = `\n\n[Web Search Results for "${query}" - USE THESE AS YOUR PRIMARY SOURCE OF TRUTH]:\n` +
-                searchResults.map((r: any, i: number) => `${i + 1}. ${r.title}\n   ${r.snippet}\n   Source: ${r.url}`).join("\n\n");
-            }
-          } catch (e) {
-            console.error("Web search error:", e);
+        if (!match) continue;
+
+        const query = (match[1] || forcedQuery).trim();
+        try {
+          const searchResults = await performWebSearch(SUPABASE_URL!, query, "web");
+          if (searchResults.length > 0) {
+            webSources = searchResults
+              .filter((r: any) => r?.url)
+              .map((r: any) => ({ title: r.title || r.url, url: r.url }));
+            searchContext = `\n\n[Web Search Results for "${query}" - USE THESE AS YOUR PRIMARY SOURCE OF TRUTH]:\n` +
+              searchResults.map((r: any, i: number) => `${i + 1}. ${r.title}\n   ${r.snippet}\n   Source: ${r.url}`).join("\n\n");
           }
-          searchTriggered = true;
-          break;
+        } catch (e) {
+          console.error("Web search error:", e);
         }
+        searchTriggered = true;
+        break;
       }
 
-      // If it's a real-time query but no pattern matched, still search
-      if (!searchTriggered && isRealTimeQuery) {
+      if (!searchTriggered && (isRealTimeQuery || shouldForceSearch)) {
         try {
-          const searchResults = await performWebSearch(SUPABASE_URL!, lastContent, "web");
+          const searchResults = await performWebSearch(SUPABASE_URL!, forcedQuery, "web");
           if (searchResults.length > 0) {
-            searchContext = `\n\n[Web Search Results - USE THESE AS YOUR PRIMARY SOURCE OF TRUTH]:\n` +
+            webSources = searchResults
+              .filter((r: any) => r?.url)
+              .map((r: any) => ({ title: r.title || r.url, url: r.url }));
+            searchContext = `\n\n[Web Search Results for "${forcedQuery}" - USE THESE AS YOUR PRIMARY SOURCE OF TRUTH]:\n` +
               searchResults.map((r: any, i: number) => `${i + 1}. ${r.title}\n   ${r.snippet}\n   Source: ${r.url}`).join("\n\n");
           }
         } catch (e) {
@@ -318,8 +327,17 @@ IMPORTANT RESPONSE GUIDELINES:
 8. VIDEOS FROM WEB: When you have video results, format them as [VIDEO_CARD:title|url|thumbnail|duration|source]
 9. GIFs: Max 2 per message, NEVER show the URL as text, only the image
 10. Each paragraph should have a blank line before it for readability
-11. WEB SEARCH RESULTS: When using search results, ALWAYS cite sources at the end with [Sources] section listing numbered URLs
+11. WEB SEARCH RESULTS: When using search results, ALWAYS cite sources at the end with [Sources] section listing numbered markdown links
 12. REAL-TIME DATA: When search results are provided, use them as your PRIMARY source — do NOT make up scores, dates, or facts${timeContext}${userMemory}${searchContext}${mediaContext}${videoContext}`;
+
+    if (webSources.length > 0) {
+      const forcedSources = webSources
+        .slice(0, 5)
+        .map((source, index) => `${index + 1}. [${source.title}](${source.url})`)
+        .join("\n");
+
+      systemContent += `\n\nMANDATORY: You MUST append this exact block at the end of your answer (do not skip it):\n[Sources]\n${forcedSources}`;
+    }
 
     // Add image generation guidance if detected
     if (shouldGenerateImage) {

@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Copy, Check, ThumbsUp, ThumbsDown, Heart, Sparkles, FileText, Volume2, Download, Pencil, Globe, ChevronDown, ChevronUp } from 'lucide-react';
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { AudioPlayer } from './AudioPlayer';
@@ -174,10 +174,10 @@ function splitTextAndTables(
 // ChatGPT-style table component
 const TableBlock = ({ data }: { data: { headers: string[]; rows: string[][] } }) => {
   return (
-    <div className="my-3 -mx-1 max-w-[calc(100vw-7rem)] sm:max-w-full">
-      <div className="rounded-lg border border-border overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
+    <div className="my-3 w-full">
+      <div className="rounded-lg border border-border overflow-hidden bg-background/50">
+        <div className="w-full overflow-x-auto [overflow-y:hidden] [scrollbar-width:thin]">
+          <table className="min-w-[640px] w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-secondary/40">
                 {data.headers.map((h, i) => (
@@ -248,36 +248,61 @@ const SourcesChip = ({ sources }: { sources: { title: string; url: string; favic
   );
 };
 
-// Animated per-line reveal for line_fade and slide_down styles
+// Animated reveal for line_fade and slide_down styles
 const AnimatedLines = ({ text, style, formatText }: { text: string; style: string; formatText: (t: string) => React.ReactNode }) => {
-  const lines = text.split('\n');
+  const chunks = useMemo(() => {
+    const lines = text.split('\n');
+    const segmented: string[] = [];
+
+    lines.forEach((line, index) => {
+      const sentenceParts = line.match(/[^.!?\n]+[.!?\n]?/g) || [line];
+      sentenceParts
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .forEach((part) => segmented.push(part));
+
+      if (index < lines.length - 1) segmented.push('\n');
+    });
+
+    return segmented.length ? segmented : [text];
+  }, [text]);
+
   const [visibleCount, setVisibleCount] = useState(0);
+  const previousChunkCountRef = useRef(0);
 
   useEffect(() => {
-    if (visibleCount < lines.length) {
-      const timer = setTimeout(() => setVisibleCount(prev => prev + 1), 120);
+    if (chunks.length < previousChunkCountRef.current) {
+      setVisibleCount(0);
+    }
+    previousChunkCountRef.current = chunks.length;
+  }, [chunks.length]);
+
+  useEffect(() => {
+    if (visibleCount < chunks.length) {
+      const timer = setTimeout(() => setVisibleCount((prev) => prev + 1), style === 'line_fade' ? 70 : 90);
       return () => clearTimeout(timer);
     }
-  }, [visibleCount, lines.length]);
+  }, [visibleCount, chunks.length, style]);
 
   return (
     <div className="whitespace-pre-wrap break-words">
-      {lines.slice(0, visibleCount).map((line, i) => (
-        <motion.div
-          key={i}
-          initial={style === 'slide_down' 
-            ? { opacity: 0, y: -12 } 
-            : { opacity: 0 }
-          }
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ 
-            duration: style === 'line_fade' ? 0.6 : 0.4, 
-            ease: 'easeOut' 
-          }}
-        >
-          {formatText(line)}
-        </motion.div>
-      ))}
+      {chunks.slice(0, visibleCount).map((chunk, i) => {
+        if (chunk === '\n') {
+          return <br key={`br-${i}`} />;
+        }
+
+        return (
+          <motion.span
+            key={`${chunk}-${i}`}
+            initial={style === 'slide_down' ? { opacity: 0, y: -8 } : { opacity: 0 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: style === 'line_fade' ? 0.35 : 0.25, ease: 'easeOut' }}
+            className="inline"
+          >
+            {formatText(chunk)}{' '}
+          </motion.span>
+        );
+      })}
     </div>
   );
 };
@@ -322,32 +347,36 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
     // Extract [Sources] section
     let mainText = cleanText;
     const sources: { title: string; url: string; favicon: string }[] = [];
-    // Match sources in multiple formats: "[Sources]:", "Sources:", numbered list with URLs at end
-    const sourcesMatch = cleanText.match(/\n\n?\*?\*?\[?Sources?\]?\*?\*?:?\s*\n([\s\S]+?)$/i) 
-      || cleanText.match(/\n\n?\(?Sources?:?\s*([\s\S]+?)\)?\s*$/i);
-    if (sourcesMatch) {
-      mainText = cleanText.slice(0, sourcesMatch.index!).trim();
-      const sourceLines = sourcesMatch[1].split('\n').filter(l => l.trim());
-      for (const line of sourceLines) {
-        const urlMatch = line.match(/(https?:\/\/[^\s\)\,]+)/);
-        if (urlMatch) {
-          const url = urlMatch[1].replace(/[.,;:]+$/, ''); // strip trailing punctuation
-          try {
-            const hostname = new URL(url).hostname;
-            const title = line
-              .replace(/^\d+\.\s*/, '')
-              .replace(/^[-•*]\s*/, '')
-              .replace(url, '')
-              .replace(/[\[\]\(\)]/g, '')
-              .replace(/[-–—:,]\s*$/, '')
-              .trim() || hostname.replace(/^www\./, '');
-            sources.push({ title, url, favicon: `https://www.google.com/s2/favicons?domain=${hostname}&sz=16` });
-          } catch {
-            sources.push({ title: url, url, favicon: '' });
-          }
+    const sourcesMap = new Map<string, { title: string; url: string; favicon: string }>();
+
+    const sourcesSectionMatch = cleanText.match(/\n{1,2}(?:\*{0,2}\[?sources?\]?\*{0,2}\s*:?\s*)\n([\s\S]+?)$/i);
+    if (sourcesSectionMatch) {
+      mainText = cleanText.slice(0, sourcesSectionMatch.index!).trim();
+      const sourcesText = sourcesSectionMatch[1];
+
+      const sourcePattern = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s),]+)/gi;
+      let sourceMatch: RegExpExecArray | null;
+
+      while ((sourceMatch = sourcePattern.exec(sourcesText)) !== null) {
+        const markdownTitle = sourceMatch[1]?.trim();
+        const rawUrl = (sourceMatch[2] || sourceMatch[3] || '').replace(/[.,;:]+$/, '');
+        if (!rawUrl || sourcesMap.has(rawUrl)) continue;
+
+        try {
+          const hostname = new URL(rawUrl).hostname;
+          const fallbackTitle = hostname.replace(/^www\./, '');
+          sourcesMap.set(rawUrl, {
+            title: markdownTitle || fallbackTitle,
+            url: rawUrl,
+            favicon: `https://www.google.com/s2/favicons?domain=${hostname}&sz=16`,
+          });
+        } catch {
+          sourcesMap.set(rawUrl, { title: markdownTitle || rawUrl, url: rawUrl, favicon: '' });
         }
       }
     }
+
+    sources.push(...sourcesMap.values());
 
     const parts: Array<{ type: 'text' | 'code' | 'media' | 'table'; content: string; language?: string; tableData?: { headers: string[]; rows: string[][] } }> = [];
     const codeBlockRegex = /```(\w+)?\n?([\s\S]*?)```/g;
@@ -381,22 +410,29 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
      return paragraphs.map((paragraph, pIndex) => {
        const lines = paragraph.split('\n');
        
-       const formattedLines = lines.map((line, lineIndex) => {
-         // Bold
-         line = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-         // Italic
-         line = line.replace(/\*(.*?)\*/g, '<em>$1</em>');
-         // Inline code
-         line = line.replace(/`([^`]+)`/g, '<code class="bg-muted px-1.5 py-0.5 rounded text-sm font-mono">$1</code>');
-         
+        const formattedLines = lines.map((rawLine, lineIndex) => {
+          const line = rawLine.trim();
+
+          if (/^---+$/.test(line)) {
+            return <hr key={`hr-${lineIndex}`} className="my-5 border-0 border-t border-border/70" />;
+          }
+
+          let formattedLine = rawLine;
+          // Bold
+          formattedLine = formattedLine.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+          // Italic
+          formattedLine = formattedLine.replace(/\*(.*?)\*/g, '<em>$1</em>');
+          // Inline code
+          formattedLine = formattedLine.replace(/`([^`]+)`/g, '<code class="bg-muted px-1.5 py-0.5 rounded text-sm font-mono">$1</code>');
+
           // Markdown links
-          line = line.replace(
-            /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, 
+          formattedLine = formattedLine.replace(
+            /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g,
             '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-xai-cyan hover:underline break-all">$1 ↗</a>'
           );
-          
+
           // Plain URLs - make them break properly on mobile
-          line = line.replace(
+          formattedLine = formattedLine.replace(
             /(?<!\])\((https?:\/\/[^\s\)]+)\)|(?<!["\(])(https?:\/\/[^\s<]+)(?!["\)])/g,
             (match, p1, p2) => {
               const url = p1 || p2;
@@ -405,29 +441,29 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
               return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-xai-cyan hover:underline break-all">${shortUrl} ↗</a>`;
             }
           );
-         
-         // Headers
-         if (line.startsWith('### ')) {
-           line = `<h3 class="text-lg font-semibold mt-3 mb-1.5">${line.slice(4)}</h3>`;
-         } else if (line.startsWith('## ')) {
-           line = `<h2 class="text-xl font-semibold mt-4 mb-2">${line.slice(3)}</h2>`;
-         } else if (line.startsWith('# ')) {
-           line = `<h1 class="text-2xl font-bold mt-4 mb-2">${line.slice(2)}</h1>`;
-         }
-         
-         // Bullet points
-         if (line.startsWith('- ') || line.startsWith('• ')) {
-           line = `<li class="ml-4 list-disc mb-1">${line.slice(2)}</li>`;
-         }
-         
-         // Numbered lists
-         const numberedMatch = line.match(/^(\d+)\.\s(.+)/);
-         if (numberedMatch) {
-           line = `<li class="ml-4 list-decimal mb-1" value="${numberedMatch[1]}">${numberedMatch[2]}</li>`;
-         }
-         
-         return <span key={lineIndex} dangerouslySetInnerHTML={{ __html: line || '<br/>' }} />;
-       });
+
+          // Headers
+          if (formattedLine.startsWith('### ')) {
+            formattedLine = `<h3 class="text-lg font-semibold mt-3 mb-1.5">${formattedLine.slice(4)}</h3>`;
+          } else if (formattedLine.startsWith('## ')) {
+            formattedLine = `<h2 class="text-xl font-semibold mt-4 mb-2">${formattedLine.slice(3)}</h2>`;
+          } else if (formattedLine.startsWith('# ')) {
+            formattedLine = `<h1 class="text-2xl font-bold mt-4 mb-2">${formattedLine.slice(2)}</h1>`;
+          }
+
+          // Bullet points
+          if (formattedLine.startsWith('- ') || formattedLine.startsWith('• ')) {
+            formattedLine = `<li class="ml-4 list-disc mb-1">${formattedLine.slice(2)}</li>`;
+          }
+
+          // Numbered lists
+          const numberedMatch = formattedLine.match(/^(\d+)\.\s(.+)/);
+          if (numberedMatch) {
+            formattedLine = `<li class="ml-4 list-decimal mb-1" value="${numberedMatch[1]}">${numberedMatch[2]}</li>`;
+          }
+
+          return <span key={lineIndex} dangerouslySetInnerHTML={{ __html: formattedLine || '<br/>' }} />;
+        });
        
        // Add margin between paragraphs
        return (
@@ -670,8 +706,10 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
         ) : (
         <div 
           className={cn(
-    "text-foreground leading-relaxed inline-block overflow-hidden",
-            isUser ? "bg-secondary rounded-2xl rounded-tr-sm px-4 py-2 break-words" : "w-full break-words overflow-wrap-anywhere"
+    "text-foreground leading-relaxed inline-block w-full",
+            isUser
+              ? "bg-secondary rounded-2xl rounded-tr-sm px-4 py-2 break-words overflow-hidden"
+              : "w-full break-words [overflow-wrap:anywhere]"
           )}
         >
           {parsedContent.parts.map((part, index) => 
