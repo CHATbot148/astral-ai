@@ -140,6 +140,13 @@ export const ChatContainer = () => {
   const isImageRequestLoose = (text: string) =>
     /(image|picture|photo|draw|generate|create|illustration|art)/i.test(text);
 
+  const shouldTriggerWebGrounding = (text: string) => {
+    const explicitSearch = /(search|look up|google|web search|find out|latest|current|news|breaking|happening|today|right now)/i.test(text);
+    const factualQuestion = /^(who|what|when|where|why|how)\b/i.test(text.trim());
+    const liveData = /(price|score|result|weather|stock|match|standings|headline|update)/i.test(text);
+    return explicitSearch || factualQuestion || liveData;
+  };
+
   // parseReminderRequest is now imported from @/lib/reminderParser
 
   const generateImageWithOptions = async (opts: ImageGenOptions): Promise<string | null> => {
@@ -266,7 +273,29 @@ export const ChatContainer = () => {
       toast({ title: 'Reminder failed', variant: 'destructive' });
     }
   };
+  const appendFallbackSources = async (answer: string, query: string) => {
+    const hasSourcesAlready = /\[sources?\]/i.test(answer) || /https?:\/\//i.test(answer);
+    if (hasSourcesAlready) return answer;
 
+    try {
+      const { data, error } = await supabase.functions.invoke('web-search', {
+        body: { query, type: 'web', count: 3 },
+      });
+
+      if (error || !Array.isArray(data?.results) || data.results.length === 0) {
+        return answer;
+      }
+
+      const sourcesBlock = `\n\n[Sources]\n${data.results
+        .slice(0, 3)
+        .map((r: { title?: string; url: string }, index: number) => `${index + 1}. [${r.title || r.url}](${r.url})`)
+        .join('\n')}`;
+
+      return `${answer.trim()}${sourcesBlock}`;
+    } catch {
+      return answer;
+    }
+  };
   const handleSend = async (content: string, files?: File[]) => {
     if (editingMessageId && currentConversation?.id) {
       const messageIndex = messages.findIndex(m => m.id === editingMessageId);
@@ -391,14 +420,14 @@ export const ChatContainer = () => {
         videoUrls: videoFileUrls,
       });
 
-      const searchIntent = /(search|look up|google|latest|news|happening|current|today|what(?:'s| is) going on|find out|tell me about|who is|who are|when did|where is)/i.test(content);
+      const shouldWebSearch = shouldTriggerWebGrounding(content);
       const imageIntent = /(show me (?:an? )?(?:image|picture|photo)|what does .+ look like)/i.test(content);
       const videoIntent = /(show me (?:a )?video|video tutorial)/i.test(content);
       const hasUploadedVideoFiles = (files || []).some((file) => file.type.startsWith('video/'));
       setTypingLabel(
         hasUploadedVideoFiles
           ? 'Reviewing video…'
-          : (searchIntent || imageIntent || videoIntent)
+          : (shouldWebSearch || imageIntent || videoIntent)
             ? 'Searching the web…'
             : undefined
       );
@@ -419,6 +448,8 @@ export const ChatContainer = () => {
             ? `User uploaded ${fileUrls.length} file(s): ${fileUrls.map((url) => url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) ? 'image' : 'document').join(', ')}`
             : undefined,
           userId: user?.id,
+          forceWebSearch: shouldWebSearch,
+          webSearchQuery: content,
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           clientTimeISO: new Date().toISOString(),
           aiMode: getAISettings().mode,
@@ -543,6 +574,11 @@ export const ChatContainer = () => {
               processedContent = processedContent.replace(match[0], '');
             }
           }
+
+          if (shouldWebSearch) {
+            processedContent = await appendFallbackSources(processedContent, content);
+          }
+
           await addMessage(convId, 'assistant', processedContent);
         }
       }

@@ -53,6 +53,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const conversationHistoryRef = useRef<Array<{ role: string; content: string }>>([]);
   const micAnalyserRef = useRef<AnalyserNode | null>(null);
   const micAnimFrameRef = useRef<number>(0);
+  const processingRunRef = useRef(0);
 
   useEffect(() => { selectedVoiceRef.current = selectedVoice; }, [selectedVoice]);
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
@@ -213,8 +214,11 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
   // --- Main pipeline: STT → Stream LLM → Progressive TTS ---
   const processAudio = useCallback(async (audioBlob: Blob) => {
-    if (!isActiveRef.current) return;
-    setStatus("listening");
+    if (!isActiveRef.current || isMutedRef.current) return;
+    const runId = ++processingRunRef.current;
+    const isRunActive = () => isActiveRef.current && !isMutedRef.current && runId === processingRunRef.current;
+
+    setStatus("processing");
     stopMicLevelTracking();
 
     try {
@@ -222,10 +226,12 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
       // 1. Speech-to-Text
       const transcript = await transcribeAudio(audioBlob, headers);
-      if (!transcript || !isActiveRef.current) {
-        if (isActiveRef.current && !isMutedRef.current) {
+      if (!transcript || !isRunActive()) {
+        if (isRunActive()) {
           setStatus("listening");
           startListening();
+        } else {
+          setStatus("idle");
         }
         return;
       }
@@ -245,6 +251,10 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       });
 
       if (!chatResponse.ok) throw new Error("Chat failed");
+      if (!isRunActive()) {
+        setStatus("idle");
+        return;
+      }
 
       // Parse SSE stream, detect sentence boundaries, fire TTS immediately
       const reader = chatResponse.body!.getReader();
@@ -265,10 +275,10 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       // Playback loop runs concurrently with streaming
       let playIndex = 0;
       const playbackLoop = async () => {
-        while (true) {
+        while (isRunActive()) {
           if (playIndex < ttsJobs.length) {
             const audio = await ttsJobs[playIndex];
-            if (audio && isActiveRef.current) {
+            if (audio && isRunActive()) {
               setStatus("speaking");
               await playAudioBuffer(audio);
             }
@@ -285,7 +295,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       const playbackPromise = playbackLoop();
 
       // Read SSE stream
-      while (!streamDone) {
+      while (!streamDone && isRunActive()) {
         const { done, value } = await reader.read();
         if (done) { streamDone = true; break; }
         sseBuffer += decoder.decode(value, { stream: true });
@@ -326,6 +336,10 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
       // Wait for all audio to finish playing
       await playbackPromise;
+      if (!isRunActive()) {
+        setStatus("idle");
+        return;
+      }
 
       // Save to history
       if (fullResponse) {
@@ -333,12 +347,8 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       }
 
       // Resume listening
-      if (isActiveRef.current && !isMutedRef.current) {
-        setStatus("listening");
-        startListening();
-      } else {
-        setStatus("idle");
-      }
+      setStatus("listening");
+      startListening();
     } catch (error) {
       console.error("Process error:", error);
       toast({ title: "Processing failed", variant: "destructive" });
@@ -374,11 +384,18 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
       mediaRecorder.onstop = () => {
         stopMicLevelTracking();
-        if (audioChunksRef.current.length > 0 && isActiveRef.current) {
+
+        if (isMutedRef.current || !isActiveRef.current) {
+          audioChunksRef.current = [];
+          setStatus("idle");
+          return;
+        }
+
+        if (audioChunksRef.current.length > 0) {
           const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || "audio/webm" });
           if (audioBlob.size > 1000) {
             processAudio(audioBlob);
-          } else if (isActiveRef.current && !isMutedRef.current) {
+          } else {
             setStatus("listening");
             startListening();
           }
@@ -405,8 +422,8 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       let silenceStart: number | null = null;
       let hasSpoken = false;
       const SILENCE_THRESHOLD = 15;
-      const SPEECH_THRESHOLD = 25;
-      const SILENCE_DURATION = 1100; // Fast cutoff for near-instant response
+      const SPEECH_THRESHOLD = 23;
+      const SILENCE_DURATION = 700; // Faster handoff into response
       const MAX_RECORD_TIME = 50000;
       const MAX_INITIAL_SILENCE = 8000;
       const recordStart = Date.now();
@@ -528,11 +545,13 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     isMutedRef.current = next;
 
     if (next) {
+      processingRunRef.current += 1;
       if (mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.stop();
       stopCurrentAudio();
       stopMicLevelTracking();
       setStatus("idle");
     } else if (isConnected) {
+      setStatus("listening");
       startListening();
     }
   }, [isMuted, isConnected, startListening, stopCurrentAudio, stopMicLevelTracking]);
