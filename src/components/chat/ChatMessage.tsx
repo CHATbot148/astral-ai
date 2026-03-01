@@ -9,7 +9,7 @@ import { MediaRenderer } from './MediaRenderer';
 import { resolveFileUrl } from '@/lib/storageRef';
 import { extractMediaFromMessage } from '@/utils/mediaDetector';
 import { useToast } from '@/hooks/use-toast';
-import astrazLogo from '@/assets/astraz-logo.png';
+
 
 interface ChatMessageProps {
   role: 'user' | 'assistant';
@@ -251,14 +251,29 @@ const SourcesChip = ({ sources }: { sources: { title: string; url: string; favic
 // Animated per-line reveal for line_fade and slide_down styles
 const AnimatedLines = ({ text, style, formatText }: { text: string; style: string; formatText: (t: string) => React.ReactNode }) => {
   const lines = text.split('\n');
+  const [visibleCount, setVisibleCount] = useState(0);
+
+  useEffect(() => {
+    if (visibleCount < lines.length) {
+      const timer = setTimeout(() => setVisibleCount(prev => prev + 1), 120);
+      return () => clearTimeout(timer);
+    }
+  }, [visibleCount, lines.length]);
+
   return (
     <div className="whitespace-pre-wrap break-words">
-      {lines.map((line, i) => (
+      {lines.slice(0, visibleCount).map((line, i) => (
         <motion.div
           key={i}
-          initial={{ opacity: 0, ...(style === 'slide_down' ? { y: -8 } : {}) }}
+          initial={style === 'slide_down' 
+            ? { opacity: 0, y: -12 } 
+            : { opacity: 0 }
+          }
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, delay: i * 0.04, ease: 'easeOut' }}
+          transition={{ 
+            duration: style === 'line_fade' ? 0.6 : 0.4, 
+            ease: 'easeOut' 
+          }}
         >
           {formatText(line)}
         </motion.div>
@@ -307,17 +322,25 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
     // Extract [Sources] section
     let mainText = cleanText;
     const sources: { title: string; url: string; favicon: string }[] = [];
-    const sourcesMatch = cleanText.match(/\n\n?\[?Sources?\]?:?\s*\n([\s\S]+?)$/i);
+    // Match sources in multiple formats: "[Sources]:", "Sources:", numbered list with URLs at end
+    const sourcesMatch = cleanText.match(/\n\n?\*?\*?\[?Sources?\]?\*?\*?:?\s*\n([\s\S]+?)$/i) 
+      || cleanText.match(/\n\n?\(?Sources?:?\s*([\s\S]+?)\)?\s*$/i);
     if (sourcesMatch) {
       mainText = cleanText.slice(0, sourcesMatch.index!).trim();
       const sourceLines = sourcesMatch[1].split('\n').filter(l => l.trim());
       for (const line of sourceLines) {
-        const urlMatch = line.match(/(https?:\/\/[^\s\)]+)/);
+        const urlMatch = line.match(/(https?:\/\/[^\s\)\,]+)/);
         if (urlMatch) {
-          const url = urlMatch[1];
+          const url = urlMatch[1].replace(/[.,;:]+$/, ''); // strip trailing punctuation
           try {
             const hostname = new URL(url).hostname;
-            const title = line.replace(/^\d+\.\s*/, '').replace(url, '').replace(/[-–—:]\s*$/, '').trim() || hostname;
+            const title = line
+              .replace(/^\d+\.\s*/, '')
+              .replace(/^[-•*]\s*/, '')
+              .replace(url, '')
+              .replace(/[\[\]\(\)]/g, '')
+              .replace(/[-–—:,]\s*$/, '')
+              .trim() || hostname.replace(/^www\./, '');
             sources.push({ title, url, favicon: `https://www.google.com/s2/favicons?domain=${hostname}&sz=16` });
           } catch {
             sources.push({ title: url, url, favicon: '' });
@@ -448,39 +471,14 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
       className={cn(
-        "flex gap-3 px-4 py-4 group w-full",
-        isUser ? "flex-row-reverse" : "flex-row",
+        "px-4 py-4 group w-full",
+        isUser ? "flex justify-end" : "",
       )}
     >
-      {/* Avatar */}
-      <motion.div
-        initial={{ scale: 0 }}
-        animate={{ scale: 1 }}
-        transition={{ delay: 0.1, type: 'spring', stiffness: 200 }}
-        className={cn(
-          "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden",
-          isUser
-            ? "bg-secondary"
-            : "bg-gradient-to-br from-xai-cyan to-xai-purple xai-glow"
-        )}
-      >
-        {isUser ? (
-          userAvatar ? (
-            <img src={userAvatar} alt="User" className="w-full h-full object-cover" />
-          ) : (
-            <span className="text-xs font-semibold">
-              {userName?.[0]?.toUpperCase() || 'U'}
-            </span>
-          )
-        ) : (
-          <img src={astrazLogo} alt="Astraz" className="w-full h-full object-cover" />
-        )}
-      </motion.div>
-
       {/* Content */}
       <div className={cn(
-        "flex-1 min-w-0 space-y-2 overflow-hidden",
-        isUser ? "text-right" : "text-left"
+        "min-w-0 space-y-2",
+        isUser ? "text-right max-w-[85%] ml-auto" : "text-left w-full"
       )}>
         <div className={cn("flex items-center gap-2", isUser ? "justify-end" : "justify-start")}>
           <span className="font-semibold text-sm">
@@ -673,7 +671,7 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
         <div 
           className={cn(
     "text-foreground leading-relaxed inline-block overflow-hidden",
-            isUser ? "bg-secondary rounded-2xl rounded-tr-sm px-4 py-2 max-w-[85%] break-words" : "max-w-full break-words overflow-wrap-anywhere"
+            isUser ? "bg-secondary rounded-2xl rounded-tr-sm px-4 py-2 break-words" : "w-full break-words overflow-wrap-anywhere"
           )}
         >
           {parsedContent.parts.map((part, index) => 
