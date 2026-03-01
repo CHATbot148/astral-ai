@@ -1,5 +1,4 @@
 import { motion } from 'framer-motion';
-import astrazLogo from '@/assets/astraz-logo.png';
 
 export const TypingIndicator = ({ label }: { label?: string }) => {
   return (
@@ -9,10 +8,6 @@ export const TypingIndicator = ({ label }: { label?: string }) => {
       exit={{ opacity: 0, y: -10 }}
       className="flex gap-3 px-4 py-4 max-w-full overflow-hidden"
     >
-      <div className="w-8 h-8 rounded-full overflow-hidden bg-gradient-to-br from-xai-cyan to-xai-purple flex-shrink-0">
-        <img src={astrazLogo} alt="Astraz" className="w-full h-full object-cover" />
-      </div>
-
       <div className="flex flex-col justify-center min-w-0">
         <div className="flex items-center gap-1.5 py-1">
           {[0, 0.15, 0.3].map((delay, i) => (

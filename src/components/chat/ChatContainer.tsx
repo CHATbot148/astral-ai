@@ -391,7 +391,7 @@ export const ChatContainer = () => {
         videoUrls: videoFileUrls,
       });
 
-      const searchIntent = /(search (?:for |the web for |online for )|look up |google |latest news|what(?:'s| is) happening)/i.test(content);
+      const searchIntent = /(search|look up|google|latest|news|happening|current|today|what(?:'s| is) going on|find out|tell me about|who is|who are|when did|where is)/i.test(content);
       const imageIntent = /(show me (?:an? )?(?:image|picture|photo)|what does .+ look like)/i.test(content);
       const videoIntent = /(show me (?:a )?video|video tutorial)/i.test(content);
       const hasUploadedVideoFiles = (files || []).some((file) => file.type.startsWith('video/'));
@@ -643,9 +643,6 @@ export const ChatContainer = () => {
                 )}
                 {(isGeneratingImage || isGeneratingVideo) && (
                   <div className="flex items-center gap-3 px-6 py-4">
-                    <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
-                      <img src={astrazLogo} alt="Astraz" className="w-full h-full object-cover" />
-                    </div>
                     <motion.span className="text-xai-cyan font-medium" animate={{ opacity: [1, 0.5, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>
                       {isGeneratingVideo ? '🎬 Generating video...' : '🎨 Generating image...'}
                     </motion.span>
