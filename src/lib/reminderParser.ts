@@ -10,8 +10,8 @@ const TRIGGER_RE =
 const TRIGGER_TIME_FIRST_RE =
   /(?:remind me|set a reminder|notify me|message me|alert me|wake me up)\s+(?:at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)\s+(?:to|about|for|that)\s+(.+)/i;
 
-/** Relative: "in 30 minutes", "in 2 hours", "in 1 day" */
-const RELATIVE_RE = /\b(?:in|after)\s+(\d+)\s+(seconds?|minutes?|mins?|hours?|hrs?|days?)\b/i;
+/** Relative: "in 30 minutes", "in 2 hours", "in one day" */
+const RELATIVE_RE = /\b(?:in|after)\s+(\d+|an?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s+(seconds?|minutes?|mins?|hours?|hrs?|days?)\b/i;
 
 /** Absolute: "at 3pm", "at 15:00", "at 10:30am", or standalone "6pm", "6:30pm" */
 const ABSOLUTE_RE = /\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i;
@@ -24,6 +24,31 @@ const TOMORROW_RE = /\btomorrow\b/i;
 
 /** Tonight qualifier */
 const TONIGHT_RE = /\btonight\b/i;
+
+const NUMBER_WORDS: Record<string, number> = {
+  a: 1,
+  an: 1,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
+  twenty: 20,
+};
 
 export interface ParsedReminder {
   /** The reminder content the user wants to be reminded about */
@@ -62,6 +87,13 @@ function cleanMessage(body: string, ...patterns: RegExp[]): string {
   return msg.replace(TOMORROW_RE, '').replace(TONIGHT_RE, '').replace(/\s{2,}/g, ' ').trim();
 }
 
+function parseAmount(rawAmount: string): number {
+  const normalized = rawAmount.trim().toLowerCase();
+  const asNumber = Number(normalized);
+  if (Number.isFinite(asNumber) && asNumber > 0) return asNumber;
+  return NUMBER_WORDS[normalized] ?? NaN;
+}
+
 /**
  * Returns null if the text isn't a reminder request.
  */
@@ -91,7 +123,7 @@ export function parseReminderRequest(text: string): ParsedReminder | null {
   // Try relative first
   const rel = body.match(RELATIVE_RE);
   if (rel) {
-    const amount = Number(rel[1]);
+    const amount = parseAmount(rel[1]);
     const unit = rel[2].toLowerCase();
     if (!Number.isFinite(amount) || amount <= 0) return null;
 

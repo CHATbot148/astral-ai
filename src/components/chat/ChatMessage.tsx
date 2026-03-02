@@ -174,10 +174,10 @@ function splitTextAndTables(
 // ChatGPT-style table component
 const TableBlock = ({ data }: { data: { headers: string[]; rows: string[][] } }) => {
   return (
-    <div className="my-3 w-full">
-      <div className="rounded-lg border border-border overflow-hidden bg-background/50">
-        <div className="w-full overflow-x-auto [overflow-y:hidden] [scrollbar-width:thin]">
-          <table className="min-w-[640px] w-full text-sm">
+    <div className="my-3 w-full max-w-full">
+      <div className="max-w-full rounded-lg border border-border overflow-hidden bg-background/50">
+        <div className="max-w-full overflow-x-auto [overflow-y:hidden] overscroll-x-contain touch-pan-x [-webkit-overflow-scrolling:touch]">
+          <table className="w-max min-w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-secondary/40">
                 {data.headers.map((h, i) => (
@@ -191,7 +191,7 @@ const TableBlock = ({ data }: { data: { headers: string[]; rows: string[][] } })
               {data.rows.map((row, ri) => (
                 <tr key={ri} className="border-b border-border last:border-0">
                   {row.map((cell, ci) => (
-                    <td key={ci} className="px-4 py-2.5 text-foreground/90 align-top" style={{ minWidth: '120px' }}>
+                    <td key={ci} className="px-4 py-2.5 text-foreground/90 align-top whitespace-nowrap min-w-[120px]">
                       <span dangerouslySetInnerHTML={{ __html: cell.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
                     </td>
                   ))}
