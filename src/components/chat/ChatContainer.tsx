@@ -354,6 +354,12 @@ export const ChatContainer = () => {
           return;
         }
 
+        const pushSupported = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
+        if (pushSupported) {
+          // Re-ensure subscription in case old endpoints expired
+          await subscribeToPush(user.id);
+        }
+
         try {
           const { data, error } = await supabase.functions.invoke('schedule-notification', {
             body: { message: reminder.message, scheduledFor: reminder.scheduledForISO, conversationId: convId, type: 'reminder' },

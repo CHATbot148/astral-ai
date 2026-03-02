@@ -218,7 +218,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     const runId = ++processingRunRef.current;
     const isRunActive = () => isActiveRef.current && !isMutedRef.current && runId === processingRunRef.current;
 
-    setStatus("processing");
+    setStatus("listening");
     stopMicLevelTracking();
 
     try {
@@ -568,7 +568,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const statusLabel =
     status === "connecting" ? "Connecting…" :
     status === "listening" ? "Listening…" :
-    status === "processing" ? "Thinking…" :
+    status === "processing" ? "Responding…" :
     status === "speaking" ? "Speaking…" : "Ready";
 
   const feminineVoices = VOICE_OPTIONS.filter(v => v.gender === "feminine");
@@ -595,7 +595,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
             "text-sm font-medium tracking-wide transition-colors",
             status === "speaking" ? "text-cyan-400" :
             status === "listening" ? "text-emerald-400" :
-            status === "processing" ? "text-purple-400" :
+            status === "processing" ? "text-cyan-300" :
             "text-white/40"
           )}>
             {statusLabel}

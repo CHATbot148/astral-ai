@@ -15,7 +15,7 @@ interface VoiceOrbProps {
 export const VoiceOrb = ({ status, isMuted, audioLevel = 0, className }: VoiceOrbProps) => {
   const isSpeaking = status === "speaking";
   const isListening = status === "listening";
-  const isProcessing = status === "processing" || status === "connecting";
+  const isProcessing = status === "connecting";
 
   // Dynamic scale based on audio level
   const levelScale = 1 + audioLevel * 0.25; // 1.0 – 1.25
