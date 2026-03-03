@@ -115,8 +115,8 @@ const CodeBlock = ({ language, code }: { language: string; code: string }) => {
 // Parse markdown table from lines
 function parseMarkdownTable(lines: string[]): { headers: string[]; rows: string[][] } | null {
   if (lines.length < 2) return null;
-  const parseRow = (line: string) => 
-    line.split('|').map(c => c.trim()).filter((_, i, a) => i > 0 && i < a.length);
+  const parseRow = (line: string) =>
+    line.split('|').map(c => c.trim()).filter((_, i, a) => i > 0 && i < a.length - 1);
   const headers = parseRow(lines[0]);
   if (headers.length === 0) return null;
   if (!lines[1].match(/^\|?[\s-:|]+\|?$/)) return null;
@@ -174,14 +174,14 @@ function splitTextAndTables(
 // ChatGPT-style table component
 const TableBlock = ({ data }: { data: { headers: string[]; rows: string[][] } }) => {
   return (
-    <div className="my-3 w-full max-w-full">
-      <div className="max-w-full rounded-lg border border-border overflow-hidden bg-background/50">
-        <div className="max-w-full overflow-x-auto [overflow-y:hidden] overscroll-x-contain touch-pan-x [-webkit-overflow-scrolling:touch]">
-          <table className="w-max min-w-full text-sm">
+    <div className="my-3 w-full min-w-0 max-w-full overflow-hidden">
+      <div className="w-full min-w-0 max-w-full rounded-lg border border-border overflow-hidden bg-background/50">
+        <div className="w-full min-w-0 max-w-full overflow-x-auto [overflow-y:hidden] overscroll-x-contain touch-pan-x [-webkit-overflow-scrolling:touch]">
+          <table className="w-max min-w-full table-auto text-sm">
             <thead>
               <tr className="border-b border-border bg-secondary/40">
                 {data.headers.map((h, i) => (
-                  <th key={i} className="text-left px-4 py-2.5 font-semibold text-foreground whitespace-nowrap">
+                  <th key={i} className="text-left px-3 py-2.5 font-semibold text-foreground align-top whitespace-normal break-words min-w-[120px]">
                     <span dangerouslySetInnerHTML={{ __html: h.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
                   </th>
                 ))}
@@ -191,7 +191,7 @@ const TableBlock = ({ data }: { data: { headers: string[]; rows: string[][] } })
               {data.rows.map((row, ri) => (
                 <tr key={ri} className="border-b border-border last:border-0">
                   {row.map((cell, ci) => (
-                    <td key={ci} className="px-4 py-2.5 text-foreground/90 align-top whitespace-nowrap min-w-[120px]">
+                    <td key={ci} className="px-3 py-2.5 text-foreground/90 align-top whitespace-normal break-words min-w-[120px] max-w-[260px]">
                       <span dangerouslySetInnerHTML={{ __html: cell.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
                     </td>
                   ))}
@@ -706,10 +706,10 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
         ) : (
         <div 
           className={cn(
-    "text-foreground leading-relaxed inline-block w-full",
+            "text-foreground leading-relaxed inline-block w-full min-w-0 max-w-full overflow-x-hidden",
             isUser
               ? "bg-secondary rounded-2xl rounded-tr-sm px-4 py-2 break-words overflow-hidden"
-              : "w-full break-words [overflow-wrap:anywhere]"
+              : "w-full min-w-0 max-w-full break-words [overflow-wrap:anywhere]"
           )}
         >
           {parsedContent.parts.map((part, index) => 

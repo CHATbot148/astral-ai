@@ -152,9 +152,17 @@ async function deliverReminderNow(params: {
     .eq("user_id", userId)
     .single();
 
+  const { data: pushSubs } = await supabase
+    .from("push_subscriptions")
+    .select("id")
+    .eq("user_id", userId)
+    .limit(1);
+
   const pref = profileData?.notification_preference || "push_and_email";
   const shouldEmail = pref === "push_and_email" || pref === "email_only";
   const shouldPush = pref === "push_and_email" || pref === "push_only";
+  const hasPushSubscription = Boolean(pushSubs && pushSubs.length > 0);
+  const effectiveShouldEmail = shouldEmail || (shouldPush && !hasPushSubscription);
 
   if (shouldPush) {
     try {
@@ -176,7 +184,7 @@ async function deliverReminderNow(params: {
     }
   }
 
-  if (brevoApiKey && shouldEmail) {
+  if (brevoApiKey && effectiveShouldEmail) {
     await sendEmail(brevoApiKey, userEmail, message, type);
   }
 

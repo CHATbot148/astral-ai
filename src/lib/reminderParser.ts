@@ -4,11 +4,15 @@
  */
 
 const TRIGGER_RE =
-  /(?:remind me|set a reminder|notify me|message me|alert me|wake me up)(?:\s+(?:to|about|for|that))?\s+(.+)/i;
+  /(?:remind me|set a reminder|notify me|message me|alert me|wake me up|ping me|nudge me|let me know)(?:\s+(?:to|about|for|that))?\s+(.+)/i;
 
 /** Also match "remind me at 6pm to ..." where the time comes right after trigger */
 const TRIGGER_TIME_FIRST_RE =
-  /(?:remind me|set a reminder|notify me|message me|alert me|wake me up)\s+(?:at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)\s+(?:to|about|for|that)\s+(.+)/i;
+  /(?:remind me|set a reminder|notify me|message me|alert me|wake me up|ping me|nudge me|let me know)\s+(?:at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)\s+(?:to|about|for|that)?\s*(.+)/i;
+
+/** Loose intent fallback to catch varied phrasing and minor wording differences */
+const REMINDER_INTENT_RE = /\b(remind(?:er)?|notify|notification|alert|alarm|wake|ping|nudge|remember\s+to|dont\s+forget|don't\s+forget|let\s+me\s+know)\b/i;
+const LEAD_REMINDER_PHRASE_RE = /^(?:please\s+)?(?:can\s+you\s+)?(?:remind(?: me)?|set(?: me)?(?: a)? reminder|notify me|alert me|wake me up|ping me|nudge me|let me know)(?:\s+(?:to|about|for|that))?\s*/i;
 
 /** Relative: "in 30 minutes", "in 2 hours", "in one day" */
 const RELATIVE_RE = /\b(?:in|after)\s+(\d+|an?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s+(seconds?|minutes?|mins?|hours?|hrs?|days?)\b/i;
@@ -98,8 +102,10 @@ function parseAmount(rawAmount: string): number {
  * Returns null if the text isn't a reminder request.
  */
 export function parseReminderRequest(text: string): ParsedReminder | null {
+  const normalizedText = text.replace(/\s+/g, ' ').trim();
+
   // Try "remind me at 6pm to drink water" pattern first
-  const timeFirst = text.match(TRIGGER_TIME_FIRST_RE);
+  const timeFirst = normalizedText.match(TRIGGER_TIME_FIRST_RE);
   if (timeFirst) {
     const hour = Number(timeFirst[1]);
     const minute = timeFirst[2] ? Number(timeFirst[2]) : 0;
@@ -107,7 +113,7 @@ export function parseReminderRequest(text: string): ParsedReminder | null {
     const message = timeFirst[4].trim();
     if (!message) return null;
 
-    const target = buildTargetDate(hour, minute, meridiem, text);
+    const target = buildTargetDate(hour, minute, meridiem, normalizedText);
     return {
       message,
       scheduledForISO: target.toISOString(),
@@ -115,10 +121,14 @@ export function parseReminderRequest(text: string): ParsedReminder | null {
     };
   }
 
-  const trigger = text.match(TRIGGER_RE);
-  if (!trigger) return null;
+  const trigger = normalizedText.match(TRIGGER_RE);
+  const fallbackIntent = REMINDER_INTENT_RE.test(normalizedText);
+  if (!trigger && !fallbackIntent) return null;
 
-  const body = trigger[1].trim();
+  const body = trigger
+    ? trigger[1].trim()
+    : normalizedText.replace(LEAD_REMINDER_PHRASE_RE, '').trim();
+  if (!body) return null;
 
   // Try relative first
   const rel = body.match(RELATIVE_RE);
@@ -154,12 +164,11 @@ export function parseReminderRequest(text: string): ParsedReminder | null {
     const target = buildTargetDate(hour, minute, meridiem, body);
     const message = cleanMessage(body, ABSOLUTE_RE);
     
-    // If no message extracted, use the original body without the time as a fallback
+    // If no message extracted, use body fallback without time phrase
     if (!message) {
-      // Try to get message from original text
-      const fallbackMsg = text.replace(TRIGGER_RE, '').trim() || 'Reminder';
+      const fallbackMsg = cleanMessage(body, ABSOLUTE_RE, STANDALONE_TIME_RE) || 'Reminder';
       return {
-        message: fallbackMsg || 'Reminder',
+        message: fallbackMsg,
         scheduledForISO: target.toISOString(),
         displayTime: target.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };

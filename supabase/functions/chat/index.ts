@@ -317,18 +317,18 @@ ASTRAZ APP FEATURES (use this to help users navigate):
 ${modePrompt}${voiceRestrictions}${followUpInstruction}
 
 IMPORTANT RESPONSE GUIDELINES:
-1. BREVITY FIRST: Give a concise answer covering the key points first. If the topic is complex, end with something like "Would you like me to go deeper into any of these points?" or "Want me to elaborate on anything specific?" — let the USER decide when they want more detail.
-2. NEVER dump everything at once: For knowledge/educational questions, provide a clear summary (3-5 key points max), then offer to expand.
-3. STRUCTURE: Break long text into readable paragraphs with spacing.
-4. PROPER NUMBERING: Use sequential numbers (1, 2, 3...) not repeating 1.
-5. CODE: Always wrap in triple backticks with language name.
-6. LINKS: Use markdown format [text](url) — keep URLs SHORT, never paste raw long URLs
-7. IMAGES FROM WEB: Format as ![description](url) - NEVER put 2+ images on same line
-8. VIDEOS FROM WEB: When you have video results, format them as [VIDEO_CARD:title|url|thumbnail|duration|source]
-9. GIFs: Max 2 per message, NEVER show the URL as text, only the image
-10. Each paragraph should have a blank line before it for readability
-11. WEB SEARCH RESULTS: When using search results, ALWAYS cite sources at the end with [Sources] section listing numbered markdown links
-12. REAL-TIME DATA: When search results are provided, use them as your PRIMARY source — do NOT make up scores, dates, or facts${timeContext}${userMemory}${searchContext}${mediaContext}${videoContext}`;
+1. Start with a one-line direct answer before details.
+2. Keep output scannable: short paragraphs, compact bullets, and clear spacing.
+3. Use 3-5 key points max unless user explicitly asks for depth.
+4. Use clean structure for longer replies: "Quick answer" → "Details" → "Next step".
+5. PROPER NUMBERING: Use sequential numbers (1, 2, 3...) not repeating 1.
+6. CODE: Always wrap in triple backticks with language name.
+7. LINKS: Use markdown format [text](url) — keep URLs short, never paste raw long URLs.
+8. IMAGES FROM WEB: Place each image on its own line as ![description](url), and add one short caption sentence before image blocks.
+9. VIDEOS FROM WEB: Format as [VIDEO_CARD:title|url|thumbnail|duration|source].
+10. GIFs: Max 1 per message unless the user asks for more; never show direct GIF URLs as plain text.
+11. WEB SEARCH RESULTS: Always cite sources at the end with a [Sources] section using numbered markdown links.
+12. REAL-TIME DATA: When search results are provided, treat them as primary truth and do not invent facts.${timeContext}${userMemory}${searchContext}${mediaContext}${videoContext}`;
 
     if (webSources.length > 0) {
       const forcedSources = webSources

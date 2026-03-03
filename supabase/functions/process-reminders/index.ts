@@ -57,9 +57,17 @@ serve(async (req) => {
           .eq("user_id", reminder.user_id)
           .single();
 
+        const { data: pushSubs } = await supabase
+          .from("push_subscriptions")
+          .select("id")
+          .eq("user_id", reminder.user_id)
+          .limit(1);
+
         const pref = profileData?.notification_preference || "push_and_email";
         const shouldEmail = pref === "push_and_email" || pref === "email_only";
         const shouldPush = pref === "push_and_email" || pref === "push_only";
+        const hasPushSubscription = Boolean(pushSubs && pushSubs.length > 0);
+        const effectiveShouldEmail = shouldEmail || (shouldPush && !hasPushSubscription);
 
         // Send Web Push notification
         if (shouldPush) {
@@ -86,7 +94,7 @@ serve(async (req) => {
 
         // Send email notification
         const BREVO_API_KEY = Deno.env.get("BREVO_API_KEY");
-        if (BREVO_API_KEY && reminder.email && shouldEmail) {
+        if (BREVO_API_KEY && reminder.email && effectiveShouldEmail) {
           try {
             console.log(`Sending reminder email to ${reminder.email}: ${reminder.message}`);
             const emailRes = await fetch("https://api.brevo.com/v3/smtp/email", {
