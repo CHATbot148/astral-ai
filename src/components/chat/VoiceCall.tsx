@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { PhoneOff, Mic, MicOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -38,7 +39,11 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const [selectedVoice, setSelectedVoice] = useState(() =>
     localStorage.getItem("xai-tts-voice") || "asteria"
   );
-  const [status, setStatus] = useState<"idle" | "connecting" | "listening" | "processing" | "speaking">("idle");
+  const [silenceCutoff, setSilenceCutoff] = useState<number>(() => {
+    const saved = Number(localStorage.getItem("xai-voice-silence-cutoff-ms"));
+    return Number.isFinite(saved) ? Math.min(800, Math.max(250, saved)) : 450;
+  });
+  const [status, setStatus] = useState<"idle" | "connecting" | "listening" | "speaking">("idle");
   const [isConnected, setIsConnected] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
 
@@ -49,6 +54,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const isActiveRef = useRef(true);
   const selectedVoiceRef = useRef(selectedVoice);
   const isMutedRef = useRef(isMuted);
+  const silenceCutoffRef = useRef(silenceCutoff);
   const audioContextRef = useRef<AudioContext | null>(null);
   const conversationHistoryRef = useRef<Array<{ role: string; content: string }>>([]);
   const micAnalyserRef = useRef<AnalyserNode | null>(null);
@@ -57,6 +63,10 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
   useEffect(() => { selectedVoiceRef.current = selectedVoice; }, [selectedVoice]);
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
+  useEffect(() => {
+    silenceCutoffRef.current = silenceCutoff;
+    localStorage.setItem("xai-voice-silence-cutoff-ms", String(silenceCutoff));
+  }, [silenceCutoff]);
 
   useEffect(() => {
     const t = setInterval(() => setCallDuration(Math.floor((Date.now() - callStart) / 1000)), 1000);
@@ -256,20 +266,47 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         return;
       }
 
-      // Parse SSE stream, detect sentence boundaries, fire TTS immediately
+      // Parse SSE stream, detect boundaries, and start TTS on partial chunks for duplex feel
       const reader = chatResponse.body!.getReader();
       const decoder = new TextDecoder();
       let sseBuffer = "";
       let fullResponse = "";
       let sentenceBuffer = "";
       let streamDone = false;
+      let lastChunkFlush = Date.now();
 
-      // TTS jobs fire as sentences are detected; played in order
+      const PARTIAL_CHUNK_MIN_CHARS = 24;
+      const PARTIAL_CHUNK_MAX_WAIT_MS = 260;
+
+      // TTS jobs fire as chunks are detected; played in order
       const ttsJobs: Promise<ArrayBuffer | null>[] = [];
 
-      const flushSentence = (sentence: string) => {
-        if (!sentence.trim()) return;
-        ttsJobs.push(fetchTTS(sentence.trim(), headers));
+      const flushChunk = (chunk: string) => {
+        const cleaned = chunk.trim();
+        if (!cleaned) return;
+        lastChunkFlush = Date.now();
+        ttsJobs.push(fetchTTS(cleaned, headers));
+      };
+
+      const tryFlushBuffered = (force = false) => {
+        const elapsed = Date.now() - lastChunkFlush;
+        const hasBoundary = /[.!?;,:\n]/.test(sentenceBuffer);
+        const longEnough = sentenceBuffer.trim().length >= PARTIAL_CHUNK_MIN_CHARS;
+        if (!force && !hasBoundary && !(longEnough && elapsed >= PARTIAL_CHUNK_MAX_WAIT_MS)) return;
+
+        if (hasBoundary) {
+          const idx = sentenceBuffer.search(/[.!?;,:\n]/);
+          const flushUntil = idx >= 0 ? idx + 1 : sentenceBuffer.length;
+          flushChunk(sentenceBuffer.slice(0, flushUntil));
+          sentenceBuffer = sentenceBuffer.slice(flushUntil);
+          return;
+        }
+
+        const splitAt = sentenceBuffer.lastIndexOf(" ");
+        if (splitAt > 10) {
+          flushChunk(sentenceBuffer.slice(0, splitAt));
+          sentenceBuffer = sentenceBuffer.slice(splitAt + 1);
+        }
       };
 
       // Playback loop runs concurrently with streaming
@@ -286,12 +323,12 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
           } else if (streamDone) {
             break;
           } else {
-            await new Promise(r => setTimeout(r, 30));
+            await new Promise(r => setTimeout(r, 20));
           }
         }
       };
 
-      // Start playback in background (will wait for first TTS to complete)
+      // Start playback in background (waits until first TTS chunk is ready)
       const playbackPromise = playbackLoop();
 
       // Read SSE stream
@@ -314,23 +351,17 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
             if (content) {
               fullResponse += content;
               sentenceBuffer += content;
-
-              // Detect sentence boundary — fire TTS on very short fragments for speed
-              const boundaryMatch = sentenceBuffer.match(/[.!?,;\n]/);
-              if (boundaryMatch && sentenceBuffer.length > 4) {
-                const idx = sentenceBuffer.lastIndexOf(boundaryMatch[0]) + 1;
-                const sentence = sentenceBuffer.slice(0, idx);
-                sentenceBuffer = sentenceBuffer.slice(idx);
-                flushSentence(sentence);
-              }
+              tryFlushBuffered();
             }
           } catch {}
         }
+
+        tryFlushBuffered();
       }
 
       // Flush any remaining text
       if (sentenceBuffer.trim()) {
-        flushSentence(sentenceBuffer);
+        flushChunk(sentenceBuffer);
       }
       streamDone = true;
 
@@ -423,7 +454,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       let hasSpoken = false;
       const SILENCE_THRESHOLD = 15;
       const SPEECH_THRESHOLD = 23;
-      const SILENCE_DURATION = 700; // Faster handoff into response
+      const SILENCE_DURATION = silenceCutoffRef.current;
       const MAX_RECORD_TIME = 50000;
       const MAX_INITIAL_SILENCE = 8000;
       const recordStart = Date.now();
@@ -568,7 +599,6 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const statusLabel =
     status === "connecting" ? "Connecting…" :
     status === "listening" ? "Listening…" :
-    status === "processing" ? "Responding…" :
     status === "speaking" ? "Speaking…" : "Ready";
 
   const feminineVoices = VOICE_OPTIONS.filter(v => v.gender === "feminine");
@@ -595,14 +625,13 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
             "text-sm font-medium tracking-wide transition-colors",
             status === "speaking" ? "text-cyan-400" :
             status === "listening" ? "text-emerald-400" :
-            status === "processing" ? "text-cyan-300" :
             "text-white/40"
           )}>
             {statusLabel}
           </p>
         </div>
 
-        <div className="w-full rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm p-3">
+        <div className="w-full rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm p-3 space-y-3">
           <select
             value={selectedVoice}
             onChange={(e) => {
@@ -620,6 +649,21 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
               {masculineVoices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
             </optgroup>
           </select>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs text-white/70">
+              <span>Silence cutoff</span>
+              <span>{silenceCutoff}ms</span>
+            </div>
+            <Slider
+              min={250}
+              max={800}
+              step={10}
+              value={[silenceCutoff]}
+              onValueChange={(value) => setSilenceCutoff(value[0] ?? 450)}
+              aria-label="Silence cutoff in milliseconds"
+            />
+          </div>
         </div>
 
         <div className="flex items-center gap-6">

@@ -104,6 +104,24 @@ export const useConversations = () => {
     }
   };
 
+  useEffect(() => {
+    if (!user || !currentConversation?.id) return;
+
+    const refreshCurrentConversation = () => {
+      if (document.visibilityState === 'visible') {
+        fetchMessages(currentConversation.id);
+      }
+    };
+
+    document.addEventListener('visibilitychange', refreshCurrentConversation);
+    window.addEventListener('focus', refreshCurrentConversation);
+
+    return () => {
+      document.removeEventListener('visibilitychange', refreshCurrentConversation);
+      window.removeEventListener('focus', refreshCurrentConversation);
+    };
+  }, [user, currentConversation?.id]);
+
   const selectConversation = async (conversation: Conversation) => {
     setCurrentConversation(conversation);
     await fetchMessages(conversation.id);

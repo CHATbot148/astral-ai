@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 interface VoiceOrbProps {
-  status: "idle" | "connecting" | "listening" | "processing" | "speaking";
+  status: "idle" | "connecting" | "listening" | "speaking";
   isMuted: boolean;
   audioLevel?: number; // 0-1, drives dynamic scaling
   className?: string;
@@ -15,7 +15,7 @@ interface VoiceOrbProps {
 export const VoiceOrb = ({ status, isMuted, audioLevel = 0, className }: VoiceOrbProps) => {
   const isSpeaking = status === "speaking";
   const isListening = status === "listening";
-  const isProcessing = status === "connecting";
+  const isConnecting = status === "connecting";
 
   // Dynamic scale based on audio level
   const levelScale = 1 + audioLevel * 0.25; // 1.0 – 1.25
@@ -38,11 +38,11 @@ export const VoiceOrb = ({ status, isMuted, audioLevel = 0, className }: VoiceOr
             : "radial-gradient(circle, rgba(255,255,255,0.05) 0%, transparent 70%)",
         }}
         animate={{
-          scale: (isSpeaking || isListening) ? ringScale : isProcessing ? [1, 1.05, 1] : 1,
+          scale: (isSpeaking || isListening) ? ringScale : isConnecting ? [1, 1.05, 1] : 1,
         }}
         transition={{
           duration: (isSpeaking || isListening) ? 0.1 : 2.5,
-          repeat: isProcessing ? Infinity : 0,
+          repeat: isConnecting ? Infinity : 0,
           ease: "easeOut",
         }}
       />
@@ -59,17 +59,17 @@ export const VoiceOrb = ({ status, isMuted, audioLevel = 0, className }: VoiceOr
             ? "rgba(0,200,255,0.4)"
             : isListening
             ? "rgba(16,185,129,0.3)"
-            : isProcessing
+            : isConnecting
             ? "rgba(139,92,246,0.3)"
             : "rgba(255,255,255,0.08)",
         }}
         animate={{
-          scale: (isSpeaking || isListening) ? ringScale * 1.02 : isProcessing ? [1, 1.03, 1] : [1, 1.01, 1],
-          rotate: isProcessing ? [0, 360] : 0,
+          scale: (isSpeaking || isListening) ? ringScale * 1.02 : isConnecting ? [1, 1.03, 1] : [1, 1.01, 1],
+          rotate: isConnecting ? [0, 360] : 0,
         }}
         transition={{
-          duration: (isSpeaking || isListening) ? 0.1 : isProcessing ? 3 : 3,
-          repeat: isProcessing ? Infinity : 0,
+          duration: (isSpeaking || isListening) ? 0.1 : isConnecting ? 3 : 3,
+          repeat: isConnecting ? Infinity : 0,
           ease: "easeOut",
         }}
       />
@@ -86,17 +86,17 @@ export const VoiceOrb = ({ status, isMuted, audioLevel = 0, className }: VoiceOr
             ? "rgba(139,92,246,0.35)"
             : isListening
             ? "rgba(0,200,255,0.2)"
-            : isProcessing
+            : isConnecting
             ? "rgba(0,200,255,0.2)"
             : "rgba(255,255,255,0.05)",
         }}
         animate={{
           scale: (isSpeaking || isListening) ? ringScale : [1, 1.005, 1],
-          rotate: isProcessing ? [0, -360] : 0,
+          rotate: isConnecting ? [0, -360] : 0,
         }}
         transition={{
-          duration: (isSpeaking || isListening) ? 0.1 : isProcessing ? 4 : 4,
-          repeat: isProcessing ? Infinity : 0,
+          duration: (isSpeaking || isListening) ? 0.1 : isConnecting ? 4 : 4,
+          repeat: isConnecting ? Infinity : 0,
           ease: "easeOut",
         }}
       />
@@ -106,11 +106,11 @@ export const VoiceOrb = ({ status, isMuted, audioLevel = 0, className }: VoiceOr
         className="relative rounded-full overflow-hidden"
         style={{ width: 160, height: 160 }}
         animate={{
-          scale: (isSpeaking || isListening) ? levelScale : isMuted ? 0.92 : isProcessing ? [1, 1.03, 1] : [1, 1.01, 1],
+          scale: (isSpeaking || isListening) ? levelScale : isMuted ? 0.92 : isConnecting ? [1, 1.03, 1] : [1, 1.01, 1],
         }}
         transition={{
           duration: (isSpeaking || isListening) ? 0.08 : 2.5,
-          repeat: isProcessing ? Infinity : 0,
+          repeat: isConnecting ? Infinity : 0,
           ease: "easeOut",
         }}
       >
@@ -124,15 +124,15 @@ export const VoiceOrb = ({ status, isMuted, audioLevel = 0, className }: VoiceOr
               ? "radial-gradient(circle at 40% 35%, #67e8f9 0%, #06b6d4 30%, #8b5cf6 70%, #6d28d9 100%)"
               : isListening
               ? "radial-gradient(circle at 40% 35%, #a7f3d0 0%, #10b981 40%, #06b6d4 80%, #0284c7 100%)"
-              : isProcessing
+              : isConnecting
               ? "radial-gradient(circle at 40% 35%, #c4b5fd 0%, #8b5cf6 40%, #06b6d4 80%, #0e7490 100%)"
               : "radial-gradient(circle at 40% 35%, #e2e8f0 0%, #94a3b8 40%, #475569 80%, #1e293b 100%)",
           }}
           animate={{
-            rotate: isProcessing ? [0, 360] : [0, 5, 0],
+            rotate: isConnecting ? [0, 360] : [0, 5, 0],
           }}
           transition={{
-            duration: isProcessing ? 6 : 8,
+            duration: isConnecting ? 6 : 8,
             repeat: Infinity,
             ease: "linear",
           }}
