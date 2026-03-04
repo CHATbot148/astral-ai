@@ -14,16 +14,18 @@ serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const BREVO_API_KEY = Deno.env.get("BREVO_API_KEY");
+
     if (!SUPABASE_URL || !SERVICE_ROLE_KEY) throw new Error("Backend not configured");
 
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
-    // Get all due pending reminders
     const { data: reminders, error: fetchErr } = await supabase
       .from("scheduled_notifications")
       .select("*")
       .eq("status", "pending")
       .lte("scheduled_for", new Date().toISOString())
+      .order("scheduled_for", { ascending: true })
       .limit(50);
 
     if (fetchErr) {
@@ -41,16 +43,20 @@ serve(async (req) => {
 
     for (const reminder of reminders) {
       try {
-        // Insert reminder message into the conversation
-        if (reminder.conversation_id) {
-          await supabase.from("messages").insert({
-            conversation_id: reminder.conversation_id,
-            role: "assistant",
-            content: `[REMINDER] 🔔 ${reminder.message}`,
-          });
+        const resolvedConversationId = await resolveConversationId(supabase, reminder.user_id, reminder.conversation_id);
+        const reminderContent = `[REMINDER] 🔔 ${reminder.message}`;
+
+        const messageInserted = resolvedConversationId
+          ? await ensureReminderMessage(supabase, resolvedConversationId, reminderContent)
+          : false;
+
+        if (resolvedConversationId && resolvedConversationId !== reminder.conversation_id) {
+          await supabase
+            .from("scheduled_notifications")
+            .update({ conversation_id: resolvedConversationId, updated_at: new Date().toISOString() })
+            .eq("id", reminder.id);
         }
 
-        // Check user's notification preference
         const { data: profileData } = await supabase
           .from("profiles")
           .select("notification_preference")
@@ -69,80 +75,30 @@ serve(async (req) => {
         const hasPushSubscription = Boolean(pushSubs && pushSubs.length > 0);
         const effectiveShouldEmail = shouldEmail || (shouldPush && !hasPushSubscription);
 
-        // Send Web Push notification
-        if (shouldPush) {
-          try {
-            const pushRes = await fetch(`${SUPABASE_URL}/functions/v1/send-push`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
-              },
-              body: JSON.stringify({
-                userId: reminder.user_id,
-                title: "⏰ Reminder from Astraz",
-                body: reminder.message,
-                url: "/",
-              }),
-            });
-            const pushData = await pushRes.json();
-            console.log(`Push result for ${reminder.user_id}:`, pushData);
-          } catch (pushErr) {
-            console.error("Push notification error:", pushErr);
-          }
+        const pushDelivered = shouldPush
+          ? await sendPushNotification(SUPABASE_URL, SERVICE_ROLE_KEY, reminder.user_id, reminder.message)
+          : false;
+
+        const fallbackEmail = reminder.email || (await getUserEmail(supabase, reminder.user_id));
+        const emailDelivered = BREVO_API_KEY && fallbackEmail && effectiveShouldEmail
+          ? await sendReminderEmail(BREVO_API_KEY, fallbackEmail, reminder.message)
+          : false;
+
+        const delivered = messageInserted || pushDelivered || emailDelivered;
+
+        if (delivered) {
+          await supabase
+            .from("scheduled_notifications")
+            .update({ status: "sent", updated_at: new Date().toISOString(), email: fallbackEmail || reminder.email })
+            .eq("id", reminder.id);
+          processed++;
+        } else {
+          console.warn("Reminder not delivered yet, will retry:", reminder.id);
+          await supabase
+            .from("scheduled_notifications")
+            .update({ updated_at: new Date().toISOString(), email: fallbackEmail || reminder.email })
+            .eq("id", reminder.id);
         }
-
-        // Send email notification
-        const BREVO_API_KEY = Deno.env.get("BREVO_API_KEY");
-        if (BREVO_API_KEY && reminder.email && effectiveShouldEmail) {
-          try {
-            console.log(`Sending reminder email to ${reminder.email}: ${reminder.message}`);
-            const emailRes = await fetch("https://api.brevo.com/v3/smtp/email", {
-              method: "POST",
-              headers: {
-                "api-key": BREVO_API_KEY,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                sender: { name: "Astraz", email: "xtechnly@gmail.com" },
-                to: [{ email: reminder.email }],
-                subject: `🔔 Reminder: ${reminder.message}`,
-                htmlContent: `
-                  <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-                    <div style="background: linear-gradient(135deg, #00CED1, #9B59B6); padding: 20px; border-radius: 12px 12px 0 0;">
-                      <h1 style="color: white; margin: 0;">⏰ Reminder</h1>
-                    </div>
-                    <div style="background: #f8f9fa; padding: 24px; border-radius: 0 0 12px 12px;">
-                      <p style="font-size: 16px; color: #333;">${reminder.message}</p>
-                      <a href="https://astraz.lovable.app" style="display: inline-block; background: linear-gradient(135deg, #00CED1, #9B59B6); color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 16px;">Open Astraz</a>
-                    </div>
-                    <p style="text-align: center; color: #888; font-size: 12px; margin-top: 16px;">
-                      Sent by Astraz, a product of X-Tech
-                    </p>
-                  </div>
-                `,
-              }),
-            });
-            if (!emailRes.ok) {
-              const errText = await emailRes.text();
-              console.error("Brevo email error:", emailRes.status, errText);
-            } else {
-              console.log("Reminder email sent successfully to", reminder.email);
-            }
-          } catch (emailErr) {
-            console.error("Email send error:", emailErr);
-          }
-        } else if (shouldEmail) {
-          console.log("Skipping email: BREVO_API_KEY exists:", !!BREVO_API_KEY, "email:", reminder.email);
-        }
-
-        // Mark as sent
-        await supabase
-          .from("scheduled_notifications")
-          .update({ status: "sent", updated_at: new Date().toISOString() })
-          .eq("id", reminder.id);
-
-        processed++;
       } catch (reminderErr) {
         console.error(`Error processing reminder ${reminder.id}:`, reminderErr);
       }
@@ -159,3 +115,143 @@ serve(async (req) => {
     );
   }
 });
+
+async function resolveConversationId(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  existingConversationId?: string | null,
+): Promise<string | null> {
+  if (existingConversationId) return existingConversationId;
+
+  const { data: latestConversation } = await supabase
+    .from("conversations")
+    .select("id")
+    .eq("user_id", userId)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return latestConversation?.id ?? null;
+}
+
+async function ensureReminderMessage(
+  supabase: ReturnType<typeof createClient>,
+  conversationId: string,
+  content: string,
+): Promise<boolean> {
+  const { data: existing } = await supabase
+    .from("messages")
+    .select("id")
+    .eq("conversation_id", conversationId)
+    .eq("role", "assistant")
+    .eq("content", content)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!existing) {
+    const { error: insertError } = await supabase.from("messages").insert({
+      conversation_id: conversationId,
+      role: "assistant",
+      content,
+    });
+    if (insertError) {
+      console.error("Reminder message insert error:", insertError);
+      return false;
+    }
+  }
+
+  await supabase
+    .from("conversations")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", conversationId);
+
+  return true;
+}
+
+async function sendPushNotification(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  userId: string,
+  message: string,
+): Promise<boolean> {
+  try {
+    const pushRes = await fetch(`${supabaseUrl}/functions/v1/send-push`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceRoleKey}`,
+      },
+      body: JSON.stringify({
+        userId,
+        title: "⏰ Reminder from Astraz",
+        body: message,
+        url: "/",
+      }),
+    });
+
+    if (!pushRes.ok) {
+      console.error("Push request failed:", pushRes.status, await pushRes.text());
+      return false;
+    }
+
+    const pushData = await pushRes.json().catch(() => ({}));
+    const sentCount = Number(pushData?.sent ?? 0);
+    return sentCount > 0;
+  } catch (error) {
+    console.error("Push notification error:", error);
+    return false;
+  }
+}
+
+async function getUserEmail(supabase: ReturnType<typeof createClient>, userId: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.auth.admin.getUserById(userId);
+    if (error) {
+      console.error("getUserById error:", error);
+      return null;
+    }
+    return data.user?.email ?? null;
+  } catch (error) {
+    console.error("getUserEmail error:", error);
+    return null;
+  }
+}
+
+async function sendReminderEmail(apiKey: string, to: string, message: string): Promise<boolean> {
+  try {
+    const emailRes = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sender: { name: "Astraz", email: "xtechnly@gmail.com" },
+        to: [{ email: to }],
+        subject: `🔔 Reminder: ${message}`,
+        htmlContent: `
+          <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: linear-gradient(135deg, #00CED1, #9B59B6); padding: 20px; border-radius: 12px 12px 0 0;">
+              <h1 style="color: white; margin: 0;">⏰ Reminder</h1>
+            </div>
+            <div style="background: #f8f9fa; padding: 24px; border-radius: 0 0 12px 12px;">
+              <p style="font-size: 16px; color: #333;">${message}</p>
+              <a href="https://astraz.lovable.app" style="display: inline-block; background: linear-gradient(135deg, #00CED1, #9B59B6); color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 16px;">Open Astraz</a>
+            </div>
+          </div>
+        `,
+      }),
+    });
+
+    if (!emailRes.ok) {
+      console.error("Brevo email error:", emailRes.status, await emailRes.text());
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Email send error:", error);
+    return false;
+  }
+}

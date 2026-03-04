@@ -41,7 +41,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   );
   const [silenceCutoff, setSilenceCutoff] = useState<number>(() => {
     const saved = Number(localStorage.getItem("xai-voice-silence-cutoff-ms"));
-    return Number.isFinite(saved) ? Math.min(800, Math.max(250, saved)) : 450;
+    return Number.isFinite(saved) ? Math.min(5500, Math.max(800, saved)) : 2300;
   });
   const [status, setStatus] = useState<"idle" | "connecting" | "listening" | "speaking">("idle");
   const [isConnected, setIsConnected] = useState(false);
@@ -653,15 +653,15 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-white/70">
               <span>Silence cutoff</span>
-              <span>{silenceCutoff}ms</span>
+              <span>{(silenceCutoff / 1000).toFixed(1)}s</span>
             </div>
             <Slider
-              min={250}
-              max={800}
-              step={10}
+              min={800}
+              max={5500}
+              step={100}
               value={[silenceCutoff]}
-              onValueChange={(value) => setSilenceCutoff(value[0] ?? 450)}
-              aria-label="Silence cutoff in milliseconds"
+              onValueChange={(value) => setSilenceCutoff(value[0] ?? 2300)}
+              aria-label="Silence cutoff in seconds"
             />
           </div>
         </div>

@@ -49,7 +49,6 @@ serve(async (req) => {
     const { message, scheduledFor, conversationId, type = "reminder" } = await req.json();
 
     const userEmail = user.email;
-    if (!userEmail) throw new Error("User email not found");
 
     const { data: inserted, error: insertError } = await supabase
       .from("scheduled_notifications")
@@ -76,21 +75,25 @@ serve(async (req) => {
         await sleep(delayMs);
       }
 
-      await deliverReminderNow({
+      const delivered = await deliverReminderNow({
         supabase,
         supabaseUrl: SUPABASE_URL,
         serviceRoleKey: SERVICE_ROLE_KEY,
         brevoApiKey: BREVO_API_KEY,
         notificationId: inserted.id,
         userId,
-        userEmail,
+        userEmail: userEmail || null,
         message,
         type,
         conversationId,
       });
 
       return new Response(
-        JSON.stringify({ success: true, sent: true, message: "Reminder delivered" }),
+        JSON.stringify({
+          success: true,
+          sent: delivered,
+          message: delivered ? "Reminder delivered" : "Reminder queued for retry",
+        }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
@@ -120,11 +123,11 @@ async function deliverReminderNow(params: {
   brevoApiKey: string | undefined;
   notificationId: string;
   userId: string;
-  userEmail: string;
+  userEmail: string | null;
   message: string;
   type: string;
   conversationId?: string | null;
-}) {
+}): Promise<boolean> {
   const {
     supabase,
     supabaseUrl,
@@ -138,12 +141,18 @@ async function deliverReminderNow(params: {
     conversationId,
   } = params;
 
-  if (conversationId) {
-    await supabase.from("messages").insert({
-      conversation_id: conversationId,
-      role: "assistant",
-      content: `[REMINDER] 🔔 ${message}`,
-    });
+  const resolvedConversationId = await resolveConversationId(supabase, userId, conversationId);
+  const reminderContent = `[REMINDER] 🔔 ${message}`;
+
+  const messageInserted = resolvedConversationId
+    ? await ensureReminderMessage(supabase, resolvedConversationId, reminderContent)
+    : false;
+
+  if (resolvedConversationId && resolvedConversationId !== conversationId) {
+    await supabase
+      .from("scheduled_notifications")
+      .update({ conversation_id: resolvedConversationId, updated_at: new Date().toISOString() })
+      .eq("id", notificationId);
   }
 
   const { data: profileData } = await supabase
@@ -164,37 +173,135 @@ async function deliverReminderNow(params: {
   const hasPushSubscription = Boolean(pushSubs && pushSubs.length > 0);
   const effectiveShouldEmail = shouldEmail || (shouldPush && !hasPushSubscription);
 
-  if (shouldPush) {
-    try {
-      await fetch(`${supabaseUrl}/functions/v1/send-push`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${serviceRoleKey}`,
-        },
-        body: JSON.stringify({
-          userId,
-          title: "⏰ Reminder from Astraz",
-          body: message,
-          url: "/",
-        }),
-      });
-    } catch (pushErr) {
-      console.error("Push notification error:", pushErr);
+  const pushDelivered = shouldPush
+    ? await sendPushNotification(supabaseUrl, serviceRoleKey, userId, message)
+    : false;
+
+  const fallbackEmail = userEmail || (await getUserEmail(supabase, userId));
+  const emailDelivered = brevoApiKey && fallbackEmail && effectiveShouldEmail
+    ? await sendEmail(brevoApiKey, fallbackEmail, message, type)
+    : false;
+
+  const delivered = messageInserted || pushDelivered || emailDelivered;
+
+  if (delivered) {
+    await supabase
+      .from("scheduled_notifications")
+      .update({ status: "sent", updated_at: new Date().toISOString(), email: fallbackEmail || userEmail })
+      .eq("id", notificationId);
+  } else {
+    await supabase
+      .from("scheduled_notifications")
+      .update({ updated_at: new Date().toISOString(), email: fallbackEmail || userEmail })
+      .eq("id", notificationId);
+  }
+
+  return delivered;
+}
+
+async function resolveConversationId(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  existingConversationId?: string | null,
+): Promise<string | null> {
+  if (existingConversationId) return existingConversationId;
+
+  const { data: latestConversation } = await supabase
+    .from("conversations")
+    .select("id")
+    .eq("user_id", userId)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return latestConversation?.id ?? null;
+}
+
+async function ensureReminderMessage(
+  supabase: ReturnType<typeof createClient>,
+  conversationId: string,
+  content: string,
+): Promise<boolean> {
+  const { data: existing } = await supabase
+    .from("messages")
+    .select("id")
+    .eq("conversation_id", conversationId)
+    .eq("role", "assistant")
+    .eq("content", content)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!existing) {
+    const { error: insertError } = await supabase.from("messages").insert({
+      conversation_id: conversationId,
+      role: "assistant",
+      content,
+    });
+    if (insertError) {
+      console.error("Reminder message insert error:", insertError);
+      return false;
     }
   }
 
-  if (brevoApiKey && effectiveShouldEmail) {
-    await sendEmail(brevoApiKey, userEmail, message, type);
-  }
-
   await supabase
-    .from("scheduled_notifications")
-    .update({ status: "sent", updated_at: new Date().toISOString() })
-    .eq("id", notificationId);
+    .from("conversations")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", conversationId);
+
+  return true;
 }
 
-async function sendEmail(apiKey: string, to: string, message: string, type: string) {
+async function sendPushNotification(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  userId: string,
+  message: string,
+): Promise<boolean> {
+  try {
+    const pushRes = await fetch(`${supabaseUrl}/functions/v1/send-push`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceRoleKey}`,
+      },
+      body: JSON.stringify({
+        userId,
+        title: "⏰ Reminder from Astraz",
+        body: message,
+        url: "/",
+      }),
+    });
+
+    if (!pushRes.ok) {
+      console.error("Push request failed:", pushRes.status, await pushRes.text());
+      return false;
+    }
+
+    const pushData = await pushRes.json().catch(() => ({}));
+    const sentCount = Number(pushData?.sent ?? 0);
+    return sentCount > 0;
+  } catch (pushErr) {
+    console.error("Push notification error:", pushErr);
+    return false;
+  }
+}
+
+async function getUserEmail(supabase: ReturnType<typeof createClient>, userId: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.auth.admin.getUserById(userId);
+    if (error) {
+      console.error("getUserById error:", error);
+      return null;
+    }
+    return data.user?.email ?? null;
+  } catch (error) {
+    console.error("getUserEmail error:", error);
+    return null;
+  }
+}
+
+async function sendEmail(apiKey: string, to: string, message: string, type: string): Promise<boolean> {
   const subject =
     type === "reminder"
       ? "🔔 Reminder from Astraz"
@@ -217,23 +324,31 @@ async function sendEmail(apiKey: string, to: string, message: string, type: stri
     </div>
   `;
 
-  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
-    method: "POST",
-    headers: {
-      "api-key": apiKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      sender: { name: "Astraz", email: "xtechnly@gmail.com" },
-      to: [{ email: to }],
-      subject,
-      htmlContent,
-    }),
-  });
+  try {
+    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sender: { name: "Astraz", email: "xtechnly@gmail.com" },
+        to: [{ email: to }],
+        subject,
+        htmlContent,
+      }),
+    });
 
-  if (!response.ok) {
-    const text = await response.text();
-    console.error("Brevo email error:", response.status, text);
+    if (!response.ok) {
+      const text = await response.text();
+      console.error("Brevo email error:", response.status, text);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("sendEmail error:", error);
+    return false;
   }
 }
 
