@@ -177,11 +177,11 @@ const TableBlock = ({ data }: { data: { headers: string[]; rows: string[][] } })
     <div className="my-3 w-full min-w-0 max-w-full overflow-hidden">
       <div className="w-full min-w-0 max-w-full rounded-lg border border-border overflow-hidden bg-background/50">
         <div className="w-full min-w-0 max-w-full overflow-x-auto [overflow-y:hidden] overscroll-x-contain touch-pan-x [-webkit-overflow-scrolling:touch]">
-          <table className="w-max min-w-full table-auto text-sm">
+          <table className="w-full min-w-[640px] table-fixed text-sm">
             <thead>
               <tr className="border-b border-border bg-secondary/40">
                 {data.headers.map((h, i) => (
-                  <th key={i} className="text-left px-3 py-2.5 font-semibold text-foreground align-top whitespace-normal break-words min-w-[120px]">
+                  <th key={i} className="text-left px-2.5 py-2.5 font-semibold text-foreground align-top min-w-[120px] whitespace-normal break-all [overflow-wrap:anywhere]">
                     <span dangerouslySetInnerHTML={{ __html: h.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
                   </th>
                 ))}
@@ -191,7 +191,7 @@ const TableBlock = ({ data }: { data: { headers: string[]; rows: string[][] } })
               {data.rows.map((row, ri) => (
                 <tr key={ri} className="border-b border-border last:border-0">
                   {row.map((cell, ci) => (
-                    <td key={ci} className="px-3 py-2.5 text-foreground/90 align-top whitespace-normal break-words min-w-[120px] max-w-[260px]">
+                    <td key={ci} className="px-2.5 py-2.5 text-foreground/90 align-top min-w-[120px] whitespace-normal break-all [overflow-wrap:anywhere]">
                       <span dangerouslySetInnerHTML={{ __html: cell.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
                     </td>
                   ))}
@@ -428,7 +428,7 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
           // Markdown links
           formattedLine = formattedLine.replace(
             /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g,
-            '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-xai-cyan hover:underline break-all">$1 ↗</a>'
+            '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline break-all">$1 ↗</a>'
           );
 
           // Plain URLs - make them break properly on mobile
@@ -438,7 +438,7 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
               const url = p1 || p2;
               if (!url) return match;
               const shortUrl = url.length > 50 ? url.slice(0, 47) + '...' : url;
-              return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-xai-cyan hover:underline break-all">${shortUrl} ↗</a>`;
+              return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline break-all">${shortUrl} ↗</a>`;
             }
           );
 

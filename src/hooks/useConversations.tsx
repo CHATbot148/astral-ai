@@ -53,17 +53,16 @@ export const useConversations = () => {
         },
         (payload) => {
           const newMsg = payload.new as Message;
-          // Only add if it belongs to the current conversation and we don't already have it
-          setMessages(prev => {
-            if (prev.some(m => m.id === newMsg.id)) return prev;
-            if (!currentConversation || newMsg.conversation_id !== currentConversation.id) return prev;
-            // Show browser notification for reminder messages
-            if (newMsg.content.startsWith('[REMINDER]') && 'Notification' in window && Notification.permission === 'granted') {
-              const reminderText = newMsg.content.replace('[REMINDER] ', '');
-              new Notification('Astraz Reminder', { body: reminderText, icon: '/astraz-icon.png' });
-            }
-            return [...prev, newMsg];
-          });
+          const isReminder = newMsg.content.startsWith('[REMINDER]');
+
+          if (isReminder && 'Notification' in window && Notification.permission === 'granted') {
+            const reminderText = newMsg.content.replace('[REMINDER] ', '');
+            new Notification('Astraz Reminder', { body: reminderText, icon: '/astraz-icon.png' });
+          }
+
+          if (!currentConversation || newMsg.conversation_id !== currentConversation.id) return;
+
+          setMessages(prev => (prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg]));
         }
       )
       .subscribe();
@@ -105,20 +104,23 @@ export const useConversations = () => {
   };
 
   useEffect(() => {
-    if (!user || !currentConversation?.id) return;
+    if (!user) return;
 
-    const refreshCurrentConversation = () => {
+    const refreshFromBackground = () => {
       if (document.visibilityState === 'visible') {
-        fetchMessages(currentConversation.id);
+        fetchConversations();
+        if (currentConversation?.id) {
+          fetchMessages(currentConversation.id);
+        }
       }
     };
 
-    document.addEventListener('visibilitychange', refreshCurrentConversation);
-    window.addEventListener('focus', refreshCurrentConversation);
+    document.addEventListener('visibilitychange', refreshFromBackground);
+    window.addEventListener('focus', refreshFromBackground);
 
     return () => {
-      document.removeEventListener('visibilitychange', refreshCurrentConversation);
-      window.removeEventListener('focus', refreshCurrentConversation);
+      document.removeEventListener('visibilitychange', refreshFromBackground);
+      window.removeEventListener('focus', refreshFromBackground);
     };
   }, [user, currentConversation?.id]);
 

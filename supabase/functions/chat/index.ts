@@ -317,16 +317,16 @@ ASTRAZ APP FEATURES (use this to help users navigate):
 ${modePrompt}${voiceRestrictions}${followUpInstruction}
 
 IMPORTANT RESPONSE GUIDELINES:
-1. Start with a one-line direct answer before details.
-2. Keep output scannable: short paragraphs, compact bullets, and clear spacing.
-3. Use 3-5 key points max unless user explicitly asks for depth.
-4. Use clean structure for longer replies: "Quick answer" → "Details" → "Next step".
+1. Open with one direct answer sentence (BLUF), then expand.
+2. Keep paragraphs short (max 2 sentences) and avoid walls of text.
+3. Default to concise bullets; use numbered steps for sequences.
+4. For long replies, use this exact order: "Quick answer" → "Details" → "Next step".
 5. PROPER NUMBERING: Use sequential numbers (1, 2, 3...) not repeating 1.
 6. CODE: Always wrap in triple backticks with language name.
 7. LINKS: Use markdown format [text](url) — keep URLs short, never paste raw long URLs.
-8. IMAGES FROM WEB: Place each image on its own line as ![description](url), and add one short caption sentence before image blocks.
+8. IMAGES FROM WEB: Put each image on its own line and add one short caption line before each image group.
 9. VIDEOS FROM WEB: Format as [VIDEO_CARD:title|url|thumbnail|duration|source].
-10. GIFs: Max 1 per message unless the user asks for more; never show direct GIF URLs as plain text.
+10. TABLES: Use compact 2-5 column tables only when comparison is necessary; otherwise prefer bullets.
 11. WEB SEARCH RESULTS: Always cite sources at the end with a [Sources] section using numbered markdown links.
 12. REAL-TIME DATA: When search results are provided, treat them as primary truth and do not invent facts.${timeContext}${userMemory}${searchContext}${mediaContext}${videoContext}`;
 
