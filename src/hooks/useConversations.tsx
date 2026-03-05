@@ -72,7 +72,7 @@ export const useConversations = () => {
     };
   }, [user, currentConversation?.id]);
 
-  const fetchConversations = async () => {
+  const fetchConversations = async (): Promise<Conversation[]> => {
     try {
       const { data, error } = await supabase
         .from('conversations')
@@ -80,9 +80,12 @@ export const useConversations = () => {
         .order('updated_at', { ascending: false });
 
       if (error) throw error;
-      setConversations(data || []);
+      const nextConversations = (data as Conversation[]) || [];
+      setConversations(nextConversations);
+      return nextConversations;
     } catch (error) {
       console.error('Error fetching conversations:', error);
+      return [];
     } finally {
       setLoading(false);
     }
@@ -106,12 +109,19 @@ export const useConversations = () => {
   useEffect(() => {
     if (!user) return;
 
-    const refreshFromBackground = () => {
-      if (document.visibilityState === 'visible') {
-        fetchConversations();
-        if (currentConversation?.id) {
-          fetchMessages(currentConversation.id);
-        }
+    const refreshFromBackground = async () => {
+      if (document.visibilityState !== 'visible') return;
+
+      const latestConversations = await fetchConversations();
+
+      if (currentConversation?.id) {
+        await fetchMessages(currentConversation.id);
+        return;
+      }
+
+      if (messages.length === 0 && latestConversations.length > 0) {
+        setCurrentConversation(latestConversations[0]);
+        await fetchMessages(latestConversations[0].id);
       }
     };
 
@@ -122,7 +132,7 @@ export const useConversations = () => {
       document.removeEventListener('visibilitychange', refreshFromBackground);
       window.removeEventListener('focus', refreshFromBackground);
     };
-  }, [user, currentConversation?.id]);
+  }, [user, currentConversation?.id, messages.length]);
 
   const selectConversation = async (conversation: Conversation) => {
     setCurrentConversation(conversation);

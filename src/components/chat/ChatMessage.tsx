@@ -174,14 +174,17 @@ function splitTextAndTables(
 // ChatGPT-style table component
 const TableBlock = ({ data }: { data: { headers: string[]; rows: string[][] } }) => {
   return (
-    <div className="my-3 w-full min-w-0 max-w-full overflow-hidden">
-      <div className="w-full min-w-0 max-w-full rounded-lg border border-border overflow-hidden bg-background/50">
+    <div className="my-2 w-full min-w-0 max-w-full">
+      <div className="w-full min-w-0 max-w-full rounded-lg border border-border bg-background/40">
         <div className="w-full min-w-0 max-w-full overflow-x-auto [overflow-y:hidden] overscroll-x-contain touch-pan-x [-webkit-overflow-scrolling:touch]">
-          <table className="w-full min-w-[640px] table-fixed text-sm">
+          <table className="w-max min-w-full table-auto text-sm">
             <thead>
               <tr className="border-b border-border bg-secondary/40">
                 {data.headers.map((h, i) => (
-                  <th key={i} className="text-left px-2.5 py-2.5 font-semibold text-foreground align-top min-w-[120px] whitespace-normal break-all [overflow-wrap:anywhere]">
+                  <th
+                    key={i}
+                    className="px-3 py-2.5 text-left align-top font-semibold text-foreground min-w-[8rem] max-w-[20rem] whitespace-normal break-words [overflow-wrap:anywhere]"
+                  >
                     <span dangerouslySetInnerHTML={{ __html: h.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
                   </th>
                 ))}
@@ -191,7 +194,10 @@ const TableBlock = ({ data }: { data: { headers: string[]; rows: string[][] } })
               {data.rows.map((row, ri) => (
                 <tr key={ri} className="border-b border-border last:border-0">
                   {row.map((cell, ci) => (
-                    <td key={ci} className="px-2.5 py-2.5 text-foreground/90 align-top min-w-[120px] whitespace-normal break-all [overflow-wrap:anywhere]">
+                    <td
+                      key={ci}
+                      className="px-3 py-2.5 align-top text-foreground/90 min-w-[8rem] max-w-[20rem] whitespace-normal break-words [overflow-wrap:anywhere]"
+                    >
                       <span dangerouslySetInnerHTML={{ __html: cell.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
                     </td>
                   ))}
@@ -401,78 +407,91 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
     return { parts, mediaItems, sources };
   }, [content]);
 
-  // Format text with markdown-like features
-   // Format text with markdown-like features and better paragraph spacing
-   const formatText = (text: string) => {
-     // Split by double newlines for paragraphs, then by single newlines for lines
-     const paragraphs = text.split(/\n\n+/);
-     
-     return paragraphs.map((paragraph, pIndex) => {
-       const lines = paragraph.split('\n');
-       
-        const formattedLines = lines.map((rawLine, lineIndex) => {
-          const line = rawLine.trim();
+  // Format text with strict sections + compact spacing for readability
+  const formatText = (text: string) => {
+    const formatInline = (value: string) => {
+      let formatted = value;
+      formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      formatted = formatted.replace(/\*(.*?)\*/g, '<em>$1</em>');
+      formatted = formatted.replace(/`([^`]+)`/g, '<code class="bg-muted px-1.5 py-0.5 rounded text-sm font-mono">$1</code>');
+      formatted = formatted.replace(
+        /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g,
+        '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline break-all">$1 ↗</a>'
+      );
+      formatted = formatted.replace(
+        /(?<!\])\((https?:\/\/[^\s\)]+)\)|(?<!["\(])(https?:\/\/[^\s<]+)(?!["\)])/g,
+        (match, p1, p2) => {
+          const url = p1 || p2;
+          if (!url) return match;
+          const shortUrl = url.length > 50 ? `${url.slice(0, 47)}...` : url;
+          return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline break-all">${shortUrl} ↗</a>`;
+        }
+      );
+      return formatted;
+    };
 
-          if (/^---+$/.test(line)) {
-            return <hr key={`hr-${lineIndex}`} className="my-5 border-0 border-t border-border/70" />;
-          }
+    const lines = text.split('\n');
 
-          let formattedLine = rawLine;
-          // Bold
-          formattedLine = formattedLine.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-          // Italic
-          formattedLine = formattedLine.replace(/\*(.*?)\*/g, '<em>$1</em>');
-          // Inline code
-          formattedLine = formattedLine.replace(/`([^`]+)`/g, '<code class="bg-muted px-1.5 py-0.5 rounded text-sm font-mono">$1</code>');
+    return lines.map((rawLine, lineIndex) => {
+      const line = rawLine.trim();
 
-          // Markdown links
-          formattedLine = formattedLine.replace(
-            /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g,
-            '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline break-all">$1 ↗</a>'
-          );
+      if (!line) return <div key={`space-${lineIndex}`} className="h-1.5" />;
+      if (/^---+$/.test(line)) return <hr key={`hr-${lineIndex}`} className="my-3 border-0 border-t border-border/70" />;
 
-          // Plain URLs - make them break properly on mobile
-          formattedLine = formattedLine.replace(
-            /(?<!\])\((https?:\/\/[^\s\)]+)\)|(?<!["\(])(https?:\/\/[^\s<]+)(?!["\)])/g,
-            (match, p1, p2) => {
-              const url = p1 || p2;
-              if (!url) return match;
-              const shortUrl = url.length > 50 ? url.slice(0, 47) + '...' : url;
-              return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline break-all">${shortUrl} ↗</a>`;
-            }
-          );
+      const sectionMatch = line.match(/^(quick answer|details|next step)\s*:\s*(.*)$/i);
+      if (sectionMatch) {
+        const sectionTitle = sectionMatch[1];
+        const sectionBody = sectionMatch[2];
+        return (
+          <div key={`section-${lineIndex}`} className="mt-2 first:mt-0">
+            <h3 className="text-sm font-semibold tracking-wide text-foreground/90 uppercase">{sectionTitle}</h3>
+            {sectionBody ? (
+              <p
+                className="mt-1 text-[0.95rem] leading-7 text-foreground"
+                dangerouslySetInnerHTML={{ __html: formatInline(sectionBody) }}
+              />
+            ) : null}
+          </div>
+        );
+      }
 
-          // Headers
-          if (formattedLine.startsWith('### ')) {
-            formattedLine = `<h3 class="text-lg font-semibold mt-3 mb-1.5">${formattedLine.slice(4)}</h3>`;
-          } else if (formattedLine.startsWith('## ')) {
-            formattedLine = `<h2 class="text-xl font-semibold mt-4 mb-2">${formattedLine.slice(3)}</h2>`;
-          } else if (formattedLine.startsWith('# ')) {
-            formattedLine = `<h1 class="text-2xl font-bold mt-4 mb-2">${formattedLine.slice(2)}</h1>`;
-          }
+      const markdownHeader = line.match(/^(#{1,3})\s+(.+)$/);
+      if (markdownHeader) {
+        const level = markdownHeader[1].length;
+        const body = formatInline(markdownHeader[2]);
+        const headerClass = level === 1 ? 'text-xl font-semibold mt-3' : level === 2 ? 'text-lg font-semibold mt-2.5' : 'text-base font-semibold mt-2';
+        return <p key={`header-${lineIndex}`} className={headerClass} dangerouslySetInnerHTML={{ __html: body }} />;
+      }
 
-          // Bullet points
-          if (formattedLine.startsWith('- ') || formattedLine.startsWith('• ')) {
-            formattedLine = `<li class="ml-4 list-disc mb-1">${formattedLine.slice(2)}</li>`;
-          }
+      const bulletMatch = line.match(/^[-•]\s+(.+)$/);
+      if (bulletMatch) {
+        return (
+          <div key={`bullet-${lineIndex}`} className="my-1 grid grid-cols-[1rem_minmax(0,1fr)] items-start gap-2 pl-1">
+            <span className="text-muted-foreground">•</span>
+            <span className="min-w-0 text-[0.95rem] leading-7 text-foreground" dangerouslySetInnerHTML={{ __html: formatInline(bulletMatch[1]) }} />
+          </div>
+        );
+      }
 
-          // Numbered lists
-          const numberedMatch = formattedLine.match(/^(\d+)\.\s(.+)/);
-          if (numberedMatch) {
-            formattedLine = `<li class="ml-4 list-decimal mb-1" value="${numberedMatch[1]}">${numberedMatch[2]}</li>`;
-          }
+      const numberedMatch = line.match(/^(\d+)[\.)]\s+(.+)$/);
+      if (numberedMatch) {
+        return (
+          <div key={`number-${lineIndex}`} className="my-1 grid grid-cols-[auto_minmax(0,1fr)] items-start gap-2 pl-1">
+            <span className="text-muted-foreground">{numberedMatch[1]}.</span>
+            <span className="min-w-0 text-[0.95rem] leading-7 text-foreground" dangerouslySetInnerHTML={{ __html: formatInline(numberedMatch[2]) }} />
+          </div>
+        );
+      }
 
-          return <span key={lineIndex} dangerouslySetInnerHTML={{ __html: formattedLine || '<br/>' }} />;
-        });
-       
-       // Add margin between paragraphs
-       return (
-         <div key={pIndex} className={pIndex > 0 ? 'mt-3' : ''}>
-           {formattedLines}
-         </div>
-       );
-     });
-   };
+      return (
+        <p
+          key={`paragraph-${lineIndex}`}
+          className="my-1.5 text-[0.95rem] leading-7 text-foreground"
+          dangerouslySetInnerHTML={{ __html: formatInline(rawLine) }}
+        />
+      );
+    });
+  };
 
   const isImageLike = (url: string) => {
     if (url.startsWith('data:image/')) return true;
@@ -706,9 +725,9 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
         ) : (
         <div 
           className={cn(
-            "text-foreground leading-relaxed inline-block w-full min-w-0 max-w-full overflow-x-hidden",
+            "text-foreground leading-relaxed inline-block w-full min-w-0 max-w-full",
             isUser
-              ? "bg-secondary rounded-2xl rounded-tr-sm px-4 py-2 break-words overflow-hidden"
+              ? "bg-secondary rounded-2xl rounded-tr-sm px-4 py-2 break-words [overflow-wrap:anywhere]"
               : "w-full min-w-0 max-w-full break-words [overflow-wrap:anywhere]"
           )}
         >

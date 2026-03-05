@@ -73,15 +73,16 @@ serve(async (req) => {
         const shouldEmail = pref === "push_and_email" || pref === "email_only";
         const shouldPush = pref === "push_and_email" || pref === "push_only";
         const hasPushSubscription = Boolean(pushSubs && pushSubs.length > 0);
-        const effectiveShouldEmail = shouldEmail || (shouldPush && !hasPushSubscription);
 
-        const pushDelivered = shouldPush
+        const shouldAttemptPush = shouldPush && hasPushSubscription;
+        const pushDelivered = shouldAttemptPush
           ? await sendPushNotification(SUPABASE_URL, SERVICE_ROLE_KEY, reminder.user_id, reminder.message)
           : false;
 
         const fallbackEmail = reminder.email || (await getUserEmail(supabase, reminder.user_id));
-        const emailDelivered = BREVO_API_KEY && fallbackEmail && effectiveShouldEmail
-          ? await sendReminderEmail(BREVO_API_KEY, fallbackEmail, reminder.message)
+        const shouldAttemptEmail = Boolean(BREVO_API_KEY && fallbackEmail) && (shouldEmail || !pushDelivered || !hasPushSubscription);
+        const emailDelivered = shouldAttemptEmail
+          ? await sendReminderEmail(BREVO_API_KEY!, fallbackEmail!, reminder.message)
           : false;
 
         const delivered = messageInserted || pushDelivered || emailDelivered;
@@ -131,7 +132,20 @@ async function resolveConversationId(
     .limit(1)
     .maybeSingle();
 
-  return latestConversation?.id ?? null;
+  if (latestConversation?.id) return latestConversation.id;
+
+  const { data: createdConversation, error: createError } = await supabase
+    .from("conversations")
+    .insert({ user_id: userId, title: "Reminders" })
+    .select("id")
+    .single();
+
+  if (createError) {
+    console.error("Failed to create fallback conversation for reminder:", createError);
+    return null;
+  }
+
+  return createdConversation.id;
 }
 
 async function ensureReminderMessage(
