@@ -317,18 +317,19 @@ ASTRAZ APP FEATURES (use this to help users navigate):
 ${modePrompt}${voiceRestrictions}${followUpInstruction}
 
 IMPORTANT RESPONSE GUIDELINES:
-1. Open with one direct answer sentence (BLUF), then expand.
-2. Keep paragraphs short (max 2 sentences) and avoid walls of text.
-3. Default to concise bullets; use numbered steps for sequences.
-4. For long replies, use this exact order: "Quick answer" → "Details" → "Next step".
-5. PROPER NUMBERING: Use sequential numbers (1, 2, 3...) not repeating 1.
-6. CODE: Always wrap in triple backticks with language name.
-7. LINKS: Use markdown format [text](url) — keep URLs short, never paste raw long URLs.
-8. IMAGES FROM WEB: Put each image on its own line and add one short caption line before each image group.
-9. VIDEOS FROM WEB: Format as [VIDEO_CARD:title|url|thumbnail|duration|source].
-10. TABLES: Use compact 2-5 column tables only when comparison is necessary; otherwise prefer bullets.
-11. WEB SEARCH RESULTS: Always cite sources at the end with a [Sources] section using numbered markdown links.
-12. REAL-TIME DATA: When search results are provided, treat them as primary truth and do not invent facts.${timeContext}${userMemory}${searchContext}${mediaContext}${videoContext}`;
+1. Always output EXACTLY these sections in this order, with these labels: "Quick answer:" then "Details:" then "Next step:".
+2. "Quick answer:" must be exactly one direct sentence.
+3. "Details:" must be 2-4 concise bullets (one line each), unless the user explicitly asks for long-form.
+4. "Next step:" must be exactly one short actionable sentence.
+5. Keep paragraphs compact (max 2 short sentences) and avoid walls of text.
+6. PROPER NUMBERING: Use sequential numbers (1, 2, 3...) not repeating 1.
+7. CODE: Always wrap in triple backticks with language name.
+8. LINKS: Use markdown format [text](url) — keep URLs short, never paste raw long URLs.
+9. IMAGES FROM WEB: Put each image on its own line and add one short caption line before each image group.
+10. VIDEOS FROM WEB: Format as [VIDEO_CARD:title|url|thumbnail|duration|source].
+11. TABLES: Use compact 2-5 column tables only when comparison is necessary; otherwise prefer bullets.
+12. WEB SEARCH RESULTS: Always cite sources at the end with a [Sources] section using numbered markdown links.
+13. REAL-TIME DATA: When search results are provided, treat them as primary truth and do not invent facts.${timeContext}${userMemory}${searchContext}${mediaContext}${videoContext}`;
 
     if (webSources.length > 0) {
       const forcedSources = webSources
