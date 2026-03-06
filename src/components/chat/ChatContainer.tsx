@@ -52,6 +52,7 @@ export const ChatContainer = () => {
   const [profile, setProfile] = useState<{ full_name: string | null; avatar_url: string | null } | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [typingLabel, setTypingLabel] = useState<string | undefined>(undefined);
+  const [typingMode, setTypingMode] = useState<'typing' | 'search'>('typing');
   const [showVoiceCall, setShowVoiceCall] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -105,6 +106,30 @@ export const ChatContainer = () => {
     const resolvedAvatar = data.avatar_url ? await resolveFileUrl(data.avatar_url, { expiresIn: 60 * 60 * 24 * 7 }) : null;
     setProfile({ ...data, avatar_url: resolvedAvatar });
   };
+
+  useEffect(() => {
+    if (!user) return;
+
+    const ensurePushSubscription = async () => {
+      try {
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('notifications_enabled, notification_preference')
+          .eq('user_id', user.id)
+          .single();
+
+        if (!profileData?.notifications_enabled) return;
+        if (profileData.notification_preference === 'email_only') return;
+        if (Notification.permission !== 'granted') return;
+
+        await subscribeToPush(user.id);
+      } catch (error) {
+        console.warn('Push re-subscribe check failed:', error);
+      }
+    };
+
+    ensurePushSubscription();
+  }, [user?.id]);
 
   const extractAndSaveMemory = async (content: string) => {
     if (!user) return;
@@ -240,6 +265,7 @@ export const ChatContainer = () => {
     setIsGeneratingImage(false);
     setIsGeneratingVideo(false);
     setTypingLabel(undefined);
+    setTypingMode('typing');
   };
 
   const handleNotificationAction = async (action: 'accept' | 'cancel', data: any) => {
@@ -317,6 +343,7 @@ export const ChatContainer = () => {
     setIsLoading(true);
     setStreamingContent('');
     setTypingLabel(undefined);
+    setTypingMode('typing');
     abortControllerRef.current = new AbortController();
 
     try {
@@ -430,11 +457,14 @@ export const ChatContainer = () => {
       const imageIntent = /(show me (?:an? )?(?:image|picture|photo)|what does .+ look like)/i.test(content);
       const videoIntent = /(show me (?:a )?video|video tutorial)/i.test(content);
       const hasUploadedVideoFiles = (files || []).some((file) => file.type.startsWith('video/'));
+      const searchQueryLabel = content.replace(/^search\s+for\s*:\s*/i, '').trim();
+      const isWebSearchState = (shouldWebSearch || imageIntent || videoIntent) && !hasUploadedVideoFiles;
+      setTypingMode(isWebSearchState ? 'search' : 'typing');
       setTypingLabel(
         hasUploadedVideoFiles
           ? 'Reviewing video…'
-          : (shouldWebSearch || imageIntent || videoIntent)
-            ? 'Searching the web…'
+          : isWebSearchState
+            ? `Searching for ${searchQueryLabel}`
             : undefined
       );
 
@@ -603,6 +633,7 @@ export const ChatContainer = () => {
     } finally {
       setIsLoading(false);
       setTypingLabel(undefined);
+      setTypingMode('typing');
       setIsGeneratingImage(false);
       abortControllerRef.current = null;
     }
@@ -663,11 +694,11 @@ export const ChatContainer = () => {
         <ScrollArea ref={scrollRef} className="flex-1">
           <AnimatePresence mode="wait">
             {displayMessages.length === 0 ? (
-              <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pt-14 lg:pt-4">
                 <WelcomeScreen onSuggestionClick={handleSend} onGenerateImage={() => openImageDialog()} />
               </motion.div>
             ) : (
-              <motion.div key="messages" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto">
+              <motion.div key="messages" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto pt-14 lg:pt-4">
                 {displayMessages.map((msg) => {
                   const userMessages = displayMessages.filter(m => m.role === 'user');
                   const userMsgIndex = userMessages.findIndex(m => m.id === msg.id);
@@ -681,7 +712,7 @@ export const ChatContainer = () => {
                   );
                 })}
                 {isLoading && !streamingContent && !isGeneratingImage && !isGeneratingVideo && (
-                  <TypingIndicator label={typingLabel} />
+                  <TypingIndicator label={typingLabel} mode={typingMode} />
                 )}
                 {(isGeneratingImage || isGeneratingVideo) && (
                   <div className="flex items-center gap-3 px-6 py-4">

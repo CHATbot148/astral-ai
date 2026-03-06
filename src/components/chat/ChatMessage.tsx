@@ -174,16 +174,16 @@ function splitTextAndTables(
 // ChatGPT-style table component
 const TableBlock = ({ data }: { data: { headers: string[]; rows: string[][] } }) => {
   return (
-    <div className="my-2 w-full min-w-0 max-w-full">
-      <div className="w-full min-w-0 max-w-full rounded-lg border border-border bg-background/40">
-        <div className="w-full min-w-0 max-w-full overflow-x-auto [overflow-y:hidden] overscroll-x-contain touch-pan-x [-webkit-overflow-scrolling:touch]">
+    <div className="my-2 block w-full min-w-0 max-w-[calc(100vw-2.5rem)] sm:max-w-full overflow-hidden">
+      <div className="w-full min-w-0 rounded-lg border border-border bg-background/40 overflow-hidden">
+        <div className="w-full min-w-0 overflow-x-auto [overflow-y:hidden] overscroll-x-contain touch-pan-x [-webkit-overflow-scrolling:touch]">
           <table className="w-max min-w-full table-auto text-sm">
             <thead>
               <tr className="border-b border-border bg-secondary/40">
                 {data.headers.map((h, i) => (
                   <th
                     key={i}
-                    className="px-3 py-2.5 text-left align-top font-semibold text-foreground min-w-[8rem] max-w-[20rem] whitespace-normal break-words [overflow-wrap:anywhere]"
+                    className="px-3 py-2.5 text-left align-top font-semibold text-foreground min-w-[7.5rem] max-w-[18rem] whitespace-normal break-words [overflow-wrap:anywhere]"
                   >
                     <span dangerouslySetInnerHTML={{ __html: h.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
                   </th>
@@ -196,7 +196,7 @@ const TableBlock = ({ data }: { data: { headers: string[]; rows: string[][] } })
                   {row.map((cell, ci) => (
                     <td
                       key={ci}
-                      className="px-3 py-2.5 align-top text-foreground/90 min-w-[8rem] max-w-[20rem] whitespace-normal break-words [overflow-wrap:anywhere]"
+                      className="px-3 py-2.5 align-top text-foreground/90 min-w-[7.5rem] max-w-[18rem] whitespace-normal break-words [overflow-wrap:anywhere]"
                     >
                       <span dangerouslySetInnerHTML={{ __html: cell.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
                     </td>
@@ -443,15 +443,10 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
         const sectionTitle = sectionMatch[1];
         const sectionBody = sectionMatch[2];
         return (
-          <div key={`section-${lineIndex}`} className="mt-2 first:mt-0">
-            <h3 className="text-sm font-semibold tracking-wide text-foreground/90 uppercase">{sectionTitle}</h3>
-            {sectionBody ? (
-              <p
-                className="mt-1 text-[0.95rem] leading-7 text-foreground"
-                dangerouslySetInnerHTML={{ __html: formatInline(sectionBody) }}
-              />
-            ) : null}
-          </div>
+          <p key={`section-inline-${lineIndex}`} className="my-1.5 text-[0.95rem] leading-7 text-foreground">
+            <span className="font-semibold text-foreground/90">{sectionTitle}:</span>{' '}
+            <span dangerouslySetInnerHTML={{ __html: formatInline(sectionBody) }} />
+          </p>
         );
       }
 
@@ -466,8 +461,8 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
       const bulletMatch = line.match(/^[-•]\s+(.+)$/);
       if (bulletMatch) {
         return (
-          <div key={`bullet-${lineIndex}`} className="my-1 grid grid-cols-[1rem_minmax(0,1fr)] items-start gap-2 pl-1">
-            <span className="text-muted-foreground">•</span>
+          <div key={`bullet-${lineIndex}`} className="my-1 grid grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-2 pl-3 pr-1">
+            <span className="pt-0.5 text-muted-foreground">•</span>
             <span className="min-w-0 text-[0.95rem] leading-7 text-foreground" dangerouslySetInnerHTML={{ __html: formatInline(bulletMatch[1]) }} />
           </div>
         );
@@ -476,8 +471,8 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
       const numberedMatch = line.match(/^(\d+)[\.)]\s+(.+)$/);
       if (numberedMatch) {
         return (
-          <div key={`number-${lineIndex}`} className="my-1 grid grid-cols-[auto_minmax(0,1fr)] items-start gap-2 pl-1">
-            <span className="text-muted-foreground">{numberedMatch[1]}.</span>
+          <div key={`number-${lineIndex}`} className="my-1 grid grid-cols-[auto_minmax(0,1fr)] items-start gap-2 pl-3 pr-1">
+            <span className="pt-0.5 text-muted-foreground">{numberedMatch[1]}.</span>
             <span className="min-w-0 text-[0.95rem] leading-7 text-foreground" dangerouslySetInnerHTML={{ __html: formatInline(numberedMatch[2]) }} />
           </div>
         );
@@ -526,14 +521,14 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
       className={cn(
-        "px-4 py-4 group w-full",
+        "px-4 py-4 group w-full overflow-x-clip",
         isUser ? "flex justify-end" : "",
       )}
     >
       {/* Content */}
       <div className={cn(
         "min-w-0 space-y-2",
-        isUser ? "text-right max-w-[85%] ml-auto" : "text-left w-full"
+        isUser ? "text-right max-w-full ml-auto" : "text-left w-full"
       )}>
         <div className={cn("flex items-center gap-2", isUser ? "justify-end" : "justify-start")}>
           <span className="font-semibold text-sm">
@@ -725,9 +720,9 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
         ) : (
         <div 
           className={cn(
-            "text-foreground leading-relaxed inline-block w-full min-w-0 max-w-full",
+            "text-foreground leading-relaxed inline-block max-w-full min-w-0",
             isUser
-              ? "bg-secondary rounded-2xl rounded-tr-sm px-4 py-2 break-words [overflow-wrap:anywhere]"
+              ? "bg-secondary rounded-2xl rounded-tr-sm px-4 py-2 w-fit max-w-[85vw] sm:max-w-[70ch] ml-auto break-words [overflow-wrap:anywhere]"
               : "w-full min-w-0 max-w-full break-words [overflow-wrap:anywhere]"
           )}
         >
