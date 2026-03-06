@@ -16,7 +16,7 @@ serve(async (req) => {
     const LEONARDO_API_KEY = Deno.env.get("LEONARDO_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
-    const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const BREVO_API_KEY = Deno.env.get("BREVO_API_KEY");
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) throw new Error("Backend not configured");
     if (!LEONARDO_API_KEY) throw new Error("Video generation API key not configured");
@@ -113,7 +113,7 @@ serve(async (req) => {
       
       // If text-to-video not available, fallback to image → motion SVD
       console.log("Falling back to image → motion SVD approach...");
-      return await imageToMotionFallback(req, prompt, LEONARDO_API_KEY, SUPABASE_URL, SERVICE_ROLE_KEY, userId);
+        return await imageToMotionFallback(req, prompt, LEONARDO_API_KEY, SUPABASE_URL, SERVICE_ROLE_KEY, userId, BREVO_API_KEY);
     }
 
     const createData = await createRes.json();
@@ -124,7 +124,7 @@ serve(async (req) => {
     if (!generationId) {
       console.error("No generationId from text-to-video:", JSON.stringify(createData));
       // Fallback
-      return await imageToMotionFallback(req, prompt, LEONARDO_API_KEY, SUPABASE_URL, SERVICE_ROLE_KEY, userId);
+      return await imageToMotionFallback(req, prompt, LEONARDO_API_KEY, SUPABASE_URL, SERVICE_ROLE_KEY, userId, BREVO_API_KEY);
     }
 
     console.log(`Text-to-video generation started, ID: ${generationId}`);
@@ -183,6 +183,17 @@ serve(async (req) => {
       });
     }
 
+    await notifyUserMediaReady({
+      admin,
+      supabaseUrl: SUPABASE_URL,
+      serviceRoleKey: SERVICE_ROLE_KEY,
+      brevoApiKey: BREVO_API_KEY,
+      userId,
+      prompt,
+      mediaType: "video",
+      mediaRef: ref,
+    });
+
     return new Response(JSON.stringify({ video: ref }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -197,7 +208,7 @@ serve(async (req) => {
 // Fallback: generate image first, then apply motion SVD
 async function imageToMotionFallback(
   _req: Request, prompt: string, apiKey: string,
-  supabaseUrl: string, serviceRoleKey: string, userId: string
+  supabaseUrl: string, serviceRoleKey: string, userId: string, brevoApiKey?: string
 ) {
   console.log("Using image → motion SVD fallback");
 
@@ -314,7 +325,112 @@ async function imageToMotionFallback(
     });
   }
 
+  await notifyUserMediaReady({
+    admin,
+    supabaseUrl,
+    serviceRoleKey,
+    brevoApiKey,
+    userId,
+    prompt,
+    mediaType: "video",
+    mediaRef: ref,
+  });
+
   return new Response(JSON.stringify({ video: ref }), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+async function notifyUserMediaReady(params: {
+  admin: ReturnType<typeof createClient>;
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  brevoApiKey: string | undefined;
+  userId: string;
+  prompt: string;
+  mediaType: "image" | "video";
+  mediaRef: string;
+}) {
+  const { admin, supabaseUrl, serviceRoleKey, brevoApiKey, userId, prompt, mediaType, mediaRef } = params;
+
+  if (userId === "anonymous") return;
+
+  const content = mediaType === "image"
+    ? `🖼️ Your generated image is ready: "${prompt}"`
+    : `🎬 Your generated video is ready: "${prompt}"`;
+
+  const { data: latestConversation } = await admin
+    .from("conversations")
+    .select("id")
+    .eq("user_id", userId)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const conversationId = latestConversation?.id;
+  if (conversationId) {
+    await admin.from("messages").insert({
+      conversation_id: conversationId,
+      role: "assistant",
+      content,
+      file_urls: [mediaRef],
+    });
+    await admin.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
+  }
+
+  const { data: profileData } = await admin
+    .from("profiles")
+    .select("notification_preference, notifications_enabled")
+    .eq("user_id", userId)
+    .single();
+
+  if (!profileData?.notifications_enabled) return;
+
+  const pref = profileData.notification_preference || "push_and_email";
+  const shouldPush = pref === "push_and_email" || pref === "push_only";
+  const shouldEmail = pref === "push_and_email" || pref === "email_only";
+
+  let pushDelivered = false;
+  if (shouldPush) {
+    const { data: pushSubs } = await admin.from("push_subscriptions").select("id").eq("user_id", userId).limit(1);
+    if ((pushSubs?.length ?? 0) > 0) {
+      const pushRes = await fetch(`${supabaseUrl}/functions/v1/send-push`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${serviceRoleKey}`,
+        },
+        body: JSON.stringify({
+          userId,
+          title: "Astraz Update",
+          body: content,
+          url: "/",
+        }),
+      });
+      if (pushRes.ok) {
+        const pushData = await pushRes.json().catch(() => ({}));
+        pushDelivered = Number(pushData?.sent ?? 0) > 0;
+      }
+    }
+  }
+
+  if (shouldEmail || !pushDelivered) {
+    const { data: userData, error } = await admin.auth.admin.getUserById(userId);
+    const email = error ? null : userData.user?.email ?? null;
+    if (email && brevoApiKey) {
+      await fetch("https://api.brevo.com/v3/smtp/email", {
+        method: "POST",
+        headers: {
+          "api-key": brevoApiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sender: { name: "Astraz", email: "xtechnly@gmail.com" },
+          to: [{ email }],
+          subject: mediaType === "video" ? "🎬 Your video is ready" : "🖼️ Your image is ready",
+          htmlContent: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 20px;"><p style="font-size: 16px; color: #111827;">${content}</p><p><a href="https://astraz.lovable.app">Open Astraz</a></p></div>`,
+        }),
+      });
+    }
+  }
 }

@@ -67,6 +67,7 @@ serve(async (req) => {
     const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const LEONARDO_API_KEY = Deno.env.get("LEONARDO_API_KEY");
     const STABILITY_API_KEY = Deno.env.get("STABILITY_API_KEY");
+    const BREVO_API_KEY = Deno.env.get("BREVO_API_KEY");
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) throw new Error("Backend is not configured");
     if (!LEONARDO_API_KEY && !STABILITY_API_KEY) throw new Error("Image generation API key not configured");
@@ -241,6 +242,20 @@ serve(async (req) => {
     if (!imgBytes) throw new Error("All image generation providers failed. Please try again.");
 
     const ref = await uploadAndSave(admin, userId, prompt, style, aspectRatio, imgBytes, imgMime);
+
+    if (userId !== "anonymous") {
+      await notifyUserMediaReady({
+        admin,
+        supabaseUrl: SUPABASE_URL,
+        serviceRoleKey: SERVICE_ROLE_KEY,
+        brevoApiKey: BREVO_API_KEY,
+        userId,
+        prompt,
+        mediaType: "image",
+        mediaRef: ref,
+      });
+    }
+
     return new Response(JSON.stringify({ image: ref }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -251,3 +266,128 @@ serve(async (req) => {
     });
   }
 });
+
+async function notifyUserMediaReady(params: {
+  admin: ReturnType<typeof createClient>;
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  brevoApiKey: string | undefined;
+  userId: string;
+  prompt: string;
+  mediaType: "image" | "video";
+  mediaRef: string;
+}) {
+  const { admin, supabaseUrl, serviceRoleKey, brevoApiKey, userId, prompt, mediaType, mediaRef } = params;
+
+  const content = mediaType === "image"
+    ? `🖼️ Your generated image is ready: "${prompt}"`
+    : `🎬 Your generated video is ready: "${prompt}"`;
+
+  const conversationId = await resolveConversationId(admin, userId);
+  if (conversationId) {
+    await admin.from("messages").insert({
+      conversation_id: conversationId,
+      role: "assistant",
+      content,
+      file_urls: [mediaRef],
+    });
+    await admin.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
+  }
+
+  const { data: profileData } = await admin
+    .from("profiles")
+    .select("notification_preference, notifications_enabled")
+    .eq("user_id", userId)
+    .single();
+
+  if (!profileData?.notifications_enabled) return;
+
+  const pref = profileData.notification_preference || "push_and_email";
+  const shouldPush = pref === "push_and_email" || pref === "push_only";
+  const shouldEmail = pref === "push_and_email" || pref === "email_only";
+
+  let pushDelivered = false;
+  if (shouldPush) {
+    const { data: pushSubs } = await admin.from("push_subscriptions").select("id").eq("user_id", userId).limit(1);
+    if ((pushSubs?.length ?? 0) > 0) {
+      pushDelivered = await sendPushNotification(supabaseUrl, serviceRoleKey, userId, content);
+    }
+  }
+
+  if (shouldEmail || !pushDelivered) {
+    const userEmail = await getUserEmail(admin, userId);
+    if (userEmail && brevoApiKey) {
+      await sendEmail(brevoApiKey, userEmail, content, mediaType);
+    }
+  }
+}
+
+async function resolveConversationId(supabase: ReturnType<typeof createClient>, userId: string): Promise<string | null> {
+  const { data: latestConversation } = await supabase
+    .from("conversations")
+    .select("id")
+    .eq("user_id", userId)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (latestConversation?.id) return latestConversation.id;
+
+  const { data: createdConversation } = await supabase
+    .from("conversations")
+    .insert({ user_id: userId, title: "Generated Media" })
+    .select("id")
+    .single();
+
+  return createdConversation?.id ?? null;
+}
+
+async function sendPushNotification(supabaseUrl: string, serviceRoleKey: string, userId: string, message: string): Promise<boolean> {
+  try {
+    const pushRes = await fetch(`${supabaseUrl}/functions/v1/send-push`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceRoleKey}`,
+      },
+      body: JSON.stringify({
+        userId,
+        title: "Astraz Update",
+        body: message,
+        url: "/",
+      }),
+    });
+
+    if (!pushRes.ok) return false;
+    const pushData = await pushRes.json().catch(() => ({}));
+    return Number(pushData?.sent ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function getUserEmail(supabase: ReturnType<typeof createClient>, userId: string): Promise<string | null> {
+  const { data, error } = await supabase.auth.admin.getUserById(userId);
+  if (error) return null;
+  return data.user?.email ?? null;
+}
+
+async function sendEmail(apiKey: string, to: string, message: string, mediaType: "image" | "video"): Promise<boolean> {
+  const subject = mediaType === "image" ? "🖼️ Your image is ready" : "🎬 Your video is ready";
+
+  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "api-key": apiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      sender: { name: "Astraz", email: "xtechnly@gmail.com" },
+      to: [{ email: to }],
+      subject,
+      htmlContent: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 20px;"><p style="font-size: 16px; color: #111827;">${message}</p><p><a href="https://astraz.lovable.app">Open Astraz</a></p></div>`,
+    }),
+  });
+
+  return response.ok;
+}
