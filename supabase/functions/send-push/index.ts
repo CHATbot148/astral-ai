@@ -69,7 +69,10 @@ serve(async (req) => {
         const message = err?.message || String(err);
         console.error("Push send error:", statusCode || "n/a", message);
 
-        if (statusCode === 403 || statusCode === 404 || statusCode === 410) {
+        if (
+          [400, 401, 403, 404, 410].includes(statusCode) ||
+          /invalid|expired|unsubscribed|gone|not\s+found/i.test(message)
+        ) {
           expiredSubs.push(sub.id);
         }
       }
