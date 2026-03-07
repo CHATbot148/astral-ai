@@ -176,7 +176,7 @@ const TableBlock = ({ data }: { data: { headers: string[]; rows: string[][] } })
   return (
     <div className="my-2 block w-full min-w-0 max-w-[calc(100vw-2.5rem)] sm:max-w-full overflow-hidden">
       <div className="w-full min-w-0 rounded-lg border border-border bg-background/40 overflow-hidden">
-        <div className="w-full min-w-0 overflow-x-auto [overflow-y:hidden] overscroll-x-contain touch-pan-x [-webkit-overflow-scrolling:touch]">
+        <div className="w-full min-w-0 overflow-x-auto [overflow-y:hidden] overscroll-x-contain [touch-action:auto] [-webkit-overflow-scrolling:touch]">
           <table className="w-max min-w-full table-auto text-sm">
             <thead>
               <tr className="border-b border-border bg-secondary/40">
@@ -438,17 +438,6 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
       if (!line) return <div key={`space-${lineIndex}`} className="h-1.5" />;
       if (/^---+$/.test(line)) return <hr key={`hr-${lineIndex}`} className="my-3 border-0 border-t border-border/70" />;
 
-      const sectionMatch = line.match(/^(quick answer|details|next step)\s*:\s*(.*)$/i);
-      if (sectionMatch) {
-        const sectionTitle = sectionMatch[1];
-        const sectionBody = sectionMatch[2];
-        return (
-          <p key={`section-inline-${lineIndex}`} className="my-1.5 text-[0.95rem] leading-7 text-foreground">
-            <span className="font-semibold text-foreground/90">{sectionTitle}:</span>{' '}
-            <span dangerouslySetInnerHTML={{ __html: formatInline(sectionBody) }} />
-          </p>
-        );
-      }
 
       const markdownHeader = line.match(/^(#{1,3})\s+(.+)$/);
       if (markdownHeader) {

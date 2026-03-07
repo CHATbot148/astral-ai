@@ -10,6 +10,8 @@ interface SearchResult { title: string; url: string; snippet: string; thumbnail?
 interface ImageResult { title: string; url: string; imageUrl: string; source: string; thumbnail?: string; }
 interface VideoResult { title: string; url: string; thumbnail: string; duration?: string; source: string; }
 
+const BROKEN_IMAGE_HOSTS = new Set(["imgur.com", "i.imgur.com"]);
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -117,16 +119,36 @@ async function searchSerpAPIWeb(query: string, count: number, apiKey: string): P
 
 async function searchSerpAPIImages(query: string, count: number, apiKey: string): Promise<ImageResult[]> {
   try {
-    const params = new URLSearchParams({ q: query, api_key: apiKey, engine: "google_images", num: String(Math.min(count + 5, 20)) });
+    const params = new URLSearchParams({ q: query, api_key: apiKey, engine: "google_images", num: String(Math.min(count + 18, 36)) });
     const response = await fetch(`https://serpapi.com/search.json?${params}`);
     if (!response.ok) throw new Error(`SerpAPI images error: ${response.status}`);
     const data = await response.json();
+
+    const candidates = Array.isArray(data.images_results) ? data.images_results : [];
     const results: ImageResult[] = [];
-    if (data.images_results) {
-      for (const item of data.images_results.slice(0, count)) {
-        results.push({ title: item.title || query, url: item.link || item.original, imageUrl: item.original || item.thumbnail, thumbnail: item.thumbnail, source: item.source || new URL(item.link || item.original).hostname });
-      }
+
+    for (const item of candidates) {
+      if (results.length >= count) break;
+
+      const imageUrl = item.original || item.thumbnail;
+      const pageUrl = item.link || item.original;
+      if (!imageUrl || !pageUrl) continue;
+
+      const sourceHost = safeHostname(pageUrl || imageUrl);
+      if (!sourceHost || BROKEN_IMAGE_HOSTS.has(sourceHost)) continue;
+
+      const reachable = await isReachableMedia(imageUrl, "image");
+      if (!reachable) continue;
+
+      results.push({
+        title: item.title || query,
+        url: pageUrl,
+        imageUrl,
+        thumbnail: item.thumbnail,
+        source: item.source || sourceHost,
+      });
     }
+
     return results;
   } catch (error) {
     console.error("SerpAPI image search error:", error);
@@ -136,16 +158,32 @@ async function searchSerpAPIImages(query: string, count: number, apiKey: string)
 
 async function searchSerpAPIVideos(query: string, count: number, apiKey: string): Promise<VideoResult[]> {
   try {
-    const params = new URLSearchParams({ q: query, api_key: apiKey, engine: "google_videos", num: String(Math.min(count + 3, 15)) });
+    const params = new URLSearchParams({ q: query, api_key: apiKey, engine: "google_videos", num: String(Math.min(count + 8, 30)) });
     const response = await fetch(`https://serpapi.com/search.json?${params}`);
     if (!response.ok) throw new Error(`SerpAPI videos error: ${response.status}`);
     const data = await response.json();
+
+    const candidates = Array.isArray(data.video_results) ? data.video_results : [];
     const results: VideoResult[] = [];
-    if (data.video_results) {
-      for (const item of data.video_results.slice(0, count)) {
-        results.push({ title: item.title || query, url: item.link, thumbnail: item.thumbnail?.static || item.thumbnail || "", duration: item.duration, source: item.source || "YouTube" });
-      }
+
+    for (const item of candidates) {
+      if (results.length >= count) break;
+      const url = item.link;
+      const thumbnail = item.thumbnail?.static || item.thumbnail || "";
+      if (!url || !thumbnail) continue;
+
+      const thumbnailReachable = await isReachableMedia(thumbnail, "image");
+      if (!thumbnailReachable) continue;
+
+      results.push({
+        title: item.title || query,
+        url,
+        thumbnail,
+        duration: item.duration,
+        source: item.source || safeHostname(url) || "Video",
+      });
     }
+
     return results;
   } catch (error) {
     console.error("SerpAPI video search error:", error);
@@ -182,10 +220,42 @@ async function searchDuckDuckGo(query: string, count: number): Promise<SearchRes
 
 function fallbackImageSearch(query: string, count: number): ImageResult[] {
   const encodedQuery = encodeURIComponent(query);
-  return [{ title: query, url: `https://www.google.com/search?q=${encodedQuery}&tbm=isch`, imageUrl: `https://via.placeholder.com/400x300?text=${encodedQuery}`, source: "Google Images" }];
+  return [{ title: query, url: `https://www.google.com/search?q=${encodedQuery}&tbm=isch`, imageUrl: `https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?auto=format&fit=crop&w=900&q=80`, source: "Google Images" }];
 }
 
 function fallbackVideoSearch(query: string, count: number): VideoResult[] {
   const encodedQuery = encodeURIComponent(query);
-  return [{ title: query, url: `https://www.youtube.com/results?search_query=${encodedQuery}`, thumbnail: `https://via.placeholder.com/480x360?text=${encodedQuery}`, source: "YouTube" }];
+  return [{ title: query, url: `https://www.youtube.com/results?search_query=${encodedQuery}`, thumbnail: `https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg`, source: "YouTube" }];
+}
+
+function safeHostname(value: string): string {
+  try {
+    return new URL(value).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+async function isReachableMedia(url: string, type: "image" | "video"): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4500);
+    const response = await fetch(url, {
+      method: "GET",
+      redirect: "follow",
+      signal: controller.signal,
+      headers: { "Range": "bytes=0-1024" },
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) return false;
+
+    const contentType = (response.headers.get("content-type") || "").toLowerCase();
+    if (type === "image") {
+      return contentType.startsWith("image/") || /\.(png|jpe?g|webp|gif|svg)(\?|$)/i.test(url);
+    }
+    return contentType.startsWith("video/") || contentType.includes("text/html");
+  } catch {
+    return false;
+  }
 }

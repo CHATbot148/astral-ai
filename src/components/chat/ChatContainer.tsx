@@ -120,7 +120,7 @@ export const ChatContainer = () => {
 
         if (!profileData?.notifications_enabled) return;
         if (profileData.notification_preference === 'email_only') return;
-        if (Notification.permission !== 'granted') return;
+        if (Notification.permission === 'denied') return;
 
         await subscribeToPush(user.id);
       } catch (error) {
@@ -129,6 +129,13 @@ export const ChatContainer = () => {
     };
 
     ensurePushSubscription();
+    window.addEventListener('focus', ensurePushSubscription);
+    document.addEventListener('visibilitychange', ensurePushSubscription);
+
+    return () => {
+      window.removeEventListener('focus', ensurePushSubscription);
+      document.removeEventListener('visibilitychange', ensurePushSubscription);
+    };
   }, [user?.id]);
 
   const extractAndSaveMemory = async (content: string) => {
@@ -170,6 +177,17 @@ export const ChatContainer = () => {
     const factualQuestion = /^(who|what|when|where|why|how)\b/i.test(text.trim());
     const liveData = /(price|score|result|weather|stock|match|standings|headline|update)/i.test(text);
     return explicitSearch || factualQuestion || liveData;
+  };
+
+  const deriveSearchQueryLabel = (raw: string) => {
+    const cleaned = raw.trim().replace(/^["'“”‘’`]+|["'“”‘’`]+$/g, '');
+    const stripped = cleaned
+      .replace(/^(?:please\s+)?(?:can\s+you\s+)?(?:search|google|look\s*up|find\s*out|find|check)\s+(?:for\s+|up\s+)?/i, '')
+      .replace(/\?+$/, '')
+      .trim();
+
+    const label = stripped || cleaned;
+    return label.length > 70 ? `${label.slice(0, 67)}…` : label;
   };
 
   // parseReminderRequest is now imported from @/lib/reminderParser
@@ -457,7 +475,7 @@ export const ChatContainer = () => {
       const imageIntent = /(show me (?:an? )?(?:image|picture|photo)|what does .+ look like)/i.test(content);
       const videoIntent = /(show me (?:a )?video|video tutorial)/i.test(content);
       const hasUploadedVideoFiles = (files || []).some((file) => file.type.startsWith('video/'));
-      const searchQueryLabel = content.replace(/^search\s+for\s*:\s*/i, '').trim();
+      const searchQueryLabel = deriveSearchQueryLabel(content);
       const isWebSearchState = (shouldWebSearch || imageIntent || videoIntent) && !hasUploadedVideoFiles;
       setTypingMode(isWebSearchState ? 'search' : 'typing');
       setTypingLabel(
