@@ -57,6 +57,7 @@ serve(async (req) => {
 
     for (const sub of subs) {
       try {
+        console.log("Attempting push to endpoint:", sub.endpoint.slice(0, 80));
         await webpush.sendNotification(
           {
             endpoint: sub.endpoint,
@@ -65,6 +66,7 @@ serve(async (req) => {
           payload,
         );
         sent++;
+        console.log("Push sent successfully to:", sub.endpoint.slice(0, 80));
       } catch (err: any) {
         const statusCode = Number(err?.statusCode || err?.status || 0);
         const message = err?.message || String(err);
