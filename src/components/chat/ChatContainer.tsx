@@ -346,6 +346,15 @@ export const ChatContainer = () => {
       return answer;
     }
   };
+  const sanitizeAssistantMessage = (value: string) => {
+    return value
+      .split('\n')
+      .filter((line) => !/^\s*:?max_bytes\(/i.test(line) && !/strip_icc\(\)/i.test(line))
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  };
+
   const handleSend = async (content: string, files?: File[]) => {
     if (editingMessageId && currentConversation?.id) {
       const messageIndex = messages.findIndex(m => m.id === editingMessageId);
