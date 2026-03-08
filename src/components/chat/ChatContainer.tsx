@@ -724,7 +724,7 @@ export const ChatContainer = () => {
           (async () => {
             try {
               const { data, error } = await supabase.functions.invoke('generate-video', {
-                body: { prompt: vidPrompt, modelId: 'sora_2' },
+                body: { prompt: vidPrompt, modelId: 'sora_2', appInForeground: isAppInForeground() },
               });
               if (error) throw error;
               if (data?.error) throw new Error(data.error);
