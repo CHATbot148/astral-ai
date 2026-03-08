@@ -141,31 +141,43 @@ function appendToStream(upstreamBody: ReadableStream<Uint8Array>, extraContent: 
   const decoder = new TextDecoder();
   const reader = upstreamBody.getReader();
   let injected = false;
+  let leftover = "";
 
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
       const { done, value } = await reader.read();
       if (done) {
+        // Flush any remaining data that wasn't [DONE]
+        if (leftover.trim() && !leftover.includes("[DONE]")) {
+          controller.enqueue(encoder.encode(leftover));
+        }
         if (!injected && extraContent) {
           injected = true;
+          console.log("[appendToStream] Injecting VIDEO_CARD content at stream end");
           const chunk = `data: ${JSON.stringify({ choices: [{ delta: { content: extraContent } }] })}\n\n`;
           controller.enqueue(encoder.encode(chunk));
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         }
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
         return;
       }
-      const text = decoder.decode(value, { stream: true });
-      // If we see [DONE], inject our content before it
-      if (extraContent && !injected && text.includes("[DONE]")) {
+      const text = leftover + decoder.decode(value, { stream: true });
+      leftover = "";
+
+      // Check if this chunk contains [DONE]
+      const doneIdx = text.indexOf("[DONE]");
+      if (extraContent && !injected && doneIdx !== -1) {
         injected = true;
-        const chunk = `data: ${JSON.stringify({ choices: [{ delta: { content: extraContent } }] })}\n\n`;
-        const beforeDone = text.replace("data: [DONE]\n\n", "");
+        console.log("[appendToStream] Found [DONE], injecting VIDEO_CARD content before it");
+        // Everything before the "data: [DONE]" line
+        const beforeDone = text.substring(0, text.lastIndexOf("data:", doneIdx));
         if (beforeDone.trim()) controller.enqueue(encoder.encode(beforeDone));
+        // Inject our extra content
+        const chunk = `data: ${JSON.stringify({ choices: [{ delta: { content: extraContent } }] })}\n\n`;
         controller.enqueue(encoder.encode(chunk));
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       } else {
-        controller.enqueue(value);
+        controller.enqueue(encoder.encode(text));
       }
     },
     cancel() {
