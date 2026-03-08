@@ -42,13 +42,12 @@ const ASPECT_PRESETS: Array<{ value: ImageGenOptions["aspectRatio"]; label: stri
   { value: "4:3", label: "Classic", icon: "📺" },
 ];
 
-const LEONARDO_MODELS: Array<{ value: string; label: string; hint: string }> = [
-  { value: "phoenix", label: "Phoenix", hint: "Best overall" },
-  { value: "kino", label: "Kino XL", hint: "Cinematic" },
-  { value: "diffusion", label: "Diffusion XL", hint: "Creative" },
-  { value: "anime_xl", label: "Anime XL", hint: "Anime/Manga" },
-  { value: "vision", label: "Vision XL", hint: "Photorealistic" },
-  { value: "lightning", label: "Lightning XL", hint: "Fast" },
+const IMAGE_MODELS: Array<{ value: string; label: string; hint: string }> = [
+  { value: "nano_banana_2", label: "Nano Banana 2", hint: "Fast + sharp details" },
+  { value: "seedream_4_5", label: "Seedream 4.5", hint: "Text-heavy designs" },
+  { value: "lucid_origin", label: "Lucid Origin", hint: "Prompt adherence" },
+  { value: "flux_2_pro", label: "FLUX.2 Pro", hint: "High-fidelity output" },
+  { value: "phoenix", label: "Phoenix", hint: "Legacy fallback" },
 ];
 
 // Removed quality presets as Gemini handles this automatically
@@ -66,7 +65,7 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   const [prompt, setPrompt] = useState(initialPrompt);
   const [style, setStyle] = useState<ImageGenOptions["style"]>("photoreal");
   const [aspectRatio, setAspectRatio] = useState<ImageGenOptions["aspectRatio"]>("1:1");
-  const [selectedModel, setSelectedModel] = useState("phoenix");
+  const [selectedModel, setSelectedModel] = useState("nano_banana_2");
   const canSelectModel = tier === "pro" || tier === "ultimate";
   const [isWorking, setIsWorking] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -130,7 +129,7 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
       aspectRatio: override?.aspectRatio ?? aspectRatio,
       quality: "balanced",
       referenceImageUrl: useReferenceImage && referenceImage ? referenceImage : undefined,
-      modelId: canSelectModel ? selectedModel : undefined,
+      modelId: canSelectModel ? selectedModel : "nano_banana_2",
     };
 
     if (!opts.prompt) return;
@@ -261,7 +260,7 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
                 AI Model
               </Label>
               <div className="flex flex-wrap gap-2">
-                {LEONARDO_MODELS.map((m) => (
+                {IMAGE_MODELS.map((m) => (
                   <button
                     key={m.value}
                     type="button"
