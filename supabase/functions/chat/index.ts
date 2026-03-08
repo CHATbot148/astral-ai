@@ -399,13 +399,39 @@ serve(async (req) => {
       const visualCheck = needsVisualContext(lastContent);
       if (visualCheck.needed && !mediaContext) {
         try {
-          const imageResults = await performWebSearch(SUPABASE_URL!, visualCheck.query, "images");
-          if (imageResults.length > 0) {
-            const imgPool = imageResults.slice(0, 15).map((r: any, i: number) => 
-              `${i + 1}. "${r.title || 'Image'}" → ${r.imageUrl}${r.source ? ` (${r.source})` : ''}`
-            ).join("\n");
-            mediaContext = `\n\n[Visual Image Pool — USE THESE to illustrate your response. For each list item or key topic, embed 2-3 relevant images using this EXACT syntax on separate lines after the item title: [IMG:imageUrl|sourceDomain]\nPick images whose titles best match each item. If no good match exists for an item, skip it.]\n${imgPool}`;
-            console.log(`[chat] Auto-visual: found ${imageResults.length} images for "${visualCheck.query}"`);
+          // Step 1: Use a fast AI call to predict specific list items
+          const itemPrediction = await predictListItems(LOVABLE_API_KEY!, lastContent);
+          if (itemPrediction.length > 0) {
+            // Step 2: Search images for EACH specific item in parallel
+            const perItemResults = await Promise.all(
+              itemPrediction.slice(0, 8).map(async (itemName: string) => {
+                const results = await performWebSearch(SUPABASE_URL!, itemName, "images");
+                return { name: itemName, images: results.slice(0, 4) };
+              })
+            );
+
+            // Step 3: Build a per-item structured image pool
+            const validItems = perItemResults.filter(item => item.images.length > 0);
+            if (validItems.length > 0) {
+              const imgPool = validItems.map(item => {
+                const imgLines = item.images.map((r: any) =>
+                  `  - "${r.title || item.name}" → ${r.imageUrl}${r.source ? ` (${r.source})` : ''}`
+                ).join("\n");
+                return `### ${item.name}\n${imgLines}`;
+              }).join("\n\n");
+
+              mediaContext = `\n\n[Visual Image Pool — ITEM-SPECIFIC IMAGES. For EACH list item, use the images listed under its matching name. Embed 2-4 images per item using [IMG:imageUrl|sourceDomain] syntax on SEPARATE lines right after the item title. Do NOT mix images between items.]\n\n${imgPool}`;
+              console.log(`[chat] Per-item visual: searched ${validItems.length} items with images`);
+            }
+          } else {
+            // Fallback: single generic search if prediction fails
+            const imageResults = await performWebSearch(SUPABASE_URL!, visualCheck.query, "images");
+            if (imageResults.length > 0) {
+              const imgPool = imageResults.slice(0, 15).map((r: any, i: number) => 
+                `${i + 1}. "${r.title || 'Image'}" → ${r.imageUrl}${r.source ? ` (${r.source})` : ''}`
+              ).join("\n");
+              mediaContext = `\n\n[Visual Image Pool — USE THESE to illustrate your response. For each list item, embed 2-3 relevant images using [IMG:imageUrl|sourceDomain] syntax on separate lines after the item title.]\n${imgPool}`;
+            }
           }
         } catch (e) {
           console.error("Auto visual search error:", e);
