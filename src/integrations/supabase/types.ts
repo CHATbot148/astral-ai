@@ -187,6 +187,7 @@ export type Database = {
           created_at: string
           full_name: string | null
           id: string
+          last_seen_at: string | null
           notification_preference: string
           notifications_enabled: boolean
           updated_at: string
@@ -197,6 +198,7 @@ export type Database = {
           created_at?: string
           full_name?: string | null
           id?: string
+          last_seen_at?: string | null
           notification_preference?: string
           notifications_enabled?: boolean
           updated_at?: string
@@ -207,6 +209,7 @@ export type Database = {
           created_at?: string
           full_name?: string | null
           id?: string
+          last_seen_at?: string | null
           notification_preference?: string
           notifications_enabled?: boolean
           updated_at?: string
@@ -302,6 +305,27 @@ export type Database = {
           endpoint?: string
           id?: string
           p256dh?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      reengagement_notifications: {
+        Row: {
+          id: string
+          milestone: string
+          sent_at: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          milestone: string
+          sent_at?: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          milestone?: string
+          sent_at?: string
           user_id?: string
         }
         Relationships: []
