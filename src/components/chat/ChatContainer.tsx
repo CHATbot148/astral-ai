@@ -586,7 +586,6 @@ export const ChatContainer = () => {
       let displayedContent = '';
       let animInterval: ReturnType<typeof setInterval> | null = null;
       let generationDirective: { type: 'image' | 'video'; prompt: string } | null = null;
-      let isInlineGenerationFlow = false;
 
       if (showTyping && typingStyle === 'typewriter') {
         animInterval = setInterval(() => {
