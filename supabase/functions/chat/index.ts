@@ -210,6 +210,7 @@ serve(async (req) => {
     let searchContext = "";
     let mediaContext = "";
     let videoContext = "";
+    let rawVideoCards = ""; // VIDEO_CARD tags to append programmatically
     let webSources: Array<{ title: string; url: string }> = [];
     let shouldGenerateImage = false;
     let shouldGenerateVideo = false;
