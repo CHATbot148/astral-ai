@@ -89,9 +89,12 @@ function relevanceScore(text: string, tokens: string[]): number {
 
     const { query, type = "web", count = 5 } = await req.json();
 
-    if (!query) {
+    if (!query || typeof query !== "string") {
       throw new Error("Query is required");
     }
+
+    const rewrittenQuery = rewriteSearchQuery(query, type);
+    const safeCount = Math.max(1, Math.min(count, type === "web" ? 10 : 8));
 
     const SERPAPI_API_KEY = Deno.env.get("SERPAPI_API_KEY");
     
