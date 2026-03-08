@@ -12,7 +12,49 @@ interface VideoResult { title: string; url: string; thumbnail: string; duration?
 
 const BROKEN_IMAGE_HOSTS = new Set(["imgur.com", "i.imgur.com"]);
 
-serve(async (req) => {
+const QUERY_PREFIX = /^(?:please\s+)?(?:can\s+you\s+)?(?:could\s+you\s+)?(?:would\s+you\s+)?(?:search|search\s+up|look\s*up|google|find\s*out|find|check|show\s+me)\s+(?:for\s+|up\s+|about\s+|on\s+|the\s+)?/i;
+const QUERY_SUFFIX = /(?:\s+(?:for\s+me|please|thanks?|thank\s+you))+$|[?!.]+$/gi;
+const SOFT_STOPWORDS = new Set(["the", "a", "an", "of", "for", "about", "on", "in", "to", "is", "are", "me", "show", "search", "find", "look", "up"]);
+
+function rewriteSearchQuery(input: string, type: "web" | "images" | "videos"): string {
+  const cleaned = input.trim().replace(/^['"“”‘’`]+|['"“”‘’`]+$/g, "");
+  let normalized = cleaned
+    .replace(QUERY_PREFIX, "")
+    .replace(/^(?:an?\s+)?(?:image|photo|picture|video)s?\s+(?:of|for|about)\s+/i, "")
+    .replace(QUERY_SUFFIX, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  if (!normalized) normalized = cleaned;
+
+  if (type !== "web") {
+    normalized = normalized
+      .replace(/\b(?:images?|photos?|pictures?|videos?)\b/gi, "")
+      .replace(/\s{2,}/g, " ")
+      .trim() || cleaned;
+  }
+
+  return normalized;
+}
+
+function tokenizeQuery(query: string): string[] {
+  return query
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length > 1 && !SOFT_STOPWORDS.has(token));
+}
+
+function relevanceScore(text: string, tokens: string[]): number {
+  if (!tokens.length) return 0;
+  const normalized = text.toLowerCase();
+  let score = 0;
+  for (const token of tokens) {
+    if (normalized.includes(token)) score += 1;
+  }
+  return score / tokens.length;
+}
+
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
