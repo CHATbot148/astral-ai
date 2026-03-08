@@ -181,7 +181,9 @@ serve(async (req) => {
     let videoContext = "";
     let webSources: Array<{ title: string; url: string }> = [];
     let shouldGenerateImage = false;
+    let shouldGenerateVideo = false;
     let imagePrompt = "";
+    let videoPrompt = "";
     let detectedStyle = "photoreal";
 
     // Check for image generation request
@@ -202,6 +204,19 @@ serve(async (req) => {
           }
         }
         break;
+      }
+    }
+
+    // Check for video generation request
+    if (!shouldGenerateImage) {
+      for (const pattern of VIDEO_GENERATION_PATTERNS) {
+        if (pattern.test(lastContent)) {
+          shouldGenerateVideo = true;
+          videoPrompt = lastContent
+            .replace(/^(generate|create|make)\s*(me\s*)?(a\s*)?(video|clip|animation)?\s*(of\s*)?/i, '')
+            .trim() || lastContent;
+          break;
+        }
       }
     }
 
