@@ -388,12 +388,13 @@ export const ChatContainer = () => {
   };
 
   const sanitizeAssistantMessage = (value: string) => {
-    return stripRenderableDirectives(
-      value
-        .split('\n')
-        .filter((line) => !/^\s*:?max_bytes\(/i.test(line) && !/strip_icc\(\)/i.test(line))
-        .join('\n')
-    );
+    return value
+      .split('\n')
+      .filter((line) => !/^\s*:?max_bytes\(/i.test(line) && !/strip_icc\(\)/i.test(line))
+      .join('\n')
+      .replace(/\[GENERATE_(?:IMAGE|VIDEO):[^\]]*\]?/gi, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   };
 
   const handleSend = async (content: string, files?: File[]) => {
