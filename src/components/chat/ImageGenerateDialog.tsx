@@ -128,8 +128,9 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
       prompt: (override?.prompt ?? prompt).trim(),
       style: override?.style ?? style,
       aspectRatio: override?.aspectRatio ?? aspectRatio,
-      quality: "balanced", // Fixed value, Gemini handles this
+      quality: "balanced",
       referenceImageUrl: useReferenceImage && referenceImage ? referenceImage : undefined,
+      modelId: canSelectModel ? selectedModel : undefined,
     };
 
     if (!opts.prompt) return;
