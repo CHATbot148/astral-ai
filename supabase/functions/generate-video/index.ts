@@ -6,10 +6,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const VIDEO_MODELS: Record<string, { apiModel?: string; width: number; height: number }> = {
-  sora_2: { apiModel: "sora-2", width: 1280, height: 720 },
-  sora_2_pro: { apiModel: "sora-2-pro", width: 1280, height: 720 },
-  motion_2: { width: 832, height: 480 },
+const VIDEO_MODELS: Record<string, { apiModel?: string }> = {
+  sora_2: { apiModel: "sora-2" },
+  sora_2_pro: { apiModel: "sora-2-pro" },
+  motion_2: {},
 };
 
 const DEFAULT_VIDEO_MODEL = "sora_2";
@@ -18,10 +18,10 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { prompt, modelId } = await req.json();
+    const { prompt, modelId, duration, quality } = await req.json();
     if (!prompt) throw new Error("Prompt is required");
 
-    const LEONARDO_API_KEY = Deno.env.get("LEONARDO_API_KEY");
+    const LEONARDO_API_KEY = Deno.env.get("LEONARDO_API_KEY_NEW") || Deno.env.get("LEONARDO_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
     const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -95,9 +95,17 @@ serve(async (req) => {
     const selectedModel = VIDEO_MODELS[modelId] ? modelId : DEFAULT_VIDEO_MODEL;
     const selectedConfig = VIDEO_MODELS[selectedModel];
 
-    console.log(`Generating video with Leonardo text-to-video (${selectedModel}): "${prompt}"`);
+    // Determine resolution from quality param (paid users can pick 1080p)
+    const is1080 = quality === "1080p";
+    const vidWidth = is1080 ? 1920 : 1280;
+    const vidHeight = is1080 ? 1080 : 720;
 
-    // Use Leonardo's direct text-to-video endpoint (Motion 2.0)
+    // Duration: 6 or 10 seconds (default 6)
+    const vidDuration = duration === 10 ? 10 : 6;
+
+    console.log(`Generating video with Leonardo text-to-video (${selectedModel}): "${prompt}" | ${vidWidth}x${vidHeight} | ${vidDuration}s`);
+
+    // Use Leonardo's direct text-to-video endpoint
     const createRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations-text-to-video", {
       method: "POST",
       headers: {
@@ -107,10 +115,11 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         prompt,
-        height: selectedConfig.height,
-        width: selectedConfig.width,
+        height: vidHeight,
+        width: vidWidth,
         isPublic: false,
         frameInterpolation: true,
+        ...(vidDuration === 10 ? { duration: 10 } : {}),
         ...(selectedConfig.apiModel ? { model: selectedConfig.apiModel } : {}),
       }),
     });
