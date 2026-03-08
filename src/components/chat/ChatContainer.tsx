@@ -180,13 +180,19 @@ export const ChatContainer = () => {
   };
 
   const deriveSearchQueryLabel = (raw: string) => {
-    const cleaned = raw.trim().replace(/^["'“”‘’`]+|["'“”‘’`]+$/g, '');
-    const stripped = cleaned
-      .replace(/^(?:please\s+)?(?:can\s+you\s+)?(?:search|google|look\s*up|find\s*out|find|check)\s+(?:for\s+|up\s+)?/i, '')
-      .replace(/\?+$/, '')
+    const cleaned = raw.trim().replace(/^['"“”‘’`]+|['"“”‘’`]+$/g, '');
+
+    const normalized = cleaned
+      .replace(/^(?:please\s+)?(?:can\s+you\s+)?(?:could\s+you\s+)?(?:would\s+you\s+)?/i, '')
+      .replace(/^(?:search|google|look\s*up|find\s*out|find|check|show\s+me)\s+(?:for\s+|up\s+|about\s+|on\s+|the\s+)?/i, '')
+      .replace(/^(?:the\s+)?(?:images?|photos?|pictures?|videos?)\s+(?:of|for|about)\s+/i, '')
+      .replace(/^(?:an?\s+)?(?:image|photo|picture|video)\s+(?:of|for|about)\s+/i, '')
+      .replace(/\b(?:please|for\s+me|thanks?)\b/gi, '')
+      .replace(/[?!.]+$/g, '')
+      .replace(/\s{2,}/g, ' ')
       .trim();
 
-    const label = stripped || cleaned;
+    const label = normalized || cleaned;
     return label.length > 70 ? `${label.slice(0, 67)}…` : label;
   };
 
@@ -340,6 +346,15 @@ export const ChatContainer = () => {
       return answer;
     }
   };
+  const sanitizeAssistantMessage = (value: string) => {
+    return value
+      .split('\n')
+      .filter((line) => !/^\s*:?max_bytes\(/i.test(line) && !/strip_icc\(\)/i.test(line))
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  };
+
   const handleSend = async (content: string, files?: File[]) => {
     if (editingMessageId && currentConversation?.id) {
       const messageIndex = messages.findIndex(m => m.id === editingMessageId);
@@ -475,14 +490,15 @@ export const ChatContainer = () => {
       const imageIntent = /(show me (?:an? )?(?:image|picture|photo)|what does .+ look like)/i.test(content);
       const videoIntent = /(show me (?:a )?video|video tutorial)/i.test(content);
       const hasUploadedVideoFiles = (files || []).some((file) => file.type.startsWith('video/'));
-      const searchQueryLabel = deriveSearchQueryLabel(content);
-      const isWebSearchState = (shouldWebSearch || imageIntent || videoIntent) && !hasUploadedVideoFiles;
+      const searchQuery = deriveSearchQueryLabel(content);
+      const hasSearchQuery = searchQuery.length > 0;
+      const isWebSearchState = (shouldWebSearch || imageIntent || videoIntent) && !hasUploadedVideoFiles && hasSearchQuery;
       setTypingMode(isWebSearchState ? 'search' : 'typing');
       setTypingLabel(
         hasUploadedVideoFiles
           ? 'Reviewing video…'
           : isWebSearchState
-            ? `Searching for ${searchQueryLabel}`
+            ? `Searching for ${searchQuery}`
             : undefined
       );
 
@@ -503,7 +519,7 @@ export const ChatContainer = () => {
             : undefined,
           userId: user?.id,
           forceWebSearch: shouldWebSearch,
-          webSearchQuery: content,
+          webSearchQuery: searchQuery,
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           clientTimeISO: new Date().toISOString(),
           aiMode: getAISettings().mode,
@@ -608,7 +624,7 @@ export const ChatContainer = () => {
         const imageGenMatch = fullContent.match(/\[GENERATE_IMAGE:([^\]]+)\]/);
         if (imageGenMatch) {
           const imgPrompt = imageGenMatch[1].trim();
-          const cleanContent = fullContent.replace(/\[GENERATE_IMAGE:[^\]]+\]/g, '').trim();
+          const cleanContent = sanitizeAssistantMessage(fullContent.replace(/\[GENERATE_IMAGE:[^\]]+\]/g, '').trim());
           if (cleanContent) await addMessage(convId, 'assistant', cleanContent);
           setImageDialogPrompt(imgPrompt);
           setShowImageDialog(true);
@@ -630,9 +646,10 @@ export const ChatContainer = () => {
           }
 
           if (shouldWebSearch) {
-            processedContent = await appendFallbackSources(processedContent, content);
+            processedContent = await appendFallbackSources(processedContent, searchQuery);
           }
 
+          processedContent = sanitizeAssistantMessage(processedContent);
           await addMessage(convId, 'assistant', processedContent);
         }
       }

@@ -12,7 +12,49 @@ interface VideoResult { title: string; url: string; thumbnail: string; duration?
 
 const BROKEN_IMAGE_HOSTS = new Set(["imgur.com", "i.imgur.com"]);
 
-serve(async (req) => {
+const QUERY_PREFIX = /^(?:please\s+)?(?:can\s+you\s+)?(?:could\s+you\s+)?(?:would\s+you\s+)?(?:search|search\s+up|look\s*up|google|find\s*out|find|check|show\s+me)\s+(?:for\s+|up\s+|about\s+|on\s+|the\s+)?/i;
+const QUERY_SUFFIX = /(?:\s+(?:for\s+me|please|thanks?|thank\s+you))+$|[?!.]+$/gi;
+const SOFT_STOPWORDS = new Set(["the", "a", "an", "of", "for", "about", "on", "in", "to", "is", "are", "me", "show", "search", "find", "look", "up"]);
+
+function rewriteSearchQuery(input: string, type: "web" | "images" | "videos"): string {
+  const cleaned = input.trim().replace(/^['"“”‘’`]+|['"“”‘’`]+$/g, "");
+  let normalized = cleaned
+    .replace(QUERY_PREFIX, "")
+    .replace(/^(?:an?\s+)?(?:image|photo|picture|video)s?\s+(?:of|for|about)\s+/i, "")
+    .replace(QUERY_SUFFIX, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  if (!normalized) normalized = cleaned;
+
+  if (type !== "web") {
+    normalized = normalized
+      .replace(/\b(?:images?|photos?|pictures?|videos?)\b/gi, "")
+      .replace(/\s{2,}/g, " ")
+      .trim() || cleaned;
+  }
+
+  return normalized;
+}
+
+function tokenizeQuery(query: string): string[] {
+  return query
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length > 1 && !SOFT_STOPWORDS.has(token));
+}
+
+function relevanceScore(text: string, tokens: string[]): number {
+  if (!tokens.length) return 0;
+  const normalized = text.toLowerCase();
+  let score = 0;
+  for (const token of tokens) {
+    if (normalized.includes(token)) score += 1;
+  }
+  return score / tokens.length;
+}
+
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -47,23 +89,26 @@ serve(async (req) => {
 
     const { query, type = "web", count = 5 } = await req.json();
 
-    if (!query) {
+    if (!query || typeof query !== "string") {
       throw new Error("Query is required");
     }
+
+    const rewrittenQuery = rewriteSearchQuery(query, type);
+    const safeCount = Math.max(1, Math.min(count, type === "web" ? 10 : 8));
 
     const SERPAPI_API_KEY = Deno.env.get("SERPAPI_API_KEY");
     
     if (!SERPAPI_API_KEY) {
-      console.log("SERPAPI_API_KEY not configured, using fallback DuckDuckGo");
+      console.log("SERPAPI_API_KEY not configured, using provider fallback");
       let results: SearchResult[] | ImageResult[] | VideoResult[] = [];
       if (type === "web") {
-        results = await searchDuckDuckGo(query, count);
+        results = await searchDuckDuckGo(rewrittenQuery, safeCount);
       } else if (type === "images") {
-        results = await fallbackImageSearch(query, count);
+        results = await fallbackImageSearch(rewrittenQuery, safeCount);
       } else if (type === "videos") {
-        results = await fallbackVideoSearch(query, count);
+        results = await fallbackVideoSearch(rewrittenQuery, safeCount);
       }
-      return new Response(JSON.stringify({ results, query, type }), {
+      return new Response(JSON.stringify({ results, query: rewrittenQuery, originalQuery: query, type }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -71,14 +116,14 @@ serve(async (req) => {
     let results: SearchResult[] | ImageResult[] | VideoResult[] = [];
 
     if (type === "web") {
-      results = await searchSerpAPIWeb(query, count, SERPAPI_API_KEY);
+      results = await searchSerpAPIWeb(rewrittenQuery, safeCount, SERPAPI_API_KEY);
     } else if (type === "images") {
-      results = await searchSerpAPIImages(query, count, SERPAPI_API_KEY);
+      results = await searchSerpAPIImages(rewrittenQuery, safeCount, SERPAPI_API_KEY);
     } else if (type === "videos") {
-      results = await searchSerpAPIVideos(query, count, SERPAPI_API_KEY);
+      results = await searchSerpAPIVideos(rewrittenQuery, safeCount, SERPAPI_API_KEY);
     }
 
-    return new Response(JSON.stringify({ results, query, type }), {
+    return new Response(JSON.stringify({ results, query: rewrittenQuery, originalQuery: query, type }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
@@ -119,33 +164,46 @@ async function searchSerpAPIWeb(query: string, count: number, apiKey: string): P
 
 async function searchSerpAPIImages(query: string, count: number, apiKey: string): Promise<ImageResult[]> {
   try {
-    const params = new URLSearchParams({ q: query, api_key: apiKey, engine: "google_images", num: String(Math.min(count + 18, 36)) });
+    const params = new URLSearchParams({ q: query, api_key: apiKey, engine: "google_images", num: String(Math.min(count + 30, 50)) });
     const response = await fetch(`https://serpapi.com/search.json?${params}`);
     if (!response.ok) throw new Error(`SerpAPI images error: ${response.status}`);
     const data = await response.json();
 
-    const candidates = Array.isArray(data.images_results) ? data.images_results : [];
+    const tokens = tokenizeQuery(query);
+    const candidates = (Array.isArray(data.images_results) ? data.images_results : [])
+      .map((item: any) => {
+        const imageUrl = item.original || item.thumbnail;
+        const pageUrl = item.link || item.original;
+        const title = item.title || query;
+        const sourceHost = safeHostname(pageUrl || imageUrl);
+        const relevanceText = `${title} ${item.source || ""} ${pageUrl || ""}`;
+        return {
+          item,
+          imageUrl,
+          pageUrl,
+          title,
+          sourceHost,
+          score: relevanceScore(relevanceText, tokens),
+        };
+      })
+      .filter((candidate: any) => candidate.imageUrl && candidate.pageUrl && candidate.sourceHost && !BROKEN_IMAGE_HOSTS.has(candidate.sourceHost))
+      .sort((a: any, b: any) => b.score - a.score);
+
     const results: ImageResult[] = [];
 
-    for (const item of candidates) {
+    for (const candidate of candidates) {
       if (results.length >= count) break;
+      if (tokens.length > 0 && candidate.score <= 0 && results.length > 0) continue;
 
-      const imageUrl = item.original || item.thumbnail;
-      const pageUrl = item.link || item.original;
-      if (!imageUrl || !pageUrl) continue;
-
-      const sourceHost = safeHostname(pageUrl || imageUrl);
-      if (!sourceHost || BROKEN_IMAGE_HOSTS.has(sourceHost)) continue;
-
-      const reachable = await isReachableMedia(imageUrl, "image");
+      const reachable = await isReachableMedia(candidate.imageUrl, "image");
       if (!reachable) continue;
 
       results.push({
-        title: item.title || query,
-        url: pageUrl,
-        imageUrl,
-        thumbnail: item.thumbnail,
-        source: item.source || sourceHost,
+        title: candidate.title,
+        url: candidate.pageUrl,
+        imageUrl: candidate.imageUrl,
+        thumbnail: candidate.item.thumbnail,
+        source: candidate.item.source || candidate.sourceHost,
       });
     }
 
@@ -158,29 +216,44 @@ async function searchSerpAPIImages(query: string, count: number, apiKey: string)
 
 async function searchSerpAPIVideos(query: string, count: number, apiKey: string): Promise<VideoResult[]> {
   try {
-    const params = new URLSearchParams({ q: query, api_key: apiKey, engine: "google_videos", num: String(Math.min(count + 8, 30)) });
+    const params = new URLSearchParams({ q: query, api_key: apiKey, engine: "google_videos", num: String(Math.min(count + 14, 36)) });
     const response = await fetch(`https://serpapi.com/search.json?${params}`);
     if (!response.ok) throw new Error(`SerpAPI videos error: ${response.status}`);
     const data = await response.json();
 
-    const candidates = Array.isArray(data.video_results) ? data.video_results : [];
+    const tokens = tokenizeQuery(query);
+    const candidates = (Array.isArray(data.video_results) ? data.video_results : [])
+      .map((item: any) => {
+        const url = item.link;
+        const thumbnail = item.thumbnail?.static || item.thumbnail || "";
+        const title = item.title || query;
+        const relevanceText = `${title} ${item.source || ""} ${url || ""}`;
+        return {
+          item,
+          url,
+          thumbnail,
+          title,
+          score: relevanceScore(relevanceText, tokens),
+        };
+      })
+      .filter((candidate: any) => candidate.url && candidate.thumbnail)
+      .sort((a: any, b: any) => b.score - a.score);
+
     const results: VideoResult[] = [];
 
-    for (const item of candidates) {
+    for (const candidate of candidates) {
       if (results.length >= count) break;
-      const url = item.link;
-      const thumbnail = item.thumbnail?.static || item.thumbnail || "";
-      if (!url || !thumbnail) continue;
+      if (tokens.length > 0 && candidate.score <= 0 && results.length > 0) continue;
 
-      const thumbnailReachable = await isReachableMedia(thumbnail, "image");
+      const thumbnailReachable = await isReachableMedia(candidate.thumbnail, "image");
       if (!thumbnailReachable) continue;
 
       results.push({
-        title: item.title || query,
-        url,
-        thumbnail,
-        duration: item.duration,
-        source: item.source || safeHostname(url) || "Video",
+        title: candidate.title,
+        url: candidate.url,
+        thumbnail: candidate.thumbnail,
+        duration: candidate.item.duration,
+        source: candidate.item.source || safeHostname(candidate.url) || "Video",
       });
     }
 
@@ -218,14 +291,14 @@ async function searchDuckDuckGo(query: string, count: number): Promise<SearchRes
   }
 }
 
-function fallbackImageSearch(query: string, count: number): ImageResult[] {
-  const encodedQuery = encodeURIComponent(query);
-  return [{ title: query, url: `https://www.google.com/search?q=${encodedQuery}&tbm=isch`, imageUrl: `https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?auto=format&fit=crop&w=900&q=80`, source: "Google Images" }];
+function fallbackImageSearch(query: string, _count: number): ImageResult[] {
+  console.warn(`Image fallback unavailable for query: ${query}`);
+  return [];
 }
 
-function fallbackVideoSearch(query: string, count: number): VideoResult[] {
-  const encodedQuery = encodeURIComponent(query);
-  return [{ title: query, url: `https://www.youtube.com/results?search_query=${encodedQuery}`, thumbnail: `https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg`, source: "YouTube" }];
+function fallbackVideoSearch(query: string, _count: number): VideoResult[] {
+  console.warn(`Video fallback unavailable for query: ${query}`);
+  return [];
 }
 
 function safeHostname(value: string): string {

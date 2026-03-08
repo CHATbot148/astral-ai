@@ -25,7 +25,7 @@ export const TypingIndicator = ({ label, mode = 'typing' }: TypingIndicatorProps
           >
             <Globe className="h-4 w-4" />
           </motion.div>
-          <div className="min-w-0 flex-1 text-sm font-medium text-transparent bg-clip-text bg-[linear-gradient(90deg,hsl(var(--muted-foreground))_0%,hsl(var(--foreground))_45%,hsl(var(--muted-foreground))_100%)] bg-[length:220%_100%] animate-[shimmer_1.8s_linear_infinite] whitespace-nowrap truncate">
+          <div className="min-w-0 flex-1 text-sm font-medium leading-5 text-transparent bg-clip-text bg-[linear-gradient(90deg,hsl(var(--muted-foreground))_0%,hsl(var(--foreground))_45%,hsl(var(--muted-foreground))_100%)] bg-[length:220%_100%] animate-[shimmer_1.8s_linear_infinite] whitespace-normal break-words [overflow-wrap:anywhere]">
             {label || 'Searching the web…'}
           </div>
         </div>

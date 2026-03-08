@@ -30,6 +30,8 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   const videoCards = filteredMedia.filter(i => i.type === 'video_card');
   const otherMedia = filteredMedia.filter(i => i.type !== 'video_card');
 
+  if (videoCards.length === 0 && otherMedia.length === 0) return null;
+
   return (
     <div className={cn(
       "flex flex-col gap-2 my-2",
@@ -38,6 +40,7 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
       {otherMedia.map((item, index) => (
         <motion.div
           key={`${item.url}-${index}`}
+          data-media-item="true"
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: index * 0.1 }}
@@ -49,9 +52,9 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
               alt={item.alt || 'GIF'}
               loading="lazy"
               className="w-[100px] h-[100px] object-cover rounded-lg border border-border"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
+               onError={(e) => {
+                 e.currentTarget.closest('[data-media-item="true"]')?.remove();
+               }}
             />
           )}
           
@@ -67,7 +70,7 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
                 loading="lazy"
                 className="max-w-[280px] max-h-[280px] rounded-lg border border-border object-contain"
                 onError={(e) => {
-                  e.currentTarget.style.display = 'none';
+                  e.currentTarget.closest('[data-media-item="true"]')?.remove();
                 }}
               />
             </button>
@@ -106,7 +109,7 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
                     loading="lazy"
                     className="w-full h-full object-cover"
                     onError={(e) => {
-                      e.currentTarget.style.display = 'none';
+                      e.currentTarget.closest('a')?.remove();
                     }}
                   />
                 ) : (
