@@ -30,6 +30,8 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   const videoCards = filteredMedia.filter(i => i.type === 'video_card');
   const otherMedia = filteredMedia.filter(i => i.type !== 'video_card');
 
+  if (videoCards.length === 0 && otherMedia.length === 0) return null;
+
   return (
     <div className={cn(
       "flex flex-col gap-2 my-2",
@@ -38,6 +40,7 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
       {otherMedia.map((item, index) => (
         <motion.div
           key={`${item.url}-${index}`}
+          data-media-item="true"
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: index * 0.1 }}
