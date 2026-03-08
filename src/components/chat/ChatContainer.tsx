@@ -637,7 +637,7 @@ export const ChatContainer = () => {
           }
 
           if (shouldWebSearch) {
-            processedContent = await appendFallbackSources(processedContent, content);
+            processedContent = await appendFallbackSources(processedContent, searchQuery);
           }
 
           await addMessage(convId, 'assistant', processedContent);
