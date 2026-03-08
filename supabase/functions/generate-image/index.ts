@@ -101,7 +101,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { prompt, imageDataUrl, referenceImageUrl, style = "photoreal", aspectRatio = "1:1", modelId, skipNotification } = await req.json();
+    const { prompt, imageDataUrl, referenceImageUrl, style = "photoreal", aspectRatio = "1:1", modelId } = await req.json();
     if (!prompt && !imageDataUrl) throw new Error("Prompt or imageDataUrl is required");
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -304,11 +304,13 @@ serve(async (req) => {
 
     const ref = await uploadAndSave(admin, userId, prompt, style, aspectRatio, imgBytes, imgMime);
 
-    // Only send notifications if the user is NOT actively in the app (skipNotification flag)
-    // The frontend sets skipNotification=true when user triggered generation from the UI
-    // so we don't double-notify them
-    if (!skipNotification) {
-      // No notification logic needed - frontend handles the message
+    // Send background notification respecting user's preference
+    if (userId !== "anonymous") {
+      try {
+        await sendGenerationNotification(admin, SUPABASE_URL!, SERVICE_ROLE_KEY!, userId, "image", prompt);
+      } catch (notifErr) {
+        console.error("Notification send failed (non-blocking):", notifErr);
+      }
     }
 
     return new Response(JSON.stringify({ image: ref }), {
