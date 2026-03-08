@@ -6,11 +6,19 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const VIDEO_MODELS: Record<string, { apiModel?: string; width: number; height: number }> = {
+  sora_2: { apiModel: "sora-2", width: 1280, height: 720 },
+  sora_2_pro: { apiModel: "sora-2-pro", width: 1280, height: 720 },
+  motion_2: { width: 832, height: 480 },
+};
+
+const DEFAULT_VIDEO_MODEL = "sora_2";
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { prompt } = await req.json();
+    const { prompt, modelId, skipNotification } = await req.json();
     if (!prompt) throw new Error("Prompt is required");
 
     const LEONARDO_API_KEY = Deno.env.get("LEONARDO_API_KEY");
@@ -84,7 +92,10 @@ serve(async (req) => {
       }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    console.log(`Generating video with Leonardo text-to-video: "${prompt}"`);
+    const selectedModel = VIDEO_MODELS[modelId] ? modelId : DEFAULT_VIDEO_MODEL;
+    const selectedConfig = VIDEO_MODELS[selectedModel];
+
+    console.log(`Generating video with Leonardo text-to-video (${selectedModel}): "${prompt}"`);
 
     // Use Leonardo's direct text-to-video endpoint (Motion 2.0)
     const createRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations-text-to-video", {
@@ -96,10 +107,11 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         prompt,
-        height: 480,
-        width: 832,
+        height: selectedConfig.height,
+        width: selectedConfig.width,
         isPublic: false,
         frameInterpolation: true,
+        ...(selectedConfig.apiModel ? { model: selectedConfig.apiModel } : {}),
       }),
     });
 
