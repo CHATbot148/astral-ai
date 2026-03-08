@@ -176,11 +176,12 @@ serve(async (req) => {
     const enhancedPrompt = stylePrompt ? `${prompt}, ${stylePrompt}` : prompt;
     const dims = ASPECT_RATIO_MAP[aspectRatio] || ASPECT_RATIO_MAP["1:1"];
 
-    // Resolve model: allow Pro/Ultimate to pick, otherwise use default
+    // Resolve model: allow Pro/Ultimate to pick, otherwise use Nano Banana 2 by default
     const canSelectModel = tier === "pro" || tier === "ultimate" || userEmail === CEO_EMAIL;
-    const selectedModel = canSelectModel && modelId && LEONARDO_MODELS[modelId]
-      ? LEONARDO_MODELS[modelId].id
-      : LEONARDO_MODELS[DEFAULT_MODEL].id;
+    const selectedModelKey = canSelectModel && modelId && IMAGE_MODELS[modelId]
+      ? modelId
+      : DEFAULT_MODEL;
+    const selectedModel = IMAGE_MODELS[selectedModelKey] || IMAGE_MODELS[DEFAULT_MODEL];
 
     let imgBytes: Uint8Array | null = null;
     let imgMime = "image/png";
