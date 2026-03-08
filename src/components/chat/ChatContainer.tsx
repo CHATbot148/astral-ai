@@ -452,14 +452,8 @@ export const ChatContainer = () => {
         return;
       }
 
-      // Image generation intent
-      const imagePrompt = detectImageGenerationRequest(content);
-      if (imagePrompt) {
-        setImageDialogPrompt(imagePrompt);
-        setShowImageDialog(true);
-        setIsLoading(false);
-        return;
-      }
+      // Image generation intent — let the AI handle it conversationally
+      // (no longer redirect to dialog; the AI will respond with [GENERATE_IMAGE:...] tag)
 
       // Build messages for the API
       const resolveUrls = async (urls?: string[] | null) => {
