@@ -200,7 +200,7 @@ export const ChatContainer = () => {
 
   const generateImageWithOptions = async (opts: ImageGenOptions): Promise<string | null> => {
     const { data, error } = await supabase.functions.invoke('generate-image', {
-      body: { prompt: opts.prompt, style: opts.style, aspectRatio: opts.aspectRatio, referenceImageUrl: opts.referenceImageUrl },
+      body: { prompt: opts.prompt, style: opts.style, aspectRatio: opts.aspectRatio, referenceImageUrl: opts.referenceImageUrl, modelId: opts.modelId, skipNotification: true },
     });
     if (error) throw error;
     if (data?.error) throw new Error(data.error);
