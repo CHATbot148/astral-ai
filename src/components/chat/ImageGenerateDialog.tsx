@@ -253,6 +253,35 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
             </div>
           </div>
 
+          {/* Model Selection (Pro/Ultimate only) */}
+          {canSelectModel && (
+            <div className="grid gap-2">
+              <Label className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4" />
+                AI Model
+              </Label>
+              <div className="flex flex-wrap gap-2">
+                {LEONARDO_MODELS.map((m) => (
+                  <button
+                    key={m.value}
+                    type="button"
+                    onClick={() => setSelectedModel(m.value)}
+                    disabled={isWorking}
+                    className={cn(
+                      "flex flex-col px-3 py-1.5 rounded-lg border transition-all text-xs",
+                      selectedModel === m.value
+                        ? "border-xai-cyan bg-xai-cyan/10 text-foreground"
+                        : "border-border bg-secondary/50 text-muted-foreground hover:border-xai-cyan/50"
+                    )}
+                  >
+                    <span className="font-medium">{m.label}</span>
+                    <span className="text-[10px] opacity-70">{m.hint}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Image-to-Image Toggle */}
           <div className="grid gap-3">
             <div className="flex items-center justify-between">
