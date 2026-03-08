@@ -375,8 +375,16 @@ IMPORTANT RESPONSE GUIDELINES:
       systemContent += `\n\n[IMAGE GENERATION REQUEST DETECTED]
 The user wants to generate an image: "${imagePrompt}"
 Style detected: ${detectedStyle}
-Respond with: "I'm generating that image for you now! ✨" followed by [GENERATE_IMAGE:${imagePrompt}]
-Keep response brief.`;
+Respond with a brief excited message then on a new line: [GENERATE_IMAGE:${imagePrompt}]
+Keep response brief — no need to ask questions since the prompt is clear.`;
+    }
+
+    // Add video generation guidance if detected
+    if (shouldGenerateVideo) {
+      systemContent += `\n\n[VIDEO GENERATION REQUEST DETECTED]
+The user wants to generate a video: "${videoPrompt}"
+Respond with a brief excited message then on a new line: [GENERATE_VIDEO:${videoPrompt}]
+Keep response brief — no need to ask questions since the prompt is clear.`;
     }
 
     if (fileContext) {
