@@ -95,9 +95,17 @@ serve(async (req) => {
     const selectedModel = VIDEO_MODELS[modelId] ? modelId : DEFAULT_VIDEO_MODEL;
     const selectedConfig = VIDEO_MODELS[selectedModel];
 
-    console.log(`Generating video with Leonardo text-to-video (${selectedModel}): "${prompt}"`);
+    // Determine resolution from quality param (paid users can pick 1080p)
+    const is1080 = quality === "1080p";
+    const vidWidth = is1080 ? 1920 : 1280;
+    const vidHeight = is1080 ? 1080 : 720;
 
-    // Use Leonardo's direct text-to-video endpoint (Motion 2.0)
+    // Duration: 6 or 10 seconds (default 6)
+    const vidDuration = duration === 10 ? 10 : 6;
+
+    console.log(`Generating video with Leonardo text-to-video (${selectedModel}): "${prompt}" | ${vidWidth}x${vidHeight} | ${vidDuration}s`);
+
+    // Use Leonardo's direct text-to-video endpoint
     const createRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations-text-to-video", {
       method: "POST",
       headers: {
@@ -107,10 +115,11 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         prompt,
-        height: selectedConfig.height,
-        width: selectedConfig.width,
+        height: vidHeight,
+        width: vidWidth,
         isPublic: false,
         frameInterpolation: true,
+        ...(vidDuration === 10 ? { duration: 10 } : {}),
         ...(selectedConfig.apiModel ? { model: selectedConfig.apiModel } : {}),
       }),
     });
