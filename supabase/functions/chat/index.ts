@@ -537,11 +537,12 @@ IMPORTANT RESPONSE GUIDELINES:
 6. LINKS: Use markdown format [text](url) — keep URLs short, never paste raw long URLs.
 7. IMAGES FROM WEB: Use ONLY clean markdown image syntax ![alt](https://...) and never output rendering directives, transform snippets, or partial URL fragments.
 8. VIDEOS FROM WEB: Video cards are injected automatically — DO NOT write video titles, descriptions, or links yourself when videos were found. Just write a brief intro.
-9. INLINE VISUAL IMAGES: When a [Visual Image Pool] is provided with item-specific images, embed images using [IMG:imageUrl|sourceDomain] syntax on SEPARATE lines AFTER each list item title. Place 2-4 images per item. Use ONLY the images listed under the matching item name — do NOT mix images between items. Example format:
+9. INLINE VISUAL IMAGES: When a [Visual Image Pool] is provided with item-specific images, embed images using [IMG:imageUrl|sourceDomain] syntax on SEPARATE lines AFTER each list item title. Randomly select exactly 3, 4, or 5 images per item (NEVER fewer than 3, NEVER more than 5). Vary the count between items for visual variety. Use ONLY the images listed under the matching item name — do NOT mix images between items. Example format:
    1. **Ferrari SF90 Stradale**
    [IMG:https://example.com/ferrari1.jpg|example.com]
    [IMG:https://example.com/ferrari2.jpg|carbuzz.com]
    [IMG:https://example.com/ferrari3.jpg|motortrend.com]
+   [IMG:https://example.com/ferrari4.jpg|autoweek.com]
    The SF90 is a plug-in hybrid supercar...
    
    2. **Lamborghini Revuelto**
@@ -550,7 +551,7 @@ IMPORTANT RESPONSE GUIDELINES:
    [IMG:https://example.com/lambo3.jpg|caranddriver.com]
    Description here...
    
-   IMPORTANT: Use [IMG:url|source] NOT ![alt](url) for inline visual images. Each item MUST have its own specific images.
+   IMPORTANT: Use [IMG:url|source] NOT ![alt](url) for inline visual images. Each item MUST have its own specific images. Always vary image count between 3-5.
 9. TABLES: Use compact 2-5 column tables only when comparison is necessary; otherwise prefer bullets.
 10. WEB SEARCH RESULTS: Always cite sources at the end with a [Sources] section using numbered markdown links.
 11. REAL-TIME DATA: When search results are provided, treat them as primary truth and do not invent facts.${timeContext}${userMemory}${searchContext}${mediaContext}${videoContext}`;
