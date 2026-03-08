@@ -624,7 +624,7 @@ export const ChatContainer = () => {
         const imageGenMatch = fullContent.match(/\[GENERATE_IMAGE:([^\]]+)\]/);
         if (imageGenMatch) {
           const imgPrompt = imageGenMatch[1].trim();
-          const cleanContent = fullContent.replace(/\[GENERATE_IMAGE:[^\]]+\]/g, '').trim();
+          const cleanContent = sanitizeAssistantMessage(fullContent.replace(/\[GENERATE_IMAGE:[^\]]+\]/g, '').trim());
           if (cleanContent) await addMessage(convId, 'assistant', cleanContent);
           setImageDialogPrompt(imgPrompt);
           setShowImageDialog(true);
@@ -649,8 +649,8 @@ export const ChatContainer = () => {
             processedContent = await appendFallbackSources(processedContent, searchQuery);
           }
 
+          processedContent = sanitizeAssistantMessage(processedContent);
           await addMessage(convId, 'assistant', processedContent);
-        }
       }
       setStreamingContent('');
     } catch (error) {
