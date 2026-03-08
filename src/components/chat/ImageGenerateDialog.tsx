@@ -16,6 +16,7 @@ export type ImageGenOptions = {
   aspectRatio: "1:1" | "16:9" | "9:16" | "3:2" | "4:3";
   quality: "fast" | "balanced" | "high";
   referenceImageUrl?: string;
+  modelId?: string;
 };
 
 interface Props {
@@ -39,6 +40,15 @@ const ASPECT_PRESETS: Array<{ value: ImageGenOptions["aspectRatio"]; label: stri
   { value: "9:16", label: "Tall", icon: "▮" },
   { value: "3:2", label: "Photo", icon: "🖼️" },
   { value: "4:3", label: "Classic", icon: "📺" },
+];
+
+const LEONARDO_MODELS: Array<{ value: string; label: string; hint: string }> = [
+  { value: "phoenix", label: "Phoenix", hint: "Best overall" },
+  { value: "kino", label: "Kino XL", hint: "Cinematic" },
+  { value: "diffusion", label: "Diffusion XL", hint: "Creative" },
+  { value: "anime_xl", label: "Anime XL", hint: "Anime/Manga" },
+  { value: "vision", label: "Vision XL", hint: "Photorealistic" },
+  { value: "lightning", label: "Lightning XL", hint: "Fast" },
 ];
 
 // Removed quality presets as Gemini handles this automatically
