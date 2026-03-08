@@ -395,6 +395,23 @@ serve(async (req) => {
         }
       }
 
+      // Auto visual context: detect if the topic would benefit from inline images
+      const visualCheck = needsVisualContext(lastContent);
+      if (visualCheck.needed && !mediaContext) {
+        try {
+          const imageResults = await performWebSearch(SUPABASE_URL!, visualCheck.query, "images");
+          if (imageResults.length > 0) {
+            const imgPool = imageResults.slice(0, 15).map((r: any, i: number) => 
+              `${i + 1}. "${r.title || 'Image'}" → ${r.imageUrl}${r.source ? ` (${r.source})` : ''}`
+            ).join("\n");
+            mediaContext = `\n\n[Visual Image Pool — USE THESE to illustrate your response. For each list item or key topic, embed 2-3 relevant images using this EXACT syntax on separate lines after the item title: [IMG:imageUrl|sourceDomain]\nPick images whose titles best match each item. If no good match exists for an item, skip it.]\n${imgPool}`;
+            console.log(`[chat] Auto-visual: found ${imageResults.length} images for "${visualCheck.query}"`);
+          }
+        } catch (e) {
+          console.error("Auto visual search error:", e);
+        }
+      }
+
       // Check for image fetch intent
       for (const pattern of IMAGE_FETCH_PATTERNS) {
         const match = lastContent.match(pattern);
