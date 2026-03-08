@@ -167,13 +167,11 @@ serve(async (req) => {
 
     const ref = await uploadVideo(admin, userId, prompt, videoUrl);
 
-    // Send background notification only when app is NOT in foreground
-    if (!appInForeground) {
-      try {
-        await sendGenerationNotification(admin, SUPABASE_URL!, SERVICE_ROLE_KEY!, userId, "video", prompt);
-      } catch (notifErr) {
-        console.error("Notification send failed (non-blocking):", notifErr);
-      }
+    // Always send generation completion notification (push + email based on user prefs)
+    try {
+      await sendGenerationNotification(admin, SUPABASE_URL!, SERVICE_ROLE_KEY!, userId, "video", prompt);
+    } catch (notifErr) {
+      console.error("Notification send failed (non-blocking):", notifErr);
     }
 
     return new Response(JSON.stringify({ video: ref }), {

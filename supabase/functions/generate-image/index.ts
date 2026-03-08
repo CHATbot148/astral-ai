@@ -376,8 +376,8 @@ serve(async (req) => {
 
     const ref = await uploadAndSave(admin, userId, prompt, style, aspectRatio, imgBytes, imgMime);
 
-    // Send background notification only when app is NOT in foreground
-    if (userId !== "anonymous" && !appInForeground) {
+    // Always send generation completion notification (push + email based on user prefs)
+    if (userId !== "anonymous") {
       try {
         await sendGenerationNotification(admin, SUPABASE_URL!, SERVICE_ROLE_KEY!, userId, "image", prompt);
       } catch (notifErr) {
