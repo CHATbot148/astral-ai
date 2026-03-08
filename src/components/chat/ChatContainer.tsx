@@ -720,7 +720,9 @@ export const ChatContainer = () => {
       setStreamingContent('');
 
       if (fullContent) {
-        const finalDirective = generationDirective ?? extractGenerationTag(fullContent);
+        const finalDirective = userRequestedInlineGeneration
+          ? (generationDirective ?? extractGenerationTag(fullContent))
+          : null;
 
         if (finalDirective?.type === 'image') {
           isInlineGenerationFlow = true;

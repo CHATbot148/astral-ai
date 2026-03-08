@@ -150,8 +150,8 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
                       alt={item.alt || 'Video'}
                       loading="lazy"
                       className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.currentTarget.closest('a')?.remove();
+                      onError={() => {
+                        // Keep slot stable; broken media should not collapse nearby content
                       }}
                     />
                   ) : (
