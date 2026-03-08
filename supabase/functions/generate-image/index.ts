@@ -109,9 +109,10 @@ serve(async (req) => {
     const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const LEONARDO_API_KEY = Deno.env.get("LEONARDO_API_KEY");
     const STABILITY_API_KEY = Deno.env.get("STABILITY_API_KEY");
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) throw new Error("Backend is not configured");
-    if (!LEONARDO_API_KEY && !STABILITY_API_KEY) throw new Error("Image generation API key not configured");
+    if (!LEONARDO_API_KEY && !STABILITY_API_KEY && !LOVABLE_API_KEY) throw new Error("Image generation API key not configured");
 
     // Auth
     const authHeader = req.headers.get("Authorization") || "";
