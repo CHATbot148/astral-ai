@@ -510,7 +510,7 @@ export const ChatContainer = () => {
             : undefined,
           userId: user?.id,
           forceWebSearch: shouldWebSearch,
-          webSearchQuery: content,
+          webSearchQuery: searchQuery,
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           clientTimeISO: new Date().toISOString(),
           aiMode: getAISettings().mode,
