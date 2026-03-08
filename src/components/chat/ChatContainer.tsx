@@ -198,9 +198,11 @@ export const ChatContainer = () => {
 
   // parseReminderRequest is now imported from @/lib/reminderParser
 
+  const isAppInForeground = () => document.visibilityState === 'visible' && document.hasFocus();
+
   const generateImageWithOptions = async (opts: ImageGenOptions): Promise<string | null> => {
     const { data, error } = await supabase.functions.invoke('generate-image', {
-      body: { prompt: opts.prompt, style: opts.style, aspectRatio: opts.aspectRatio, referenceImageUrl: opts.referenceImageUrl, modelId: opts.modelId, skipNotification: true },
+      body: { prompt: opts.prompt, style: opts.style, aspectRatio: opts.aspectRatio, referenceImageUrl: opts.referenceImageUrl, modelId: opts.modelId, appInForeground: isAppInForeground() },
     });
     if (error) throw error;
     if (data?.error) throw new Error(data.error);
