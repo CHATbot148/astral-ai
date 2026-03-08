@@ -408,7 +408,7 @@ serve(async (req) => {
             const perItemResults = await Promise.all(
               itemPrediction.slice(0, 8).map(async (itemName: string) => {
                 const results = await performWebSearch(SUPABASE_URL!, itemName, "images");
-                return { name: itemName, images: results.slice(0, 4) };
+                return { name: itemName, images: results.slice(0, 6) };
               })
             );
 
