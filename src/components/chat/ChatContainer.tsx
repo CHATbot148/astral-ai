@@ -636,19 +636,16 @@ export const ChatContainer = () => {
 
         if (imageGenMatch) {
           const imgPrompt = imageGenMatch[1].trim();
-          const cleanContent = sanitizeAssistantMessage(fullContent.replace(/\[GENERATE_IMAGE:[^\]]+\]/g, '').trim());
-          if (cleanContent) await addMessage(convId, 'assistant', cleanContent);
-
-          // Generate inline in background
-          toast({ title: '🎨 Generating image...', description: imgPrompt.slice(0, 60) });
+          // No text message before generation - just show indicator and start generating
           const capturedConvId = convId;
           setIsGeneratingImage(true);
+          setTypingLabel('Generating image…');
+          setTypingMode('typing');
           (async () => {
             try {
               const generatedImage = await generateImageWithOptions({ prompt: imgPrompt, style: 'photoreal', aspectRatio: '1:1', quality: 'balanced' });
               if (generatedImage) {
-                await addMessage(capturedConvId, 'assistant', `Here's your generated image for "${imgPrompt}":`, [generatedImage]);
-                toast({ title: '✅ Image ready!', description: imgPrompt.slice(0, 60) });
+                await addMessage(capturedConvId, 'assistant', `Here's your image.`, [generatedImage]);
               } else {
                 await addMessage(capturedConvId, 'assistant', `I couldn't generate that image. Please try again.`);
               }
@@ -656,17 +653,16 @@ export const ChatContainer = () => {
               await addMessage(capturedConvId, 'assistant', `Image generation failed. ${error instanceof Error ? error.message : 'Please try again.'}`);
             } finally {
               setIsGeneratingImage(false);
+              setTypingLabel(undefined);
             }
           })();
         } else if (videoGenMatch) {
           const vidPrompt = videoGenMatch[1].trim();
-          const cleanContent = sanitizeAssistantMessage(fullContent.replace(/\[GENERATE_VIDEO:[^\]]+\]/g, '').trim());
-          if (cleanContent) await addMessage(convId, 'assistant', cleanContent);
-
-          // Generate video inline in background
-          toast({ title: '🎬 Generating video...', description: vidPrompt.slice(0, 60) });
+          // No text message before generation - just show indicator and start generating
           const capturedConvId = convId;
           setIsGeneratingVideo(true);
+          setTypingLabel('Generating video…');
+          setTypingMode('typing');
           (async () => {
             try {
               const { data, error } = await supabase.functions.invoke('generate-video', {
@@ -675,8 +671,7 @@ export const ChatContainer = () => {
               if (error) throw error;
               if (data?.error) throw new Error(data.error);
               if (data?.video) {
-                await addMessage(capturedConvId, 'assistant', `Here's your generated video for "${vidPrompt}":`, [data.video]);
-                toast({ title: '✅ Video ready!', description: vidPrompt.slice(0, 60) });
+                await addMessage(capturedConvId, 'assistant', `Here's your video.`, [data.video]);
               } else {
                 await addMessage(capturedConvId, 'assistant', `I couldn't generate that video. Please try again.`);
               }
@@ -684,6 +679,7 @@ export const ChatContainer = () => {
               await addMessage(capturedConvId, 'assistant', `Video generation failed. ${error instanceof Error ? error.message : 'Please try again.'}`);
             } finally {
               setIsGeneratingVideo(false);
+              setTypingLabel(undefined);
             }
           })();
         } else {

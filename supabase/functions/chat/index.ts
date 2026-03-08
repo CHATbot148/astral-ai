@@ -370,21 +370,47 @@ IMPORTANT RESPONSE GUIDELINES:
       systemContent += `\n\nMANDATORY: You MUST append this exact block at the end of your answer (do not skip it):\n[Sources]\n${forcedSources}`;
     }
 
-    // Add image generation guidance if detected
+    // Immediately return the generation tag without hitting the AI - skip LLM entirely for clear requests
     if (shouldGenerateImage) {
-      systemContent += `\n\n[IMAGE GENERATION REQUEST DETECTED]
-The user wants to generate an image: "${imagePrompt}"
-Style detected: ${detectedStyle}
-CRITICAL: Output ONLY this tag with NO other text before or after: [GENERATE_IMAGE:${imagePrompt}]
-Do NOT say anything like "I'd love to help" or "Let me create". Just output the tag immediately.`;
+      const tagResponse = `[GENERATE_IMAGE:${imagePrompt}]`;
+      if (noStream) {
+        return new Response(JSON.stringify({ content: tagResponse }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      // Return as a stream with just the tag
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: tagResponse } }] })}\n\n`));
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        },
+      });
+      return new Response(stream, {
+        headers: { ...corsHeaders, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+      });
     }
 
-    // Add video generation guidance if detected
     if (shouldGenerateVideo) {
-      systemContent += `\n\n[VIDEO GENERATION REQUEST DETECTED]
-The user wants to generate a video: "${videoPrompt}"
-CRITICAL: Output ONLY this tag with NO other text before or after: [GENERATE_VIDEO:${videoPrompt}]
-Do NOT say anything like "I'd love to help" or "Let me create". Just output the tag immediately.`;
+      const tagResponse = `[GENERATE_VIDEO:${videoPrompt}]`;
+      if (noStream) {
+        return new Response(JSON.stringify({ content: tagResponse }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      // Return as a stream with just the tag
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: tagResponse } }] })}\n\n`));
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        },
+      });
+      return new Response(stream, {
+        headers: { ...corsHeaders, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+      });
     }
 
     if (fileContext) {
