@@ -468,6 +468,10 @@ export const ChatContainer = () => {
       await extractAndSaveMemory(content);
       await addMessage(convId, 'user', content, fileUrls.length > 0 ? fileUrls : undefined);
 
+      const userRequestedInlineGeneration = Boolean(
+        detectImageGenerationRequest(content) || detectVideoGenerationRequest(content)
+      );
+
       // Reminders
       const reminder = user ? parseReminderRequest(content) : null;
       if (reminder && user) {
