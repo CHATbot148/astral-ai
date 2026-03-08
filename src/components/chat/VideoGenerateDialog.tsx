@@ -5,12 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, Sparkles, AlertCircle, Video, Lock } from "lucide-react";
+import { Loader2, Sparkles, AlertCircle, Video, Lock, Clock, Monitor } from "lucide-react";
 import { useSubscription } from "@/hooks/useSubscription";
 
 export type VideoGenOptions = {
   prompt: string;
   modelId?: string;
+  duration?: 6 | 10;
+  quality?: "720p" | "1080p";
 };
 
 interface Props {
@@ -33,13 +35,27 @@ const VIDEO_MODELS: Array<{ value: string; label: string; hint: string }> = [
   { value: "motion_2", label: "Motion 2.0", hint: "Legacy fallback" },
 ];
 
+const DURATION_OPTIONS: Array<{ value: 6 | 10; label: string }> = [
+  { value: 6, label: "6 seconds" },
+  { value: 10, label: "10 seconds" },
+];
+
+const QUALITY_OPTIONS: Array<{ value: "720p" | "1080p"; label: string; hint: string }> = [
+  { value: "720p", label: "720p", hint: "Faster generation" },
+  { value: "1080p", label: "1080p", hint: "Higher detail" },
+];
+
 export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPrompt = "" }: Props) => {
   const { canGenerateVideo, remainingVideos, tier, tierConfig } = useSubscription();
   const [prompt, setPrompt] = useState(initialPrompt);
   const [isWorking, setIsWorking] = useState(false);
   const [selectedModel, setSelectedModel] = useState("sora_2");
+  const [selectedDuration, setSelectedDuration] = useState<6 | 10>(6);
+  const [selectedQuality, setSelectedQuality] = useState<"720p" | "1080p">("720p");
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  const isPaid = tier !== "free";
 
   useEffect(() => {
     if (initialPrompt) setPrompt(initialPrompt);
@@ -60,8 +76,11 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
     if (!prompt.trim()) return;
 
     try {
-      await onGenerate({ prompt: prompt.trim(), modelId: selectedModel });
-      // Close immediately — generation runs in background
+      await onGenerate({
+        prompt: prompt.trim(),
+        modelId: selectedModel,
+        ...(isPaid ? { duration: selectedDuration, quality: selectedQuality } : {}),
+      });
       onOpenChange(false);
       setPrompt("");
     } catch (e) {
@@ -82,6 +101,7 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
         </DialogHeader>
 
         <div className="grid gap-4">
+          {/* Prompt */}
           <div className="grid gap-2">
             <Label className="flex items-center gap-2">
               <Video className="h-4 w-4" />
@@ -109,6 +129,7 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
             </div>
           </div>
 
+          {/* Model selector - paid only */}
           {canGenerateVideo && (
             <div className="grid gap-2">
               <Label className="flex items-center gap-2">
@@ -136,6 +157,71 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
             </div>
           )}
 
+          {/* Duration & Quality - paid only */}
+          {isPaid && (
+            <div className="grid grid-cols-2 gap-3">
+              {/* Duration */}
+              <div className="grid gap-2">
+                <Label className="flex items-center gap-2 text-sm">
+                  <Clock className="h-4 w-4" />
+                  Duration
+                </Label>
+                <div className="flex gap-2">
+                  {DURATION_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setSelectedDuration(opt.value)}
+                      disabled={isWorking}
+                      className={`flex-1 px-3 py-1.5 rounded-lg border transition-all text-xs font-medium ${
+                        selectedDuration === opt.value
+                          ? 'border-xai-cyan bg-xai-cyan/10 text-foreground'
+                          : 'border-border bg-secondary/50 text-muted-foreground hover:border-xai-cyan/50'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quality */}
+              <div className="grid gap-2">
+                <Label className="flex items-center gap-2 text-sm">
+                  <Monitor className="h-4 w-4" />
+                  Quality
+                </Label>
+                <div className="flex gap-2">
+                  {QUALITY_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setSelectedQuality(opt.value)}
+                      disabled={isWorking}
+                      className={`flex-1 flex flex-col items-center px-3 py-1.5 rounded-lg border transition-all text-xs ${
+                        selectedQuality === opt.value
+                          ? 'border-xai-cyan bg-xai-cyan/10 text-foreground'
+                          : 'border-border bg-secondary/50 text-muted-foreground hover:border-xai-cyan/50'
+                      }`}
+                    >
+                      <span className="font-medium">{opt.label}</span>
+                      <span className="text-[10px] opacity-70">{opt.hint}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Not paid - locked hint */}
+          {!isPaid && canGenerateVideo && (
+            <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/50 border border-border">
+              <Lock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <p className="text-xs text-muted-foreground">Duration & quality options available on paid plans</p>
+            </div>
+          )}
+
+          {/* Progress */}
           <AnimatePresence>
             {isWorking && (
               <motion.div
@@ -156,6 +242,7 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
             )}
           </AnimatePresence>
 
+          {/* Error */}
           <AnimatePresence>
             {error && !isWorking && (
               <motion.div
