@@ -257,6 +257,7 @@ export const ChatContainer = () => {
     // Run generation in background (don't await)
     (async () => {
       setIsGeneratingVideo(true);
+      setTypingLabel('Generating video…');
       try {
         const { data, error } = await supabase.functions.invoke('generate-video', {
           body: { prompt: opts.prompt, modelId: opts.modelId },
@@ -264,7 +265,7 @@ export const ChatContainer = () => {
         if (error) throw error;
         if (data?.error) throw new Error(data.error);
         if (data?.video) {
-          await addMessage(capturedConvId, 'assistant', `Here's your generated video for "${opts.prompt}":`, [data.video]);
+          await addMessage(capturedConvId, 'assistant', `Here's your video.`, [data.video]);
           toast({ title: '✅ Video ready!', description: opts.prompt.slice(0, 60) });
         } else {
           await addMessage(capturedConvId, 'assistant', `I couldn't generate that video. Please try again.`);
@@ -273,6 +274,7 @@ export const ChatContainer = () => {
         await addMessage(capturedConvId, 'assistant', `I couldn't generate that video. ${error instanceof Error ? error.message : 'Please try again.'}`);
       } finally {
         setIsGeneratingVideo(false);
+        setTypingLabel(undefined);
       }
     })();
   };
