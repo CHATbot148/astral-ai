@@ -776,7 +776,8 @@ IMPORTANT RESPONSE GUIDELINES:
       });
     }
 
-    return new Response(response.body, {
+    const finalBody = rawVideoCards ? appendToStream(response.body!, rawVideoCards) : response.body!;
+    return new Response(finalBody, {
       headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
     });
   } catch (error) {
