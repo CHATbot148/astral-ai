@@ -901,7 +901,41 @@ IMPORTANT RESPONSE GUIDELINES:
   }
 });
 
-// Web search helper
+// Predict specific list items the AI will generate, so we can search images per item
+async function predictListItems(apiKey: string, userQuery: string): Promise<string[]> {
+  try {
+    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash-lite",
+        messages: [{
+          role: "user",
+          content: `The user asked: "${userQuery}"\n\nPredict the 5-8 specific items that would be listed in response. Return ONLY a JSON array of specific names, nothing else. Example: ["Ferrari SF90 Stradale", "Bugatti Chiron Super Sport", "Lamborghini Revuelto"]`
+        }],
+        max_tokens: 300,
+        temperature: 0.3,
+      }),
+    });
+    if (!response.ok) return [];
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content?.trim() || "";
+    // Extract JSON array from response
+    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      const items = JSON.parse(jsonMatch[0]);
+      if (Array.isArray(items) && items.every((i: any) => typeof i === "string")) {
+        console.log(`[chat] Predicted ${items.length} list items:`, items);
+        return items;
+      }
+    }
+    return [];
+  } catch (e) {
+    console.error("Predict list items error:", e);
+    return [];
+  }
+}
+
 async function performWebSearch(supabaseUrl: string, query: string, type: string): Promise<any[]> {
   try {
     const response = await fetch(`${supabaseUrl}/functions/v1/web-search`, {
