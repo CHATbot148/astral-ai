@@ -179,6 +179,14 @@ export const ChatContainer = () => {
     return null;
   };
 
+  const detectVideoGenerationRequest = (content: string): string | null => {
+    for (const pattern of VIDEO_GENERATION_PATTERNS) {
+      const match = content.match(pattern);
+      if (match && match[1]) return match[1].trim();
+    }
+    return null;
+  };
+
   const isImageRequestLoose = (text: string) =>
     /(image|picture|photo|draw|generate|create|illustration|art)/i.test(text);
 
