@@ -64,6 +64,39 @@ async function uploadAndSave(
   return ref;
 }
 
+async function generateWithLovable(prompt: string, model: string): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+  if (!LOVABLE_API_KEY) return null;
+
+  const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${LOVABLE_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "user", content: prompt }],
+      modalities: ["image", "text"],
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    console.error("Lovable AI image generation failed:", response.status, errText);
+    return null;
+  }
+
+  const data = await response.json();
+  const imageDataUrl = data?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+  if (!imageDataUrl || typeof imageDataUrl !== "string" || !imageDataUrl.startsWith("data:image/")) {
+    return null;
+  }
+
+  const parsed = parseDataUrl(imageDataUrl);
+  return { bytes: parsed.bytes, mime: parsed.mime || "image/png" };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
