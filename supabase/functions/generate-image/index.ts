@@ -15,8 +15,6 @@ const STYLE_PROMPTS: Record<string, string> = {
 };
 
 const CEO_EMAIL = "khaleelktn@gmail.com";
-const DAILY_LIMIT_REGULAR = 5;
-const DAILY_LIMIT_CEO = 20;
 
 const ASPECT_RATIO_MAP: Record<string, { width: number; height: number }> = {
   "1:1": { width: 1024, height: 1024 },
@@ -25,6 +23,18 @@ const ASPECT_RATIO_MAP: Record<string, { width: number; height: number }> = {
   "4:3": { width: 1152, height: 896 },
   "3:4": { width: 896, height: 1152 },
 };
+
+// Leonardo model IDs
+const LEONARDO_MODELS: Record<string, { id: string; name: string }> = {
+  phoenix: { id: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3", name: "Leonardo Phoenix" },
+  kino: { id: "aa77f04e-3eec-4034-9c07-d0f619684628", name: "Leonardo Kino XL" },
+  diffusion: { id: "b24e16ff-06e3-43eb-8d33-4c419f36e1b7", name: "Leonardo Diffusion XL" },
+  anime_xl: { id: "e71a1c2f-4f80-4800-934f-2c68979d8cc8", name: "Leonardo Anime XL" },
+  vision: { id: "5c232a9e-9061-4777-980a-ddc8e65647c6", name: "Leonardo Vision XL" },
+  lightning: { id: "b2614463-296c-462a-9586-aafdb8f00e36", name: "Leonardo Lightning XL" },
+};
+
+const DEFAULT_MODEL = "phoenix";
 
 function parseDataUrl(dataUrl: string): { mime: string; bytes: Uint8Array } {
   const match = dataUrl.match(/^data:(.+?);base64,(.+)$/);
@@ -59,7 +69,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { prompt, imageDataUrl, referenceImageUrl, style = "photoreal", aspectRatio = "1:1" } = await req.json();
+    const { prompt, imageDataUrl, referenceImageUrl, style = "photoreal", aspectRatio = "1:1", modelId, skipNotification } = await req.json();
     if (!prompt && !imageDataUrl) throw new Error("Prompt or imageDataUrl is required");
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -67,7 +77,6 @@ serve(async (req) => {
     const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const LEONARDO_API_KEY = Deno.env.get("LEONARDO_API_KEY");
     const STABILITY_API_KEY = Deno.env.get("STABILITY_API_KEY");
-    const BREVO_API_KEY = Deno.env.get("BREVO_API_KEY");
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) throw new Error("Backend is not configured");
     if (!LEONARDO_API_KEY && !STABILITY_API_KEY) throw new Error("Image generation API key not configured");
@@ -89,8 +98,8 @@ serve(async (req) => {
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
     // Subscription tier check + daily limit
+    let tier = "free";
     if (userId !== "anonymous") {
-      // Fetch user's subscription
       const { data: sub } = await admin
         .from("subscriptions")
         .select("tier, status, expires_at")
@@ -98,14 +107,14 @@ serve(async (req) => {
         .eq("status", "active")
         .maybeSingle();
 
-      const tier = (sub && sub.status === "active" && (!sub.expires_at || new Date(sub.expires_at) > new Date()))
+      tier = (sub && sub.status === "active" && (!sub.expires_at || new Date(sub.expires_at) > new Date()))
         ? sub.tier : "free";
 
       const tierLimits: Record<string, number> = {
         free: 5, basic: 10, pro: 25, ultimate: 999999,
       };
 
-      const dailyLimit = userEmail === CEO_EMAIL ? DAILY_LIMIT_CEO : (tierLimits[tier] || 5);
+      const dailyLimit = userEmail === CEO_EMAIL ? 20 : (tierLimits[tier] || 5);
       const today = new Date(); today.setHours(0, 0, 0, 0);
       const { count } = await admin
         .from("generated_images")
@@ -134,12 +143,18 @@ serve(async (req) => {
     const enhancedPrompt = stylePrompt ? `${prompt}, ${stylePrompt}` : prompt;
     const dims = ASPECT_RATIO_MAP[aspectRatio] || ASPECT_RATIO_MAP["1:1"];
 
+    // Resolve model: allow Pro/Ultimate to pick, otherwise use default
+    const canSelectModel = tier === "pro" || tier === "ultimate" || userEmail === CEO_EMAIL;
+    const selectedModel = canSelectModel && modelId && LEONARDO_MODELS[modelId]
+      ? LEONARDO_MODELS[modelId].id
+      : LEONARDO_MODELS[DEFAULT_MODEL].id;
+
     let imgBytes: Uint8Array | null = null;
     let imgMime = "image/png";
 
     // ===== PRIMARY: Leonardo AI =====
     if (LEONARDO_API_KEY) {
-      console.log(`[PRIMARY] Leonardo AI: "${enhancedPrompt}"`);
+      console.log(`[PRIMARY] Leonardo AI (model: ${selectedModel}): "${enhancedPrompt}"`);
       try {
         const createRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations", {
           method: "POST",
@@ -150,11 +165,13 @@ serve(async (req) => {
           },
           body: JSON.stringify({
             prompt: enhancedPrompt,
-            modelId: "6bef9f1b-29cb-40c7-b9df-32b51c1f67d3",
+            modelId: selectedModel,
             width: dims.width,
             height: dims.height,
             num_images: 1,
             alchemy: true,
+            photoReal: style === "photoreal",
+            presetStyle: style === "cinematic" ? "CINEMATIC" : style === "anime" ? "ANIME" : "NONE",
           }),
         });
 
@@ -170,7 +187,6 @@ serve(async (req) => {
 
         console.log("Leonardo generation started, ID:", generationId);
 
-        // Poll for completion (up to 90 seconds)
         for (let i = 0; i < 30; i++) {
           await new Promise(r => setTimeout(r, 3000));
           const pollRes = await fetch(`https://cloud.leonardo.ai/api/rest/v1/generations/${generationId}`, {
@@ -243,17 +259,11 @@ serve(async (req) => {
 
     const ref = await uploadAndSave(admin, userId, prompt, style, aspectRatio, imgBytes, imgMime);
 
-    if (userId !== "anonymous") {
-      await notifyUserMediaReady({
-        admin,
-        supabaseUrl: SUPABASE_URL,
-        serviceRoleKey: SERVICE_ROLE_KEY,
-        brevoApiKey: BREVO_API_KEY,
-        userId,
-        prompt,
-        mediaType: "image",
-        mediaRef: ref,
-      });
+    // Only send notifications if the user is NOT actively in the app (skipNotification flag)
+    // The frontend sets skipNotification=true when user triggered generation from the UI
+    // so we don't double-notify them
+    if (!skipNotification) {
+      // No notification logic needed - frontend handles the message
     }
 
     return new Response(JSON.stringify({ image: ref }), {
@@ -266,128 +276,3 @@ serve(async (req) => {
     });
   }
 });
-
-async function notifyUserMediaReady(params: {
-  admin: ReturnType<typeof createClient>;
-  supabaseUrl: string;
-  serviceRoleKey: string;
-  brevoApiKey: string | undefined;
-  userId: string;
-  prompt: string;
-  mediaType: "image" | "video";
-  mediaRef: string;
-}) {
-  const { admin, supabaseUrl, serviceRoleKey, brevoApiKey, userId, prompt, mediaType, mediaRef } = params;
-
-  const content = mediaType === "image"
-    ? `🖼️ Your generated image is ready: "${prompt}"`
-    : `🎬 Your generated video is ready: "${prompt}"`;
-
-  const conversationId = await resolveConversationId(admin, userId);
-  if (conversationId) {
-    await admin.from("messages").insert({
-      conversation_id: conversationId,
-      role: "assistant",
-      content,
-      file_urls: [mediaRef],
-    });
-    await admin.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
-  }
-
-  const { data: profileData } = await admin
-    .from("profiles")
-    .select("notification_preference, notifications_enabled")
-    .eq("user_id", userId)
-    .single();
-
-  if (!profileData?.notifications_enabled) return;
-
-  const pref = profileData.notification_preference || "push_and_email";
-  const shouldPush = pref === "push_and_email" || pref === "push_only";
-  const shouldEmail = pref === "push_and_email" || pref === "email_only";
-
-  let pushDelivered = false;
-  if (shouldPush) {
-    const { data: pushSubs } = await admin.from("push_subscriptions").select("id").eq("user_id", userId).limit(1);
-    if ((pushSubs?.length ?? 0) > 0) {
-      pushDelivered = await sendPushNotification(supabaseUrl, serviceRoleKey, userId, content);
-    }
-  }
-
-  if (shouldEmail || !pushDelivered) {
-    const userEmail = await getUserEmail(admin, userId);
-    if (userEmail && brevoApiKey) {
-      await sendEmail(brevoApiKey, userEmail, content, mediaType);
-    }
-  }
-}
-
-async function resolveConversationId(supabase: ReturnType<typeof createClient>, userId: string): Promise<string | null> {
-  const { data: latestConversation } = await supabase
-    .from("conversations")
-    .select("id")
-    .eq("user_id", userId)
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (latestConversation?.id) return latestConversation.id;
-
-  const { data: createdConversation } = await supabase
-    .from("conversations")
-    .insert({ user_id: userId, title: "Generated Media" })
-    .select("id")
-    .single();
-
-  return createdConversation?.id ?? null;
-}
-
-async function sendPushNotification(supabaseUrl: string, serviceRoleKey: string, userId: string, message: string): Promise<boolean> {
-  try {
-    const pushRes = await fetch(`${supabaseUrl}/functions/v1/send-push`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${serviceRoleKey}`,
-      },
-      body: JSON.stringify({
-        userId,
-        title: "Astraz Update",
-        body: message,
-        url: "/",
-      }),
-    });
-
-    if (!pushRes.ok) return false;
-    const pushData = await pushRes.json().catch(() => ({}));
-    return Number(pushData?.sent ?? 0) > 0;
-  } catch {
-    return false;
-  }
-}
-
-async function getUserEmail(supabase: ReturnType<typeof createClient>, userId: string): Promise<string | null> {
-  const { data, error } = await supabase.auth.admin.getUserById(userId);
-  if (error) return null;
-  return data.user?.email ?? null;
-}
-
-async function sendEmail(apiKey: string, to: string, message: string, mediaType: "image" | "video"): Promise<boolean> {
-  const subject = mediaType === "image" ? "🖼️ Your image is ready" : "🎬 Your video is ready";
-
-  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
-    method: "POST",
-    headers: {
-      "api-key": apiKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      sender: { name: "Astraz", email: "xtechnly@gmail.com" },
-      to: [{ email: to }],
-      subject,
-      htmlContent: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 20px;"><p style="font-size: 16px; color: #111827;">${message}</p><p><a href="https://astraz.lovable.app">Open Astraz</a></p></div>`,
-    }),
-  });
-
-  return response.ok;
-}
