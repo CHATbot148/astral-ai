@@ -398,8 +398,11 @@ serve(async (req) => {
       const visualCheck = needsVisualContext(lastContent);
       if (visualCheck.needed && !mediaContext) {
         try {
-          // Step 1: Use a fast AI call to predict specific list items
-          const itemPrediction = await predictListItems(LOVABLE_API_KEY!, lastContent);
+          // Step 1: Use a fast AI call to predict specific list items (when key is available)
+          const itemPrediction = LOVABLE_API_KEY
+            ? await predictListItems(LOVABLE_API_KEY, lastContent)
+            : [];
+
           if (itemPrediction.length > 0) {
             // Step 2: Search images for EACH specific item in parallel
             const perItemResults = await Promise.all(
@@ -422,8 +425,10 @@ serve(async (req) => {
               mediaContext = `\n\n[Visual Image Pool — ITEM-SPECIFIC IMAGES. For EACH list item, use the images listed under its matching name. Embed 2-4 images per item using [IMG:imageUrl|sourceDomain] syntax on SEPARATE lines right after the item title. Do NOT mix images between items.]\n\n${imgPool}`;
               console.log(`[chat] Per-item visual: searched ${validItems.length} items with images`);
             }
-          } else {
-            // Fallback: single generic search if prediction fails
+          }
+
+          if (!mediaContext) {
+            // Fallback: single generic search if prediction is unavailable or empty
             const imageResults = await performWebSearch(SUPABASE_URL!, visualCheck.query, "images");
             if (imageResults.length > 0) {
               const imgPool = imageResults.slice(0, 15).map((r: any, i: number) => 
