@@ -10,6 +10,7 @@ import { useSubscription } from "@/hooks/useSubscription";
 
 export type VideoGenOptions = {
   prompt: string;
+  modelId?: string;
 };
 
 interface Props {
@@ -26,10 +27,17 @@ const PROMPT_SUGGESTIONS = [
   "Rain falling on a city street at night",
 ];
 
+const VIDEO_MODELS: Array<{ value: string; label: string; hint: string }> = [
+  { value: "sora_2", label: "Sora 2", hint: "Best quality + consistency" },
+  { value: "sora_2_pro", label: "Sora 2 Pro", hint: "Higher fidelity output" },
+  { value: "motion_2", label: "Motion 2.0", hint: "Legacy fallback" },
+];
+
 export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPrompt = "" }: Props) => {
   const { canGenerateVideo, remainingVideos, tier, tierConfig } = useSubscription();
   const [prompt, setPrompt] = useState(initialPrompt);
   const [isWorking, setIsWorking] = useState(false);
+  const [selectedModel, setSelectedModel] = useState("sora_2");
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,7 +63,7 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
     setProgress(5);
 
     try {
-      await onGenerate({ prompt: prompt.trim() });
+      await onGenerate({ prompt: prompt.trim(), modelId: selectedModel });
       setProgress(100);
       setTimeout(() => {
         onOpenChange(false);
@@ -109,6 +117,33 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
               ))}
             </div>
           </div>
+
+          {canGenerateVideo && (
+            <div className="grid gap-2">
+              <Label className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4" />
+                Video Model
+              </Label>
+              <div className="flex flex-wrap gap-2">
+                {VIDEO_MODELS.map((model) => (
+                  <button
+                    key={model.value}
+                    type="button"
+                    onClick={() => setSelectedModel(model.value)}
+                    disabled={isWorking}
+                    className={`flex flex-col px-3 py-1.5 rounded-lg border transition-all text-xs ${
+                      selectedModel === model.value
+                        ? 'border-xai-cyan bg-xai-cyan/10 text-foreground'
+                        : 'border-border bg-secondary/50 text-muted-foreground hover:border-xai-cyan/50'
+                    }`}
+                  >
+                    <span className="font-medium">{model.label}</span>
+                    <span className="text-[10px] opacity-70">{model.hint}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <AnimatePresence>
             {isWorking && (

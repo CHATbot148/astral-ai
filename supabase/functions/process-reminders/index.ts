@@ -85,7 +85,9 @@ serve(async (req) => {
           ? await sendReminderEmail(BREVO_API_KEY!, fallbackEmail!, reminder.message)
           : false;
 
-        const delivered = messageInserted || pushDelivered || emailDelivered;
+        const wantsExternalNotification = shouldPush || shouldEmail;
+        const externalDelivered = pushDelivered || emailDelivered;
+        const delivered = externalDelivered || (!wantsExternalNotification && messageInserted);
 
         if (delivered) {
           await supabase

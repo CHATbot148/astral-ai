@@ -24,17 +24,16 @@ const ASPECT_RATIO_MAP: Record<string, { width: number; height: number }> = {
   "3:4": { width: 896, height: 1152 },
 };
 
-// Leonardo model IDs
-const LEONARDO_MODELS: Record<string, { id: string; name: string }> = {
-  phoenix: { id: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3", name: "Leonardo Phoenix" },
-  kino: { id: "aa77f04e-3eec-4034-9c07-d0f619684628", name: "Leonardo Kino XL" },
-  diffusion: { id: "b24e16ff-06e3-43eb-8d33-4c419f36e1b7", name: "Leonardo Diffusion XL" },
-  anime_xl: { id: "e71a1c2f-4f80-4800-934f-2c68979d8cc8", name: "Leonardo Anime XL" },
-  vision: { id: "5c232a9e-9061-4777-980a-ddc8e65647c6", name: "Leonardo Vision XL" },
-  lightning: { id: "b2614463-296c-462a-9586-aafdb8f00e36", name: "Leonardo Lightning XL" },
+// Provider model mapping
+const IMAGE_MODELS: Record<string, { provider: "lovable" | "leonardo"; lovableModel?: string; leonardoId?: string }> = {
+  nano_banana_2: { provider: "lovable", lovableModel: "google/gemini-2.5-flash-image" },
+  seedream_4_5: { provider: "leonardo", leonardoId: "b24e16ff-06e3-43eb-8d33-4c419f36e1b7" },
+  lucid_origin: { provider: "leonardo", leonardoId: "5c232a9e-9061-4777-980a-ddc8e65647c6" },
+  flux_2_pro: { provider: "leonardo", leonardoId: "aa77f04e-3eec-4034-9c07-d0f619684628" },
+  phoenix: { provider: "leonardo", leonardoId: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3" },
 };
 
-const DEFAULT_MODEL = "phoenix";
+const DEFAULT_MODEL = "nano_banana_2";
 
 function parseDataUrl(dataUrl: string): { mime: string; bytes: Uint8Array } {
   const match = dataUrl.match(/^data:(.+?);base64,(.+)$/);
@@ -65,6 +64,39 @@ async function uploadAndSave(
   return ref;
 }
 
+async function generateWithLovable(prompt: string, model: string): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+  if (!LOVABLE_API_KEY) return null;
+
+  const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${LOVABLE_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "user", content: prompt }],
+      modalities: ["image", "text"],
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    console.error("Lovable AI image generation failed:", response.status, errText);
+    return null;
+  }
+
+  const data = await response.json();
+  const imageDataUrl = data?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+  if (!imageDataUrl || typeof imageDataUrl !== "string" || !imageDataUrl.startsWith("data:image/")) {
+    return null;
+  }
+
+  const parsed = parseDataUrl(imageDataUrl);
+  return { bytes: parsed.bytes, mime: parsed.mime || "image/png" };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -77,9 +109,10 @@ serve(async (req) => {
     const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const LEONARDO_API_KEY = Deno.env.get("LEONARDO_API_KEY");
     const STABILITY_API_KEY = Deno.env.get("STABILITY_API_KEY");
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) throw new Error("Backend is not configured");
-    if (!LEONARDO_API_KEY && !STABILITY_API_KEY) throw new Error("Image generation API key not configured");
+    if (!LEONARDO_API_KEY && !STABILITY_API_KEY && !LOVABLE_API_KEY) throw new Error("Image generation API key not configured");
 
     // Auth
     const authHeader = req.headers.get("Authorization") || "";
@@ -143,18 +176,33 @@ serve(async (req) => {
     const enhancedPrompt = stylePrompt ? `${prompt}, ${stylePrompt}` : prompt;
     const dims = ASPECT_RATIO_MAP[aspectRatio] || ASPECT_RATIO_MAP["1:1"];
 
-    // Resolve model: allow Pro/Ultimate to pick, otherwise use default
+    // Resolve model: allow Pro/Ultimate to pick, otherwise use Nano Banana 2 by default
     const canSelectModel = tier === "pro" || tier === "ultimate" || userEmail === CEO_EMAIL;
-    const selectedModel = canSelectModel && modelId && LEONARDO_MODELS[modelId]
-      ? LEONARDO_MODELS[modelId].id
-      : LEONARDO_MODELS[DEFAULT_MODEL].id;
+    const selectedModelKey = canSelectModel && modelId && IMAGE_MODELS[modelId]
+      ? modelId
+      : DEFAULT_MODEL;
+    const selectedModel = IMAGE_MODELS[selectedModelKey] || IMAGE_MODELS[DEFAULT_MODEL];
 
     let imgBytes: Uint8Array | null = null;
     let imgMime = "image/png";
 
-    // ===== PRIMARY: Leonardo AI =====
-    if (LEONARDO_API_KEY) {
-      console.log(`[PRIMARY] Leonardo AI (model: ${selectedModel}): "${enhancedPrompt}"`);
+    // ===== PRIMARY: selected provider =====
+    if (selectedModel.provider === "lovable" && selectedModel.lovableModel) {
+      console.log(`[PRIMARY] Lovable AI (${selectedModel.lovableModel}): "${enhancedPrompt}"`);
+      try {
+        const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel);
+        if (generated) {
+          imgBytes = generated.bytes;
+          imgMime = generated.mime;
+        }
+      } catch (e) {
+        console.error("Lovable AI failed:", e);
+      }
+    }
+
+    if (!imgBytes && LEONARDO_API_KEY) {
+      const leonardoModelId = selectedModel.leonardoId || IMAGE_MODELS.phoenix.leonardoId!;
+      console.log(`[FALLBACK] Leonardo AI (model: ${leonardoModelId}): "${enhancedPrompt}"`);
       try {
         const createRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations", {
           method: "POST",
@@ -165,7 +213,7 @@ serve(async (req) => {
           },
           body: JSON.stringify({
             prompt: enhancedPrompt,
-            modelId: selectedModel,
+            modelId: leonardoModelId,
             width: dims.width,
             height: dims.height,
             num_images: 1,
@@ -185,8 +233,6 @@ serve(async (req) => {
         const generationId = createData.sdGenerationJob?.generationId;
         if (!generationId) throw new Error("No generation ID from Leonardo");
 
-        console.log("Leonardo generation started, ID:", generationId);
-
         for (let i = 0; i < 30; i++) {
           await new Promise(r => setTimeout(r, 3000));
           const pollRes = await fetch(`https://cloud.leonardo.ai/api/rest/v1/generations/${generationId}`, {
@@ -196,7 +242,6 @@ serve(async (req) => {
           const pollData = await pollRes.json();
           const gen = pollData.generations_by_pk;
           if (gen?.status === "COMPLETE" && gen.generated_images?.[0]?.url) {
-            console.log("Leonardo image ready, downloading...");
             const dlRes = await fetch(gen.generated_images[0].url);
             if (dlRes.ok) {
               imgBytes = new Uint8Array(await dlRes.arrayBuffer());

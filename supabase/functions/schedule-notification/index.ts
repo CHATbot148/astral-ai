@@ -183,7 +183,9 @@ async function deliverReminderNow(params: {
     ? await sendEmail(brevoApiKey!, fallbackEmail!, message, type)
     : false;
 
-  const delivered = messageInserted || pushDelivered || emailDelivered;
+  const wantsExternalNotification = shouldPush || shouldEmail;
+  const externalDelivered = pushDelivered || emailDelivered;
+  const delivered = externalDelivered || (!wantsExternalNotification && messageInserted);
 
   if (delivered) {
     await supabase

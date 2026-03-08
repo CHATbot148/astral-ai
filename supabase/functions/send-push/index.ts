@@ -24,8 +24,9 @@ serve(async (req) => {
     const { userId, title, body, url } = await req.json();
     if (!userId) throw new Error("userId required");
 
+    const vapidSubject = Deno.env.get("WEB_PUSH_VAPID_SUBJECT") || "https://astraz.lovable.app";
     webpush.setVapidDetails(
-      "mailto:xtechnly@gmail.com",
+      vapidSubject,
       VAPID_PUBLIC_KEY,
       VAPID_PRIVATE_KEY,
     );
@@ -67,11 +68,12 @@ serve(async (req) => {
       } catch (err: any) {
         const statusCode = Number(err?.statusCode || err?.status || 0);
         const message = err?.message || String(err);
-        console.error("Push send error:", statusCode || "n/a", message);
+        const responseBody = typeof err?.body === "string" ? err.body : "";
+        console.error("Push send error:", statusCode || "n/a", message, responseBody);
 
         if (
-          [400, 401, 403, 404, 410].includes(statusCode) ||
-          /invalid|expired|unsubscribed|gone|not\s+found/i.test(message)
+          [404, 410].includes(statusCode) ||
+          /expired|unsubscribed|gone|not\s+found/i.test(message)
         ) {
           expiredSubs.push(sub.id);
         }
