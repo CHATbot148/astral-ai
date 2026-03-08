@@ -66,6 +66,8 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   const [prompt, setPrompt] = useState(initialPrompt);
   const [style, setStyle] = useState<ImageGenOptions["style"]>("photoreal");
   const [aspectRatio, setAspectRatio] = useState<ImageGenOptions["aspectRatio"]>("1:1");
+  const [selectedModel, setSelectedModel] = useState("phoenix");
+  const canSelectModel = tier === "pro" || tier === "ultimate";
   const [isWorking, setIsWorking] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
