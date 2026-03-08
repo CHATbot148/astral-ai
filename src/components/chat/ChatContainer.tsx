@@ -44,6 +44,13 @@ const IMAGE_GENERATION_PATTERNS = [
   /(?:can you |please )?(?:generate|create|make|draw) (?:an? )?(?:image|picture|photo) (?:of |showing |with |for )?(.+)/i,
 ];
 
+const VIDEO_GENERATION_PATTERNS = [
+  /generate (?:a )?(?:video|clip|animation) (?:of |showing |with )?(.+)/i,
+  /create (?:a )?(?:video|clip|animation) (?:of |showing |with )?(.+)/i,
+  /make (?:me )?(?:a )?(?:video|clip|animation) (?:of |showing |with )?(.+)/i,
+  /(?:can you |please )?(?:generate|create|make) (?:a )?(?:video|clip|animation) (?:of |showing |with |for )?(.+)/i,
+];
+
 // Emoji regex for stripping from search queries
 const EMOJI_REGEX = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu;
 

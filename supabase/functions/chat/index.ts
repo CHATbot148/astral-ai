@@ -248,6 +248,7 @@ serve(async (req) => {
   try {
     const { messages, fileContext, timeZone, clientTimeISO, aiMode, followUpQuestions, isVoiceMode, noStream, forceWebSearch, webSearchQuery } = await req.json();
     const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");

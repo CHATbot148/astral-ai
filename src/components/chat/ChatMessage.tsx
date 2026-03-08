@@ -320,6 +320,7 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
   const [showAudioPlayer, setShowAudioPlayer] = useState(false);
   const [resolvedFiles, setResolvedFiles] = useState<string[]>([]);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [failedInlineImages, setFailedInlineImages] = useState<Set<string>>(new Set());
   const [notificationActed, setNotificationActed] = useState(false);
   const { toast } = useToast();
   const isUser = role === 'user';
