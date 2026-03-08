@@ -24,7 +24,7 @@ serve(async (req) => {
     const { userId, title, body, url } = await req.json();
     if (!userId) throw new Error("userId required");
 
-    const vapidSubject = Deno.env.get("WEB_PUSH_VAPID_SUBJECT") || "https://astraz.lovable.app";
+    const vapidSubject = Deno.env.get("WEB_PUSH_VAPID_SUBJECT") || "mailto:xtechnly@gmail.com";
     webpush.setVapidDetails(
       vapidSubject,
       VAPID_PUBLIC_KEY,
