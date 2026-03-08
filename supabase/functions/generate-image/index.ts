@@ -101,7 +101,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { prompt, imageDataUrl, referenceImageUrl, style = "photoreal", aspectRatio = "1:1", modelId } = await req.json();
+    const { prompt, imageDataUrl, referenceImageUrl, style = "photoreal", aspectRatio = "1:1", modelId, appInForeground } = await req.json();
     if (!prompt && !imageDataUrl) throw new Error("Prompt or imageDataUrl is required");
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -186,6 +186,50 @@ serve(async (req) => {
     let imgBytes: Uint8Array | null = null;
     let imgMime = "image/png";
 
+    // Handle image-to-image reference via Leonardo init-image
+    let initImageId: string | undefined;
+    if (referenceImageUrl && LEONARDO_API_KEY) {
+      try {
+        // Step 1: Get presigned upload URL
+        const initRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/init-image", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LEONARDO_API_KEY}`,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({ extension: "jpg" }),
+        });
+        if (initRes.ok) {
+          const initData = await initRes.json();
+          const uploadUrl = initData?.uploadInitImage?.url;
+          const initId = initData?.uploadInitImage?.id;
+          if (uploadUrl && initId) {
+            // Step 2: Upload the reference image bytes
+            let refBytes: Uint8Array;
+            if (referenceImageUrl.startsWith("data:")) {
+              const parsed = parseDataUrl(referenceImageUrl);
+              refBytes = parsed.bytes;
+            } else {
+              const refRes = await fetch(referenceImageUrl);
+              refBytes = new Uint8Array(await refRes.arrayBuffer());
+            }
+            const uploadRes = await fetch(uploadUrl, {
+              method: "PUT",
+              headers: { "Content-Type": "image/jpeg" },
+              body: refBytes,
+            });
+            if (uploadRes.ok) {
+              initImageId = initId;
+              console.log("Reference image uploaded, initImageId:", initImageId);
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Init image upload failed (non-blocking):", e);
+      }
+    }
+
     // ===== PRIMARY: selected provider =====
     if (selectedModel.provider === "lovable" && selectedModel.lovableModel) {
       console.log(`[PRIMARY] Lovable AI (${selectedModel.lovableModel}): "${enhancedPrompt}"`);
@@ -220,6 +264,7 @@ serve(async (req) => {
             alchemy: true,
             photoReal: style === "photoreal",
             presetStyle: style === "cinematic" ? "CINEMATIC" : style === "anime" ? "ANIME" : "NONE",
+            ...(initImageId ? { init_image_id: initImageId, isInitImage: true } : {}),
           }),
         });
 
@@ -304,8 +349,8 @@ serve(async (req) => {
 
     const ref = await uploadAndSave(admin, userId, prompt, style, aspectRatio, imgBytes, imgMime);
 
-    // Send background notification respecting user's preference
-    if (userId !== "anonymous") {
+    // Send background notification only when app is NOT in foreground
+    if (userId !== "anonymous" && !appInForeground) {
       try {
         await sendGenerationNotification(admin, SUPABASE_URL!, SERVICE_ROLE_KEY!, userId, "image", prompt);
       } catch (notifErr) {
