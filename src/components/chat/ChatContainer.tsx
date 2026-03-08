@@ -584,10 +584,11 @@ export const ChatContainer = () => {
       let wordQueue: string[] = [];
       let displayedContent = '';
       let animInterval: ReturnType<typeof setInterval> | null = null;
+      let generationDirective: { type: 'image' | 'video'; prompt: string } | null = null;
+      let isInlineGenerationFlow = false;
 
       if (showTyping && typingStyle === 'typewriter') {
         animInterval = setInterval(() => {
-          // Drain multiple chars per tick for "extremely fast" feel
           const batch = charQueue.splice(0, 3);
           if (batch.length > 0) {
             displayedContent += batch.join('');
@@ -628,16 +629,42 @@ export const ChatContainer = () => {
             const content = parsed.choices?.[0]?.delta?.content;
             if (content) {
               fullContent += content;
+
+              if (!generationDirective) {
+                generationDirective = extractGenerationTag(fullContent);
+                if (generationDirective) {
+                  isInlineGenerationFlow = true;
+                  setStreamingContent('');
+                  setTypingMode('typing');
+                  if (generationDirective.type === 'image') {
+                    setIsGeneratingImage(true);
+                    setTypingLabel('Generating image…');
+                  } else {
+                    setIsGeneratingVideo(true);
+                    setTypingLabel('Generating video…');
+                  }
+                }
+              }
+
+              if (generationDirective) continue;
+
+              const visibleContent = stripRenderableDirectives(fullContent);
+
               if (showTyping) {
                 if (typingStyle === 'typewriter') {
-                  charQueue.push(...content.split(''));
+                  const safeDelta = visibleContent.slice(displayedContent.length);
+                  if (safeDelta) charQueue.push(...safeDelta.split(''));
                 } else if (typingStyle === 'word_by_word') {
-                  const words = content.match(/\S+\s*/g) || [content];
-                  wordQueue.push(...words);
+                  const safeDelta = visibleContent.slice(displayedContent.length);
+                  if (safeDelta) {
+                    const words = safeDelta.match(/\S+\s*/g) || [safeDelta];
+                    wordQueue.push(...words);
+                  }
                 } else {
-                  // normal, line_fade, slide_down
-                  setStreamingContent(fullContent);
+                  setStreamingContent(visibleContent);
                 }
+              } else {
+                setStreamingContent(visibleContent);
               }
             }
           } catch {
