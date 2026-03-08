@@ -55,6 +55,7 @@ function relevanceScore(text: string, tokens: string[]): number {
   return score / tokens.length;
 }
 
+serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
