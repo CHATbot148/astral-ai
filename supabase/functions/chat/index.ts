@@ -221,10 +221,8 @@ serve(async (req) => {
     for (const pattern of IMAGE_GENERATION_PATTERNS) {
       if (pattern.test(lastContent)) {
         shouldGenerateImage = true;
-        imagePrompt = lastContent
-          .replace(/^(generate|create|make|draw|visuali[sz]e)\s*(me\s*)?(an?\s*)?(image|picture|photo|illustration|art|artwork)?\s*(of\s*)?/i, '')
-          .trim() || lastContent;
-        
+        imagePrompt = extractGenerationPrompt(lastContent, "image");
+
         for (const style of STYLE_KEYWORDS) {
           if (lastContent.toLowerCase().includes(style)) {
             if (style === 'sketch') detectedStyle = 'sketch';
@@ -243,11 +241,20 @@ serve(async (req) => {
       for (const pattern of VIDEO_GENERATION_PATTERNS) {
         if (pattern.test(lastContent)) {
           shouldGenerateVideo = true;
-          videoPrompt = lastContent
-            .replace(/^(generate|create|make)\s*(me\s*)?(a\s*)?(video|clip|animation)?\s*(of\s*)?/i, '')
-            .trim() || lastContent;
+          videoPrompt = extractGenerationPrompt(lastContent, "video");
           break;
         }
+      }
+    }
+
+    // Heuristic fallback: treat natural generation requests as generation even when pattern isn't exact
+    if (!shouldGenerateImage && !shouldGenerateVideo) {
+      if (isLikelyImageGenerationIntent(lastContent)) {
+        shouldGenerateImage = true;
+        imagePrompt = extractGenerationPrompt(lastContent, "image");
+      } else if (isLikelyVideoGenerationIntent(lastContent)) {
+        shouldGenerateVideo = true;
+        videoPrompt = extractGenerationPrompt(lastContent, "video");
       }
     }
 
