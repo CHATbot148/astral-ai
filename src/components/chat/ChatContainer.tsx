@@ -699,7 +699,15 @@ export const ChatContainer = () => {
 
           (async () => {
             try {
-              const generatedImage = await generateImageWithOptions({ prompt: imgPrompt, style: 'photoreal', aspectRatio: '1:1', quality: 'balanced' });
+              // Use the first uploaded image as a reference if available
+              const referenceImageUrl = imageUrls.length > 0 ? imageUrls[0] : undefined;
+              const generatedImage = await generateImageWithOptions({ 
+                prompt: imgPrompt, 
+                style: 'photoreal', 
+                aspectRatio: '1:1', 
+                quality: 'balanced',
+                referenceImageUrl,
+              });
               if (generatedImage) {
                 await addMessage(capturedConvId, 'assistant', `Here's your image.`, [generatedImage]);
               } else {
