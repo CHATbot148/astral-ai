@@ -262,7 +262,7 @@ export const ChatContainer = () => {
       setTypingLabel('Generating video…');
       try {
         const { data, error } = await supabase.functions.invoke('generate-video', {
-          body: { prompt: opts.prompt, modelId: opts.modelId, duration: opts.duration, quality: opts.quality },
+          body: { prompt: opts.prompt, modelId: opts.modelId, duration: opts.duration, quality: opts.quality, appInForeground: isAppInForeground() },
         });
         if (error) throw error;
         if (data?.error) throw new Error(data.error);
