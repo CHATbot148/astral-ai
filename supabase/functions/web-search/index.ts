@@ -164,33 +164,46 @@ async function searchSerpAPIWeb(query: string, count: number, apiKey: string): P
 
 async function searchSerpAPIImages(query: string, count: number, apiKey: string): Promise<ImageResult[]> {
   try {
-    const params = new URLSearchParams({ q: query, api_key: apiKey, engine: "google_images", num: String(Math.min(count + 18, 36)) });
+    const params = new URLSearchParams({ q: query, api_key: apiKey, engine: "google_images", num: String(Math.min(count + 30, 50)) });
     const response = await fetch(`https://serpapi.com/search.json?${params}`);
     if (!response.ok) throw new Error(`SerpAPI images error: ${response.status}`);
     const data = await response.json();
 
-    const candidates = Array.isArray(data.images_results) ? data.images_results : [];
+    const tokens = tokenizeQuery(query);
+    const candidates = (Array.isArray(data.images_results) ? data.images_results : [])
+      .map((item: any) => {
+        const imageUrl = item.original || item.thumbnail;
+        const pageUrl = item.link || item.original;
+        const title = item.title || query;
+        const sourceHost = safeHostname(pageUrl || imageUrl);
+        const relevanceText = `${title} ${item.source || ""} ${pageUrl || ""}`;
+        return {
+          item,
+          imageUrl,
+          pageUrl,
+          title,
+          sourceHost,
+          score: relevanceScore(relevanceText, tokens),
+        };
+      })
+      .filter((candidate: any) => candidate.imageUrl && candidate.pageUrl && candidate.sourceHost && !BROKEN_IMAGE_HOSTS.has(candidate.sourceHost))
+      .sort((a: any, b: any) => b.score - a.score);
+
     const results: ImageResult[] = [];
 
-    for (const item of candidates) {
+    for (const candidate of candidates) {
       if (results.length >= count) break;
+      if (tokens.length > 0 && candidate.score <= 0 && results.length > 0) continue;
 
-      const imageUrl = item.original || item.thumbnail;
-      const pageUrl = item.link || item.original;
-      if (!imageUrl || !pageUrl) continue;
-
-      const sourceHost = safeHostname(pageUrl || imageUrl);
-      if (!sourceHost || BROKEN_IMAGE_HOSTS.has(sourceHost)) continue;
-
-      const reachable = await isReachableMedia(imageUrl, "image");
+      const reachable = await isReachableMedia(candidate.imageUrl, "image");
       if (!reachable) continue;
 
       results.push({
-        title: item.title || query,
-        url: pageUrl,
-        imageUrl,
-        thumbnail: item.thumbnail,
-        source: item.source || sourceHost,
+        title: candidate.title,
+        url: candidate.pageUrl,
+        imageUrl: candidate.imageUrl,
+        thumbnail: candidate.item.thumbnail,
+        source: candidate.item.source || candidate.sourceHost,
       });
     }
 
