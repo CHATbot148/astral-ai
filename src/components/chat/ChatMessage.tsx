@@ -436,7 +436,7 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
     const renderInlineImages = (imgTags: { url: string; source: string }[], lineIndex: number) => {
       if (imgTags.length === 0) return null;
       return (
-        <div key={`inline-imgs-${lineIndex}`} className="flex gap-2 overflow-x-auto pb-1 my-1 overscroll-x-contain [touch-action:pan-x] [-webkit-overflow-scrolling:touch] scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+        <div key={`inline-imgs-${lineIndex}`} className="flex gap-2 overflow-x-auto pb-2 my-2 overscroll-x-contain [touch-action:pan-x] [-webkit-overflow-scrolling:touch] scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
           {imgTags.map((img, idx) => (
             <button
               key={`iimg-${lineIndex}-${idx}`}
@@ -448,7 +448,7 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
                 src={img.url}
                 alt=""
                 loading="lazy"
-                className="h-32 w-44 object-cover rounded-lg border border-border"
+                className="h-40 w-52 object-cover rounded-lg border border-border"
                 onError={(e) => { e.currentTarget.parentElement!.style.display = 'none'; }}
               />
               {img.source && (

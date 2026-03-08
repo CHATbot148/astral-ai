@@ -399,13 +399,39 @@ serve(async (req) => {
       const visualCheck = needsVisualContext(lastContent);
       if (visualCheck.needed && !mediaContext) {
         try {
-          const imageResults = await performWebSearch(SUPABASE_URL!, visualCheck.query, "images");
-          if (imageResults.length > 0) {
-            const imgPool = imageResults.slice(0, 15).map((r: any, i: number) => 
-              `${i + 1}. "${r.title || 'Image'}" → ${r.imageUrl}${r.source ? ` (${r.source})` : ''}`
-            ).join("\n");
-            mediaContext = `\n\n[Visual Image Pool — USE THESE to illustrate your response. For each list item or key topic, embed 2-3 relevant images using this EXACT syntax on separate lines after the item title: [IMG:imageUrl|sourceDomain]\nPick images whose titles best match each item. If no good match exists for an item, skip it.]\n${imgPool}`;
-            console.log(`[chat] Auto-visual: found ${imageResults.length} images for "${visualCheck.query}"`);
+          // Step 1: Use a fast AI call to predict specific list items
+          const itemPrediction = await predictListItems(LOVABLE_API_KEY!, lastContent);
+          if (itemPrediction.length > 0) {
+            // Step 2: Search images for EACH specific item in parallel
+            const perItemResults = await Promise.all(
+              itemPrediction.slice(0, 8).map(async (itemName: string) => {
+                const results = await performWebSearch(SUPABASE_URL!, itemName, "images");
+                return { name: itemName, images: results.slice(0, 4) };
+              })
+            );
+
+            // Step 3: Build a per-item structured image pool
+            const validItems = perItemResults.filter(item => item.images.length > 0);
+            if (validItems.length > 0) {
+              const imgPool = validItems.map(item => {
+                const imgLines = item.images.map((r: any) =>
+                  `  - "${r.title || item.name}" → ${r.imageUrl}${r.source ? ` (${r.source})` : ''}`
+                ).join("\n");
+                return `### ${item.name}\n${imgLines}`;
+              }).join("\n\n");
+
+              mediaContext = `\n\n[Visual Image Pool — ITEM-SPECIFIC IMAGES. For EACH list item, use the images listed under its matching name. Embed 2-4 images per item using [IMG:imageUrl|sourceDomain] syntax on SEPARATE lines right after the item title. Do NOT mix images between items.]\n\n${imgPool}`;
+              console.log(`[chat] Per-item visual: searched ${validItems.length} items with images`);
+            }
+          } else {
+            // Fallback: single generic search if prediction fails
+            const imageResults = await performWebSearch(SUPABASE_URL!, visualCheck.query, "images");
+            if (imageResults.length > 0) {
+              const imgPool = imageResults.slice(0, 15).map((r: any, i: number) => 
+                `${i + 1}. "${r.title || 'Image'}" → ${r.imageUrl}${r.source ? ` (${r.source})` : ''}`
+              ).join("\n");
+              mediaContext = `\n\n[Visual Image Pool — USE THESE to illustrate your response. For each list item, embed 2-3 relevant images using [IMG:imageUrl|sourceDomain] syntax on separate lines after the item title.]\n${imgPool}`;
+            }
           }
         } catch (e) {
           console.error("Auto visual search error:", e);
@@ -508,17 +534,20 @@ IMPORTANT RESPONSE GUIDELINES:
 6. LINKS: Use markdown format [text](url) — keep URLs short, never paste raw long URLs.
 7. IMAGES FROM WEB: Use ONLY clean markdown image syntax ![alt](https://...) and never output rendering directives, transform snippets, or partial URL fragments.
 8. VIDEOS FROM WEB: Video cards are injected automatically — DO NOT write video titles, descriptions, or links yourself when videos were found. Just write a brief intro.
-9. INLINE VISUAL IMAGES: When a [Visual Image Pool] is provided, embed images using [IMG:imageUrl|sourceDomain] syntax on separate lines AFTER each list item title. Place 2-3 images per item. Example format:
+9. INLINE VISUAL IMAGES: When a [Visual Image Pool] is provided with item-specific images, embed images using [IMG:imageUrl|sourceDomain] syntax on SEPARATE lines AFTER each list item title. Place 2-4 images per item. Use ONLY the images listed under the matching item name — do NOT mix images between items. Example format:
    1. **Ferrari SF90 Stradale**
-   [IMG:https://example.com/ferrari.jpg|example.com]
-   [IMG:https://example.com/ferrari2.jpg|example.com]
+   [IMG:https://example.com/ferrari1.jpg|example.com]
+   [IMG:https://example.com/ferrari2.jpg|carbuzz.com]
+   [IMG:https://example.com/ferrari3.jpg|motortrend.com]
    The SF90 is a plug-in hybrid supercar...
    
    2. **Lamborghini Revuelto**
-   [IMG:https://example.com/lambo.jpg|example.com]
+   [IMG:https://example.com/lambo1.jpg|example.com]
+   [IMG:https://example.com/lambo2.jpg|topgear.com]
+   [IMG:https://example.com/lambo3.jpg|caranddriver.com]
    Description here...
    
-   IMPORTANT: Match image titles to list items. Use [IMG:url|source] NOT ![alt](url) for inline visual images.
+   IMPORTANT: Use [IMG:url|source] NOT ![alt](url) for inline visual images. Each item MUST have its own specific images.
 9. TABLES: Use compact 2-5 column tables only when comparison is necessary; otherwise prefer bullets.
 10. WEB SEARCH RESULTS: Always cite sources at the end with a [Sources] section using numbered markdown links.
 11. REAL-TIME DATA: When search results are provided, treat them as primary truth and do not invent facts.${timeContext}${userMemory}${searchContext}${mediaContext}${videoContext}`;
@@ -872,7 +901,41 @@ IMPORTANT RESPONSE GUIDELINES:
   }
 });
 
-// Web search helper
+// Predict specific list items the AI will generate, so we can search images per item
+async function predictListItems(apiKey: string, userQuery: string): Promise<string[]> {
+  try {
+    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash-lite",
+        messages: [{
+          role: "user",
+          content: `The user asked: "${userQuery}"\n\nPredict the 5-8 specific items that would be listed in response. Return ONLY a JSON array of specific names, nothing else. Example: ["Ferrari SF90 Stradale", "Bugatti Chiron Super Sport", "Lamborghini Revuelto"]`
+        }],
+        max_tokens: 300,
+        temperature: 0.3,
+      }),
+    });
+    if (!response.ok) return [];
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content?.trim() || "";
+    // Extract JSON array from response
+    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      const items = JSON.parse(jsonMatch[0]);
+      if (Array.isArray(items) && items.every((i: any) => typeof i === "string")) {
+        console.log(`[chat] Predicted ${items.length} list items:`, items);
+        return items;
+      }
+    }
+    return [];
+  } catch (e) {
+    console.error("Predict list items error:", e);
+    return [];
+  }
+}
+
 async function performWebSearch(supabaseUrl: string, query: string, type: string): Promise<any[]> {
   try {
     const response = await fetch(`${supabaseUrl}/functions/v1/web-search`, {
