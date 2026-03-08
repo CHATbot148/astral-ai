@@ -13,25 +13,33 @@ interface VideoResult { title: string; url: string; thumbnail: string; duration?
 const BROKEN_IMAGE_HOSTS = new Set(["imgur.com", "i.imgur.com"]);
 
 const QUERY_PREFIX = /^(?:please\s+)?(?:can\s+you\s+)?(?:could\s+you\s+)?(?:would\s+you\s+)?(?:search|search\s+up|look\s*up|google|find\s*out|find|check|show\s+me)\s+(?:for\s+|up\s+|about\s+|on\s+|the\s+)?/i;
-const QUERY_SUFFIX = /(?:\s+(?:for\s+me|please|thanks?|thank\s+you))+$|[?!.]+$/gi;
+const QUERY_SUFFIX = /(?:\s+(?:for\s+me|please|thanks?|thank\s+you|from\s+(?:the\s+)?(?:web|internet|google|online)))+$|[?!.]+$/gi;
 const SOFT_STOPWORDS = new Set(["the", "a", "an", "of", "for", "about", "on", "in", "to", "is", "are", "me", "show", "search", "find", "look", "up"]);
+const EMOJI_RE = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu;
+const CONVO_FILLER = /^(?:(?:ok(?:ay)?|sure|nah|no|yes|yeah|yep|alright|lol|haha|hmm|well|so|hey|hi|oh|ah|um|uh|anyway|btw|by the way)[,.\s!]*)+/gi;
+const PERSONAL_FILLER = /^(?:i'?m\s+good|that'?s?\s+(?:fine|great|ok|cool)|never\s*mind|forget\s+(?:it|that))[,.\s!]*/gi;
+const REDIRECT_FILLER = /^(?:who\s+(?:said|cares)\s+(?:anything\s+)?about\s+[^,]+,?\s*(?:i\s+mean\s*)?)/gi;
 
 function rewriteSearchQuery(input: string, type: "web" | "images" | "videos"): string {
-  const cleaned = input.trim().replace(/^['"“”‘’`]+|['"“”‘’`]+$/g, "");
+  const cleaned = input.trim().replace(/^['"]+|['"]+$/g, "");
   let normalized = cleaned
+    .replace(EMOJI_RE, "")
+    .replace(CONVO_FILLER, "")
+    .replace(PERSONAL_FILLER, "")
+    .replace(REDIRECT_FILLER, "")
     .replace(QUERY_PREFIX, "")
     .replace(/^(?:an?\s+)?(?:image|photo|picture|video)s?\s+(?:of|for|about)\s+/i, "")
     .replace(QUERY_SUFFIX, "")
     .replace(/\s{2,}/g, " ")
     .trim();
 
-  if (!normalized) normalized = cleaned;
+  if (!normalized) normalized = cleaned.replace(EMOJI_RE, "").trim();
 
   if (type !== "web") {
     normalized = normalized
       .replace(/\b(?:images?|photos?|pictures?|videos?)\b/gi, "")
       .replace(/\s{2,}/g, " ")
-      .trim() || cleaned;
+      .trim() || cleaned.replace(EMOJI_RE, "").trim();
   }
 
   return normalized;

@@ -65,10 +65,17 @@ export function cleanMarkdownMedia(message: string): { cleanText: string; mediaI
     const alt = match[1] || '';
     if (!isRenderableMediaUrl(url)) continue;
 
+    // Detect if this is a web image (external URL, not storage/data)
+    const isWebImage = url.startsWith('https://') && !url.includes('giphy') && !url.includes('tenor');
+    let source: string | undefined;
+    if (isWebImage) {
+      try { source = new URL(url).hostname.replace(/^www\./, ''); } catch { /* ignore */ }
+    }
+
     if (url.match(/\.gif(\?|$)/i) || url.includes('giphy') || url.includes('tenor')) {
       mediaItems.push({ type: 'gif', url, alt });
     } else if (url.match(/\.(png|jpg|jpeg|webp|svg)(\?|$)/i) || url.startsWith('data:image/')) {
-      mediaItems.push({ type: 'image', url, alt });
+      mediaItems.push({ type: 'image', url, alt, source });
     } else if (url.match(/\.(mp4|webm)(\?|$)/i)) {
       mediaItems.push({ type: 'video', url, alt });
     }

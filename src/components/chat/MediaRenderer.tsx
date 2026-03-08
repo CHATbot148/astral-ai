@@ -35,7 +35,7 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
 
   return (
     <div className={cn(
-      "flex flex-col gap-2 my-2",
+      "flex flex-col gap-2 my-2 min-w-0 max-w-full",
       isUser ? "items-end" : "items-start"
     )}>
       {/* Non-web media */}
@@ -91,8 +91,8 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
 
       {/* Web images - horizontal scroll inline */}
       {webImages.length > 0 && (
-        <div className="w-full max-w-full overflow-hidden">
-          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+        <div className="w-full min-w-0 max-w-[calc(100vw-3rem)] sm:max-w-full overflow-hidden">
+          <div className="flex gap-2 overflow-x-auto pb-2 overscroll-x-contain [touch-action:pan-x] [-webkit-overflow-scrolling:touch] scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
             {webImages.map((item, index) => (
               <motion.div
                 key={`web-${item.url}-${index}`}
@@ -130,8 +130,8 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
 
       {/* Video Cards Grid */}
       {videoCards.length > 0 && (
-        <div className="w-full max-w-full overflow-hidden">
-          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+        <div className="w-full min-w-0 max-w-[calc(100vw-3rem)] sm:max-w-full overflow-hidden">
+          <div className="flex gap-2 overflow-x-auto pb-2 overscroll-x-contain [touch-action:pan-x] [-webkit-overflow-scrolling:touch] scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
             {videoCards.map((item, index) => (
               <motion.a
                 key={`vc-${index}`}

@@ -64,9 +64,36 @@ async function uploadAndSave(
   return ref;
 }
 
-async function generateWithLovable(prompt: string, model: string): Promise<{ bytes: Uint8Array; mime: string } | null> {
+async function generateWithLovable(prompt: string, model: string, referenceImageUrl?: string): Promise<{ bytes: Uint8Array; mime: string } | null> {
   const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
   if (!LOVABLE_API_KEY) return null;
+
+  // Build message content - support image-to-image via multimodal input
+  let messageContent: any;
+  if (referenceImageUrl) {
+    // Resolve reference image to a usable URL
+    let imageUrl = referenceImageUrl;
+    if (referenceImageUrl.startsWith("storage:")) {
+      // Resolve storage ref to signed URL
+      const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+      const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      if (SUPABASE_URL && SERVICE_ROLE_KEY) {
+        const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+        const raw = referenceImageUrl.slice("storage:".length);
+        const slashIdx = raw.indexOf("/");
+        const bucket = raw.slice(0, slashIdx);
+        const path = raw.slice(slashIdx + 1);
+        const { data: signed } = await admin.storage.from(bucket).createSignedUrl(path, 3600);
+        if (signed?.signedUrl) imageUrl = signed.signedUrl;
+      }
+    }
+    messageContent = [
+      { type: "text", text: `Using the attached image as a reference, create a variation: ${prompt}` },
+      { type: "image_url", image_url: { url: imageUrl } },
+    ];
+  } else {
+    messageContent = prompt;
+  }
 
   const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
@@ -76,7 +103,7 @@ async function generateWithLovable(prompt: string, model: string): Promise<{ byt
     },
     body: JSON.stringify({
       model,
-      messages: [{ role: "user", content: prompt }],
+      messages: [{ role: "user", content: messageContent }],
       modalities: ["image", "text"],
     }),
   });
@@ -232,9 +259,9 @@ serve(async (req) => {
 
     // ===== PRIMARY: selected provider =====
     if (selectedModel.provider === "lovable" && selectedModel.lovableModel) {
-      console.log(`[PRIMARY] Lovable AI (${selectedModel.lovableModel}): "${enhancedPrompt}"`);
+      console.log(`[PRIMARY] Lovable AI (${selectedModel.lovableModel}): "${enhancedPrompt}"${referenceImageUrl ? ' [with reference image]' : ''}`);
       try {
-        const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel);
+        const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel, referenceImageUrl);
         if (generated) {
           imgBytes = generated.bytes;
           imgMime = generated.mime;
@@ -349,8 +376,8 @@ serve(async (req) => {
 
     const ref = await uploadAndSave(admin, userId, prompt, style, aspectRatio, imgBytes, imgMime);
 
-    // Send background notification only when app is NOT in foreground
-    if (userId !== "anonymous" && !appInForeground) {
+    // Always send generation completion notification (push + email based on user prefs)
+    if (userId !== "anonymous") {
       try {
         await sendGenerationNotification(admin, SUPABASE_URL!, SERVICE_ROLE_KEY!, userId, "image", prompt);
       } catch (notifErr) {
