@@ -135,6 +135,45 @@ function extractGenerationPrompt(text: string, type: "image" | "video"): string 
   return prompt || text.trim();
 }
 
+// Append extra content (e.g. VIDEO_CARD tags) to an SSE stream after the AI finishes
+function appendToStream(upstreamBody: ReadableStream<Uint8Array>, extraContent: string): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  const reader = upstreamBody.getReader();
+  let injected = false;
+
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) {
+        if (!injected && extraContent) {
+          injected = true;
+          const chunk = `data: ${JSON.stringify({ choices: [{ delta: { content: extraContent } }] })}\n\n`;
+          controller.enqueue(encoder.encode(chunk));
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        }
+        controller.close();
+        return;
+      }
+      const text = decoder.decode(value, { stream: true });
+      // If we see [DONE], inject our content before it
+      if (extraContent && !injected && text.includes("[DONE]")) {
+        injected = true;
+        const chunk = `data: ${JSON.stringify({ choices: [{ delta: { content: extraContent } }] })}\n\n`;
+        const beforeDone = text.replace("data: [DONE]\n\n", "");
+        if (beforeDone.trim()) controller.enqueue(encoder.encode(beforeDone));
+        controller.enqueue(encoder.encode(chunk));
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      } else {
+        controller.enqueue(value);
+      }
+    },
+    cancel() {
+      reader.cancel();
+    }
+  });
+}
+
 // Detect if user is asking about real-time/current events that need fresh web data
 function needsFreshWebSearch(text: string): boolean {
   const realTimePatterns = [
@@ -210,6 +249,7 @@ serve(async (req) => {
     let searchContext = "";
     let mediaContext = "";
     let videoContext = "";
+    let rawVideoCards = ""; // VIDEO_CARD tags to append programmatically
     let webSources: Array<{ title: string; url: string }> = [];
     let shouldGenerateImage = false;
     let shouldGenerateVideo = false;
@@ -329,10 +369,12 @@ serve(async (req) => {
           try {
             const videoResults = await performWebSearch(SUPABASE_URL!, query, "videos");
             if (videoResults.length > 0) {
-              videoContext = `\n\n[Web Videos for "${query}" - display these as video cards with thumbnails]:\n` +
-                videoResults.slice(0, 4).map((r: any, i: number) => 
-                  `${i + 1}. [VIDEO_CARD:${r.title}|${r.url}|${r.thumbnail}|${r.duration || ''}|${r.source || 'YouTube'}]`
-                ).join("\n");
+              // Build raw VIDEO_CARD tags to append after stream (AI reformats them if in prompt)
+              rawVideoCards = "\n\n" + videoResults.slice(0, 4).map((r: any) => 
+                `[VIDEO_CARD:${(r.title || 'Video').replace(/[|\[\]]/g, '')}|${r.url}|${r.thumbnail}|${r.duration || ''}|${r.source || 'YouTube'}]`
+              ).join("\n");
+              // Tell AI about videos briefly so it can write an intro
+              videoContext = `\n\n[Web Videos found for "${query}" — DO NOT list or format video results yourself, they will be displayed automatically as cards. Just write a brief intro sentence mentioning you found videos.]`;
             }
           } catch (e) {
             console.error("Video search error:", e);
@@ -394,7 +436,7 @@ IMPORTANT RESPONSE GUIDELINES:
 5. CODE: Always wrap in triple backticks with language name.
 6. LINKS: Use markdown format [text](url) — keep URLs short, never paste raw long URLs.
 7. IMAGES FROM WEB: Use ONLY clean markdown image syntax ![alt](https://...) and never output rendering directives, transform snippets, or partial URL fragments.
-8. VIDEOS FROM WEB: Format as [VIDEO_CARD:title|url|thumbnail|duration|source].
+8. VIDEOS FROM WEB: Video cards are injected automatically — DO NOT write video titles, descriptions, or links yourself when videos were found. Just write a brief intro.
 9. TABLES: Use compact 2-5 column tables only when comparison is necessary; otherwise prefer bullets.
 10. WEB SEARCH RESULTS: Always cite sources at the end with a [Sources] section using numbered markdown links.
 11. REAL-TIME DATA: When search results are provided, treat them as primary truth and do not invent facts.${timeContext}${userMemory}${searchContext}${mediaContext}${videoContext}`;
@@ -622,7 +664,8 @@ IMPORTANT RESPONSE GUIDELINES:
 
           // Return as SSE stream format for consistency
           const encoder = new TextEncoder();
-          const ssePayload = `data: ${JSON.stringify({ choices: [{ delta: { content: responseText } }] })}\n\ndata: [DONE]\n\n`;
+          const fullContent = rawVideoCards ? responseText + rawVideoCards : responseText;
+          const ssePayload = `data: ${JSON.stringify({ choices: [{ delta: { content: fullContent } }] })}\n\ndata: [DONE]\n\n`;
 
           return new Response(encoder.encode(ssePayload), {
             headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
@@ -677,14 +720,16 @@ IMPORTANT RESPONSE GUIDELINES:
           }),
         });
         if (fallbackRes.ok) {
-          return new Response(fallbackRes.body, {
+          const body = rawVideoCards ? appendToStream(fallbackRes.body!, rawVideoCards) : fallbackRes.body!;
+          return new Response(body, {
             headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
           });
         }
         throw new Error("AI service temporarily unavailable. Please try again.");
       }
 
-      return new Response(response.body, {
+      const body1 = rawVideoCards ? appendToStream(response.body!, rawVideoCards) : response.body!;
+      return new Response(body1, {
         headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
       });
     }
@@ -732,7 +777,8 @@ IMPORTANT RESPONSE GUIDELINES:
       });
     }
 
-    return new Response(response.body, {
+    const finalBody = rawVideoCards ? appendToStream(response.body!, rawVideoCards) : response.body!;
+    return new Response(finalBody, {
       headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
     });
   } catch (error) {
