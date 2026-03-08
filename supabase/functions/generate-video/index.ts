@@ -18,7 +18,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { prompt, modelId, skipNotification } = await req.json();
+    const { prompt, modelId } = await req.json();
     if (!prompt) throw new Error("Prompt is required");
 
     const LEONARDO_API_KEY = Deno.env.get("LEONARDO_API_KEY");
@@ -157,6 +157,13 @@ serve(async (req) => {
     if (!videoUrl) throw new Error("Video generation timed out. Please try again.");
 
     const ref = await uploadVideo(admin, userId, prompt, videoUrl);
+
+    // Send background notification respecting user's preference
+    try {
+      await sendGenerationNotification(admin, SUPABASE_URL!, SERVICE_ROLE_KEY!, userId, "video", prompt);
+    } catch (notifErr) {
+      console.error("Notification send failed (non-blocking):", notifErr);
+    }
 
     return new Response(JSON.stringify({ video: ref }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
