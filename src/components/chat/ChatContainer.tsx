@@ -481,14 +481,15 @@ export const ChatContainer = () => {
       const imageIntent = /(show me (?:an? )?(?:image|picture|photo)|what does .+ look like)/i.test(content);
       const videoIntent = /(show me (?:a )?video|video tutorial)/i.test(content);
       const hasUploadedVideoFiles = (files || []).some((file) => file.type.startsWith('video/'));
-      const searchQueryLabel = deriveSearchQueryLabel(content);
-      const isWebSearchState = (shouldWebSearch || imageIntent || videoIntent) && !hasUploadedVideoFiles;
+      const searchQuery = deriveSearchQueryLabel(content);
+      const hasSearchQuery = searchQuery.length > 0;
+      const isWebSearchState = (shouldWebSearch || imageIntent || videoIntent) && !hasUploadedVideoFiles && hasSearchQuery;
       setTypingMode(isWebSearchState ? 'search' : 'typing');
       setTypingLabel(
         hasUploadedVideoFiles
           ? 'Reviewing video…'
           : isWebSearchState
-            ? `Searching for ${searchQueryLabel}`
+            ? `Searching for ${searchQuery}`
             : undefined
       );
 
