@@ -186,9 +186,23 @@ serve(async (req) => {
     let imgBytes: Uint8Array | null = null;
     let imgMime = "image/png";
 
-    // ===== PRIMARY: Leonardo AI =====
-    if (LEONARDO_API_KEY) {
-      console.log(`[PRIMARY] Leonardo AI (model: ${selectedModel}): "${enhancedPrompt}"`);
+    // ===== PRIMARY: selected provider =====
+    if (selectedModel.provider === "lovable" && selectedModel.lovableModel) {
+      console.log(`[PRIMARY] Lovable AI (${selectedModel.lovableModel}): "${enhancedPrompt}"`);
+      try {
+        const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel);
+        if (generated) {
+          imgBytes = generated.bytes;
+          imgMime = generated.mime;
+        }
+      } catch (e) {
+        console.error("Lovable AI failed:", e);
+      }
+    }
+
+    if (!imgBytes && LEONARDO_API_KEY) {
+      const leonardoModelId = selectedModel.leonardoId || IMAGE_MODELS.phoenix.leonardoId!;
+      console.log(`[FALLBACK] Leonardo AI (model: ${leonardoModelId}): "${enhancedPrompt}"`);
       try {
         const createRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations", {
           method: "POST",
@@ -199,7 +213,7 @@ serve(async (req) => {
           },
           body: JSON.stringify({
             prompt: enhancedPrompt,
-            modelId: selectedModel,
+            modelId: leonardoModelId,
             width: dims.width,
             height: dims.height,
             num_images: 1,
@@ -219,8 +233,6 @@ serve(async (req) => {
         const generationId = createData.sdGenerationJob?.generationId;
         if (!generationId) throw new Error("No generation ID from Leonardo");
 
-        console.log("Leonardo generation started, ID:", generationId);
-
         for (let i = 0; i < 30; i++) {
           await new Promise(r => setTimeout(r, 3000));
           const pollRes = await fetch(`https://cloud.leonardo.ai/api/rest/v1/generations/${generationId}`, {
@@ -230,7 +242,6 @@ serve(async (req) => {
           const pollData = await pollRes.json();
           const gen = pollData.generations_by_pk;
           if (gen?.status === "COMPLETE" && gen.generated_images?.[0]?.url) {
-            console.log("Leonardo image ready, downloading...");
             const dlRes = await fetch(gen.generated_images[0].url);
             if (dlRes.ok) {
               imgBytes = new Uint8Array(await dlRes.arrayBuffer());
