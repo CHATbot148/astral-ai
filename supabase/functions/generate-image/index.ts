@@ -24,17 +24,16 @@ const ASPECT_RATIO_MAP: Record<string, { width: number; height: number }> = {
   "3:4": { width: 896, height: 1152 },
 };
 
-// Leonardo model IDs
-const LEONARDO_MODELS: Record<string, { id: string; name: string }> = {
-  phoenix: { id: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3", name: "Leonardo Phoenix" },
-  kino: { id: "aa77f04e-3eec-4034-9c07-d0f619684628", name: "Leonardo Kino XL" },
-  diffusion: { id: "b24e16ff-06e3-43eb-8d33-4c419f36e1b7", name: "Leonardo Diffusion XL" },
-  anime_xl: { id: "e71a1c2f-4f80-4800-934f-2c68979d8cc8", name: "Leonardo Anime XL" },
-  vision: { id: "5c232a9e-9061-4777-980a-ddc8e65647c6", name: "Leonardo Vision XL" },
-  lightning: { id: "b2614463-296c-462a-9586-aafdb8f00e36", name: "Leonardo Lightning XL" },
+// Provider model mapping
+const IMAGE_MODELS: Record<string, { provider: "lovable" | "leonardo"; lovableModel?: string; leonardoId?: string }> = {
+  nano_banana_2: { provider: "lovable", lovableModel: "google/gemini-2.5-flash-image" },
+  seedream_4_5: { provider: "leonardo", leonardoId: "b24e16ff-06e3-43eb-8d33-4c419f36e1b7" },
+  lucid_origin: { provider: "leonardo", leonardoId: "5c232a9e-9061-4777-980a-ddc8e65647c6" },
+  flux_2_pro: { provider: "leonardo", leonardoId: "aa77f04e-3eec-4034-9c07-d0f619684628" },
+  phoenix: { provider: "leonardo", leonardoId: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3" },
 };
 
-const DEFAULT_MODEL = "phoenix";
+const DEFAULT_MODEL = "nano_banana_2";
 
 function parseDataUrl(dataUrl: string): { mime: string; bytes: Uint8Array } {
   const match = dataUrl.match(/^data:(.+?);base64,(.+)$/);
