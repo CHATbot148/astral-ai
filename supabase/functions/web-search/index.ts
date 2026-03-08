@@ -216,29 +216,44 @@ async function searchSerpAPIImages(query: string, count: number, apiKey: string)
 
 async function searchSerpAPIVideos(query: string, count: number, apiKey: string): Promise<VideoResult[]> {
   try {
-    const params = new URLSearchParams({ q: query, api_key: apiKey, engine: "google_videos", num: String(Math.min(count + 8, 30)) });
+    const params = new URLSearchParams({ q: query, api_key: apiKey, engine: "google_videos", num: String(Math.min(count + 14, 36)) });
     const response = await fetch(`https://serpapi.com/search.json?${params}`);
     if (!response.ok) throw new Error(`SerpAPI videos error: ${response.status}`);
     const data = await response.json();
 
-    const candidates = Array.isArray(data.video_results) ? data.video_results : [];
+    const tokens = tokenizeQuery(query);
+    const candidates = (Array.isArray(data.video_results) ? data.video_results : [])
+      .map((item: any) => {
+        const url = item.link;
+        const thumbnail = item.thumbnail?.static || item.thumbnail || "";
+        const title = item.title || query;
+        const relevanceText = `${title} ${item.source || ""} ${url || ""}`;
+        return {
+          item,
+          url,
+          thumbnail,
+          title,
+          score: relevanceScore(relevanceText, tokens),
+        };
+      })
+      .filter((candidate: any) => candidate.url && candidate.thumbnail)
+      .sort((a: any, b: any) => b.score - a.score);
+
     const results: VideoResult[] = [];
 
-    for (const item of candidates) {
+    for (const candidate of candidates) {
       if (results.length >= count) break;
-      const url = item.link;
-      const thumbnail = item.thumbnail?.static || item.thumbnail || "";
-      if (!url || !thumbnail) continue;
+      if (tokens.length > 0 && candidate.score <= 0 && results.length > 0) continue;
 
-      const thumbnailReachable = await isReachableMedia(thumbnail, "image");
+      const thumbnailReachable = await isReachableMedia(candidate.thumbnail, "image");
       if (!thumbnailReachable) continue;
 
       results.push({
-        title: item.title || query,
-        url,
-        thumbnail,
-        duration: item.duration,
-        source: item.source || safeHostname(url) || "Video",
+        title: candidate.title,
+        url: candidate.url,
+        thumbnail: candidate.thumbnail,
+        duration: candidate.item.duration,
+        source: candidate.item.source || safeHostname(candidate.url) || "Video",
       });
     }
 
