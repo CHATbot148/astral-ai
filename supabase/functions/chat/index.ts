@@ -422,7 +422,7 @@ serve(async (req) => {
                 return `### ${item.name}\n${imgLines}`;
               }).join("\n\n");
 
-              mediaContext = `\n\n[Visual Image Pool — ITEM-SPECIFIC IMAGES. For EACH list item, use the images listed under its matching name. Embed 2-4 images per item using [IMG:imageUrl|sourceDomain] syntax on SEPARATE lines right after the item title. Do NOT mix images between items.]\n\n${imgPool}`;
+              mediaContext = `\n\n[Visual Image Pool — ITEM-SPECIFIC IMAGES. For EACH list item, use the images listed under its matching name. Randomly select exactly 3, 4, or 5 images per item (never fewer than 3, never more than 5) using [IMG:imageUrl|sourceDomain] syntax on SEPARATE lines right after the item title. Vary the count between items. Do NOT mix images between items.]\n\n${imgPool}`;
               console.log(`[chat] Per-item visual: searched ${validItems.length} items with images`);
             }
           }
