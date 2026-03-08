@@ -366,13 +366,34 @@ export const ChatContainer = () => {
       return answer;
     }
   };
-  const sanitizeAssistantMessage = (value: string) => {
+  const stripRenderableDirectives = (value: string) => {
     return value
-      .split('\n')
-      .filter((line) => !/^\s*:?max_bytes\(/i.test(line) && !/strip_icc\(\)/i.test(line))
-      .join('\n')
+      .replace(/\[GENERATE_(?:IMAGE|VIDEO):[^\]]*\]?/gi, '')
+      .replace(/\[GIF:[^\]]*\]?/gi, '')
+      .replace(/\[VIDEO_CARD:[^\]]*\]?/gi, '')
+      .replace(/!\[[^\]]*\]\((?:https?:\/\/|data:image\/|storage:)[^\)]*\)?/gi, '')
+      .replace(/\n?https?:\/\/[^\s]*(?:giphy|tenor)[^\s]*/gi, '')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
+  };
+
+  const extractGenerationTag = (value: string): { type: 'image' | 'video'; prompt: string } | null => {
+    const imageMatch = value.match(/\[GENERATE_IMAGE:([^\]]+)\]/);
+    if (imageMatch?.[1]) return { type: 'image', prompt: imageMatch[1].trim() };
+
+    const videoMatch = value.match(/\[GENERATE_VIDEO:([^\]]+)\]/);
+    if (videoMatch?.[1]) return { type: 'video', prompt: videoMatch[1].trim() };
+
+    return null;
+  };
+
+  const sanitizeAssistantMessage = (value: string) => {
+    return stripRenderableDirectives(
+      value
+        .split('\n')
+        .filter((line) => !/^\s*:?max_bytes\(/i.test(line) && !/strip_icc\(\)/i.test(line))
+        .join('\n')
+    );
   };
 
   const handleSend = async (content: string, files?: File[]) => {
