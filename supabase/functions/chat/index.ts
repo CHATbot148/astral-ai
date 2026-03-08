@@ -664,7 +664,8 @@ IMPORTANT RESPONSE GUIDELINES:
 
           // Return as SSE stream format for consistency
           const encoder = new TextEncoder();
-          const ssePayload = `data: ${JSON.stringify({ choices: [{ delta: { content: responseText } }] })}\n\ndata: [DONE]\n\n`;
+          const fullContent = rawVideoCards ? responseText + rawVideoCards : responseText;
+          const ssePayload = `data: ${JSON.stringify({ choices: [{ delta: { content: fullContent } }] })}\n\ndata: [DONE]\n\n`;
 
           return new Response(encoder.encode(ssePayload), {
             headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
