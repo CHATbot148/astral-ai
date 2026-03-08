@@ -645,7 +645,7 @@ export const ChatContainer = () => {
           setIsGeneratingImage(true);
           (async () => {
             try {
-              const generatedImage = await generateImageWithOptions({ prompt: imgPrompt, style: 'photoreal', aspectRatio: '1:1' });
+              const generatedImage = await generateImageWithOptions({ prompt: imgPrompt, style: 'photoreal', aspectRatio: '1:1', quality: 'balanced' });
               if (generatedImage) {
                 await addMessage(capturedConvId, 'assistant', `Here's your generated image for "${imgPrompt}":`, [generatedImage]);
                 toast({ title: '✅ Image ready!', description: imgPrompt.slice(0, 60) });
