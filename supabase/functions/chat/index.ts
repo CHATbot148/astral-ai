@@ -94,6 +94,14 @@ const IMAGE_GENERATION_PATTERNS = [
   /^(?:can you |please )?(?:generate|create|make|draw) (?:an? )?(?:image|picture|photo|illustration)/i,
 ];
 
+// Video generation detection
+const VIDEO_GENERATION_PATTERNS = [
+  /^generate (?:a |me )?(?:video|clip|animation)/i,
+  /^create (?:a |me )?(?:video|clip|animation)/i,
+  /^make (?:me )?(?:a )?(?:video|clip|animation)/i,
+  /^(?:can you |please )?(?:generate|create|make) (?:a )?(?:video|clip|animation)/i,
+];
+
 const STYLE_KEYWORDS = ['sketch', 'anime', 'cinematic', 'photoreal', 'realistic', 'cartoon', 'painting', 'watercolor', 'oil painting', '3d render'];
 
 // Detect if user is asking about real-time/current events that need fresh web data
