@@ -402,6 +402,7 @@ export const ChatContainer = () => {
       .replace(/\[GENERATE_(?:IMAGE|VIDEO):[^\]]*\]?/gi, '')
       .replace(/\[GIF:[^\]]*\]?/gi, '')
       .replace(/\[VIDEO_CARD:[^\]]*\]?/gi, '')
+      .replace(/\[IMG:https?:\/\/[^|\]]+\|?[^\]]*\]/gi, '')
       .replace(/!\[[^\]]*\]\((?:https?:\/\/|data:image\/|storage:)[^\)]*\)?/gi, '')
       .replace(/\n?https?:\/\/[^\s]*(?:giphy|tenor)[^\s]*/gi, '')
       .replace(/\n{3,}/g, '\n\n')
