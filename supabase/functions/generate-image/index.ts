@@ -264,6 +264,7 @@ serve(async (req) => {
             alchemy: true,
             photoReal: style === "photoreal",
             presetStyle: style === "cinematic" ? "CINEMATIC" : style === "anime" ? "ANIME" : "NONE",
+            ...(initImageId ? { init_image_id: initImageId, isInitImage: true } : {}),
           }),
         });
 
