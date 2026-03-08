@@ -70,7 +70,7 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
                 loading="lazy"
                 className="max-w-[280px] max-h-[280px] rounded-lg border border-border object-contain"
                 onError={(e) => {
-                  e.currentTarget.style.display = 'none';
+                  e.currentTarget.closest('[data-media-item="true"]')?.remove();
                 }}
               />
             </button>
@@ -109,7 +109,7 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
                     loading="lazy"
                     className="w-full h-full object-cover"
                     onError={(e) => {
-                      e.currentTarget.style.display = 'none';
+                      e.currentTarget.closest('a')?.remove();
                     }}
                   />
                 ) : (
