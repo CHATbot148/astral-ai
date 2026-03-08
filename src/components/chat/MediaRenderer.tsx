@@ -91,8 +91,8 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
 
       {/* Web images - horizontal scroll inline */}
       {webImages.length > 0 && (
-        <div className="w-full max-w-full overflow-hidden">
-          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+        <div className="w-full min-w-0 max-w-[calc(100vw-3rem)] sm:max-w-full overflow-hidden">
+          <div className="flex gap-2 overflow-x-auto pb-2 overscroll-x-contain [touch-action:pan-x] [-webkit-overflow-scrolling:touch] scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
             {webImages.map((item, index) => (
               <motion.div
                 key={`web-${item.url}-${index}`}
