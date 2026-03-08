@@ -35,7 +35,7 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
 
   return (
     <div className={cn(
-      "flex flex-col gap-2 my-2",
+      "flex flex-col gap-2 my-2 min-w-0 max-w-full",
       isUser ? "items-end" : "items-start"
     )}>
       {/* Non-web media */}
