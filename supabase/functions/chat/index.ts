@@ -727,7 +727,8 @@ IMPORTANT RESPONSE GUIDELINES:
         throw new Error("AI service temporarily unavailable. Please try again.");
       }
 
-      return new Response(response.body, {
+      const body1 = rawVideoCards ? appendToStream(response.body!, rawVideoCards) : response.body!;
+      return new Response(body1, {
         headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
       });
     }
