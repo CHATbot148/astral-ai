@@ -719,7 +719,8 @@ IMPORTANT RESPONSE GUIDELINES:
           }),
         });
         if (fallbackRes.ok) {
-          return new Response(fallbackRes.body, {
+          const body = rawVideoCards ? appendToStream(fallbackRes.body!, rawVideoCards) : fallbackRes.body!;
+          return new Response(body, {
             headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
           });
         }
