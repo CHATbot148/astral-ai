@@ -135,6 +135,45 @@ function extractGenerationPrompt(text: string, type: "image" | "video"): string 
   return prompt || text.trim();
 }
 
+// Append extra content (e.g. VIDEO_CARD tags) to an SSE stream after the AI finishes
+function appendToStream(upstreamBody: ReadableStream<Uint8Array>, extraContent: string): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  const reader = upstreamBody.getReader();
+  let injected = false;
+
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) {
+        if (!injected && extraContent) {
+          injected = true;
+          const chunk = `data: ${JSON.stringify({ choices: [{ delta: { content: extraContent } }] })}\n\n`;
+          controller.enqueue(encoder.encode(chunk));
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        }
+        controller.close();
+        return;
+      }
+      const text = decoder.decode(value, { stream: true });
+      // If we see [DONE], inject our content before it
+      if (extraContent && !injected && text.includes("[DONE]")) {
+        injected = true;
+        const chunk = `data: ${JSON.stringify({ choices: [{ delta: { content: extraContent } }] })}\n\n`;
+        const beforeDone = text.replace("data: [DONE]\n\n", "");
+        if (beforeDone.trim()) controller.enqueue(encoder.encode(beforeDone));
+        controller.enqueue(encoder.encode(chunk));
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      } else {
+        controller.enqueue(value);
+      }
+    },
+    cancel() {
+      reader.cancel();
+    }
+  });
+}
+
 // Detect if user is asking about real-time/current events that need fresh web data
 function needsFreshWebSearch(text: string): boolean {
   const realTimePatterns = [
