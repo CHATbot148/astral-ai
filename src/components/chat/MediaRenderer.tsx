@@ -111,7 +111,7 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
                     src={item.url}
                     alt={item.alt || 'Image'}
                     loading="lazy"
-                    className="h-24 w-32 object-cover rounded-lg border border-border"
+                    className="h-32 w-44 object-cover rounded-lg border border-border"
                     onError={(e) => {
                       e.currentTarget.closest('[data-media-item="true"]')?.remove();
                     }}
