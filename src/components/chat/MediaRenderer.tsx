@@ -54,8 +54,8 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
               alt={item.alt || 'GIF'}
               loading="lazy"
               className="w-[100px] h-[100px] object-cover rounded-lg border border-border"
-               onError={(e) => {
-                 e.currentTarget.closest('[data-media-item="true"]')?.remove();
+               onError={() => {
+                 // Keep slot stable; broken media should not collapse nearby content
                }}
             />
           )}
@@ -71,8 +71,8 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
                 alt={item.alt || 'Image'}
                 loading="lazy"
                 className="max-w-[280px] max-h-[280px] rounded-lg border border-border object-contain"
-                onError={(e) => {
-                  e.currentTarget.closest('[data-media-item="true"]')?.remove();
+                onError={() => {
+                  // Keep slot stable; broken media should not collapse nearby content
                 }}
               />
             </button>
@@ -112,8 +112,8 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
                     alt={item.alt || 'Image'}
                     loading="lazy"
                     className="h-32 w-44 object-cover rounded-lg border border-border"
-                    onError={(e) => {
-                      e.currentTarget.closest('[data-media-item="true"]')?.remove();
+                    onError={() => {
+                      // Keep slot stable; broken media should not collapse nearby content
                     }}
                   />
                   {item.source && (
@@ -150,8 +150,8 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
                       alt={item.alt || 'Video'}
                       loading="lazy"
                       className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.currentTarget.closest('a')?.remove();
+                      onError={() => {
+                        // Keep slot stable; broken media should not collapse nearby content
                       }}
                     />
                   ) : (

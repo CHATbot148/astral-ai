@@ -107,17 +107,15 @@ const STYLE_KEYWORDS = ['sketch', 'anime', 'cinematic', 'photoreal', 'realistic'
 function isLikelyImageGenerationIntent(text: string): boolean {
   const hasImageNoun = /\b(image|picture|photo|illustration|art|artwork)\b/i.test(text);
   const hasGenerationVerb = /\b(generate|create|make|draw|render|design|craft|produce|visuali[sz]e)\b/i.test(text);
-  const hasRequestFraming = /\b(can you|could you|please|i want|i need|give me)\b/i.test(text);
   const explicitFetchIntent = /\b(search|find|get|look up|from (?:google|the web|internet)|download|stock image)\b/i.test(text);
-  return hasImageNoun && (hasGenerationVerb || hasRequestFraming) && !explicitFetchIntent;
+  return hasImageNoun && hasGenerationVerb && !explicitFetchIntent;
 }
 
 function isLikelyVideoGenerationIntent(text: string): boolean {
   const hasVideoNoun = /\b(video|clip|animation)\b/i.test(text);
   const hasGenerationVerb = /\b(generate|create|make|render|design|produce|animate)\b/i.test(text);
-  const hasRequestFraming = /\b(can you|could you|please|i want|i need|give me)\b/i.test(text);
   const explicitFetchIntent = /\b(search|find|get|look up|from (?:youtube|the web|internet)|download)\b/i.test(text);
-  return hasVideoNoun && (hasGenerationVerb || hasRequestFraming) && !explicitFetchIntent;
+  return hasVideoNoun && hasGenerationVerb && !explicitFetchIntent;
 }
 
 function extractGenerationPrompt(text: string, type: "image" | "video"): string {
@@ -248,6 +246,7 @@ serve(async (req) => {
   try {
     const { messages, fileContext, timeZone, clientTimeISO, aiMode, followUpQuestions, isVoiceMode, noStream, forceWebSearch, webSearchQuery } = await req.json();
     const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -399,8 +398,11 @@ serve(async (req) => {
       const visualCheck = needsVisualContext(lastContent);
       if (visualCheck.needed && !mediaContext) {
         try {
-          // Step 1: Use a fast AI call to predict specific list items
-          const itemPrediction = await predictListItems(LOVABLE_API_KEY!, lastContent);
+          // Step 1: Use a fast AI call to predict specific list items (when key is available)
+          const itemPrediction = LOVABLE_API_KEY
+            ? await predictListItems(LOVABLE_API_KEY, lastContent)
+            : [];
+
           if (itemPrediction.length > 0) {
             // Step 2: Search images for EACH specific item in parallel
             const perItemResults = await Promise.all(
@@ -423,8 +425,10 @@ serve(async (req) => {
               mediaContext = `\n\n[Visual Image Pool — ITEM-SPECIFIC IMAGES. For EACH list item, use the images listed under its matching name. Embed 2-4 images per item using [IMG:imageUrl|sourceDomain] syntax on SEPARATE lines right after the item title. Do NOT mix images between items.]\n\n${imgPool}`;
               console.log(`[chat] Per-item visual: searched ${validItems.length} items with images`);
             }
-          } else {
-            // Fallback: single generic search if prediction fails
+          }
+
+          if (!mediaContext) {
+            // Fallback: single generic search if prediction is unavailable or empty
             const imageResults = await performWebSearch(SUPABASE_URL!, visualCheck.query, "images");
             if (imageResults.length > 0) {
               const imgPool = imageResults.slice(0, 15).map((r: any, i: number) => 
@@ -516,14 +520,13 @@ ASTRAZ APP FEATURES (use this to help users navigate):
 - Memory: You remember things users tell you across conversations
 - Conversation History: All chats are saved in the sidebar
 
-INLINE GENERATION (IMPORTANT):
-You can generate images and videos directly in chat. When the user's request is clear and specific enough, generate immediately using [GENERATE_IMAGE:detailed prompt] or [GENERATE_VIDEO:detailed prompt].
-- If the request is vague or ambiguous (e.g. "make me a picture" with no subject, or "I want a video"), ask 1-2 brief clarifying questions about what they want (subject, style, mood, etc.). Once they answer, respond with the generation tag immediately — do NOT ask them to "confirm" or "tell you to start".
-- If the request is already detailed enough (e.g. "generate an image of a sunset over mountains"), skip questions and generate right away.
-- NEVER ask "should I start generating?" or "shall I proceed?" — just do it when you have enough detail.
-- Only include ONE generation tag per response.
-- The tag must be on its own line at the end of your message.
-${modePrompt}${voiceRestrictions}${followUpInstruction}
+INLINE GENERATION SAFETY (CRITICAL):
+- NEVER generate an image or video unless the user explicitly asks to generate/create/make one.
+- Informational requests (lists, explanations, comparisons, recommendations, "show me examples") must stay informational.
+- If a [Visual Image Pool] is present, use [IMG:url|source] for web media only — do NOT output [GENERATE_IMAGE] or [GENERATE_VIDEO] for that.
+- Do NOT proactively ask to generate media while answering normal questions.
+- Only include ONE generation tag per response, and only when generation is explicitly requested by the user in that message.
+- If generation is not explicitly requested, never include generation tags.
 
 IMPORTANT RESPONSE GUIDELINES:
 1. Do NOT force section labels like "Quick answer", "Details", or "Next step" unless the user explicitly asks for that structure.

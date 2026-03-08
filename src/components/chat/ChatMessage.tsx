@@ -320,6 +320,7 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
   const [showAudioPlayer, setShowAudioPlayer] = useState(false);
   const [resolvedFiles, setResolvedFiles] = useState<string[]>([]);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [failedInlineImages, setFailedInlineImages] = useState<Set<string>>(new Set());
   const [notificationActed, setNotificationActed] = useState(false);
   const { toast } = useToast();
   const isUser = role === 'user';
@@ -434,10 +435,12 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
 
     // Render inline [IMG:url|source] tags as a horizontal image row
     const renderInlineImages = (imgTags: { url: string; source: string }[], lineIndex: number) => {
-      if (imgTags.length === 0) return null;
+      const visibleInlineImages = imgTags.filter((img) => !failedInlineImages.has(img.url));
+      if (visibleInlineImages.length === 0) return null;
+
       return (
         <div key={`inline-imgs-${lineIndex}`} className="flex gap-2 overflow-x-auto pb-2 my-2 overscroll-x-contain [touch-action:pan-x] [-webkit-overflow-scrolling:touch] scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
-          {imgTags.map((img, idx) => (
+          {visibleInlineImages.map((img, idx) => (
             <button
               key={`iimg-${lineIndex}-${idx}`}
               type="button"
@@ -446,10 +449,16 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
             >
               <img
                 src={img.url}
-                alt=""
+                alt={img.source ? `${img.source} image` : 'Inline image'}
                 loading="lazy"
                 className="h-40 w-52 object-cover rounded-lg border border-border"
-                onError={(e) => { e.currentTarget.parentElement!.style.display = 'none'; }}
+                onError={() => {
+                  setFailedInlineImages((prev) => {
+                    const next = new Set(prev);
+                    next.add(img.url);
+                    return next;
+                  });
+                }}
               />
               {img.source && (
                 <span className="absolute bottom-1 left-1 bg-black/70 text-white text-[9px] px-1.5 py-0.5 rounded truncate max-w-[90%]">
