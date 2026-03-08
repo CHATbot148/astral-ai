@@ -419,6 +419,7 @@ export const ChatContainer = () => {
     setTypingLabel(undefined);
     setTypingMode('typing');
     abortControllerRef.current = new AbortController();
+    let isInlineGenerationFlow = false;
 
     try {
       let convId = currentConversation?.id;
