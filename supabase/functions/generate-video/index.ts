@@ -6,10 +6,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const VIDEO_MODELS: Record<string, { apiModel?: string; width: number; height: number }> = {
-  sora_2: { apiModel: "sora-2", width: 1280, height: 720 },
-  sora_2_pro: { apiModel: "sora-2-pro", width: 1280, height: 720 },
-  motion_2: { width: 832, height: 480 },
+const VIDEO_MODELS: Record<string, { apiModel?: string }> = {
+  sora_2: { apiModel: "sora-2" },
+  sora_2_pro: { apiModel: "sora-2-pro" },
+  motion_2: {},
 };
 
 const DEFAULT_VIDEO_MODEL = "sora_2";
