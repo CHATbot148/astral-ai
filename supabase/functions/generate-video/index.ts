@@ -18,7 +18,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { prompt, modelId, duration, quality } = await req.json();
+    const { prompt, modelId, duration, quality, appInForeground } = await req.json();
     if (!prompt) throw new Error("Prompt is required");
 
     const LEONARDO_API_KEY = Deno.env.get("LEONARDO_API_KEY_NEW") || Deno.env.get("LEONARDO_API_KEY");
