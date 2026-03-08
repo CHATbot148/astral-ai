@@ -52,9 +52,9 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
               alt={item.alt || 'GIF'}
               loading="lazy"
               className="w-[100px] h-[100px] object-cover rounded-lg border border-border"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
+               onError={(e) => {
+                 e.currentTarget.closest('[data-media-item="true"]')?.remove();
+               }}
             />
           )}
           
