@@ -651,6 +651,7 @@ export const ChatContainer = () => {
 
           processedContent = sanitizeAssistantMessage(processedContent);
           await addMessage(convId, 'assistant', processedContent);
+        }
       }
       setStreamingContent('');
     } catch (error) {
