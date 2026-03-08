@@ -20,11 +20,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const updateLastSeen = async (userId: string) => {
+      try {
+        await supabase
+          .from('profiles')
+          .update({ last_seen_at: new Date().toISOString() })
+          .eq('user_id', userId);
+      } catch (e) {
+        console.warn('Failed to update last_seen_at:', e);
+      }
+    };
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
+        
+        // Update last_seen_at on sign in
+        if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+          updateLastSeen(session.user.id);
+        }
       }
     );
 
@@ -32,10 +48,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
+      
+      // Update last_seen_at on initial load if user exists
+      if (session?.user) {
+        updateLastSeen(session.user.id);
+      }
     });
 
-    return () => subscription.unsubscribe();
-  }, []);
+    // Update last_seen_at periodically while app is active
+    const intervalId = setInterval(() => {
+      if (user?.id) {
+        updateLastSeen(user.id);
+      }
+    }, 5 * 60 * 1000); // Every 5 minutes
+
+    return () => {
+      subscription.unsubscribe();
+      clearInterval(intervalId);
+    };
+  }, [user?.id]);
 
   const signUp = async (email: string, password: string) => {
     const redirectUrl = `${window.location.origin}/`;
