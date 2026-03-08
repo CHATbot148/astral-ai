@@ -107,17 +107,15 @@ const STYLE_KEYWORDS = ['sketch', 'anime', 'cinematic', 'photoreal', 'realistic'
 function isLikelyImageGenerationIntent(text: string): boolean {
   const hasImageNoun = /\b(image|picture|photo|illustration|art|artwork)\b/i.test(text);
   const hasGenerationVerb = /\b(generate|create|make|draw|render|design|craft|produce|visuali[sz]e)\b/i.test(text);
-  const hasRequestFraming = /\b(can you|could you|please|i want|i need|give me)\b/i.test(text);
   const explicitFetchIntent = /\b(search|find|get|look up|from (?:google|the web|internet)|download|stock image)\b/i.test(text);
-  return hasImageNoun && (hasGenerationVerb || hasRequestFraming) && !explicitFetchIntent;
+  return hasImageNoun && hasGenerationVerb && !explicitFetchIntent;
 }
 
 function isLikelyVideoGenerationIntent(text: string): boolean {
   const hasVideoNoun = /\b(video|clip|animation)\b/i.test(text);
   const hasGenerationVerb = /\b(generate|create|make|render|design|produce|animate)\b/i.test(text);
-  const hasRequestFraming = /\b(can you|could you|please|i want|i need|give me)\b/i.test(text);
   const explicitFetchIntent = /\b(search|find|get|look up|from (?:youtube|the web|internet)|download)\b/i.test(text);
-  return hasVideoNoun && (hasGenerationVerb || hasRequestFraming) && !explicitFetchIntent;
+  return hasVideoNoun && hasGenerationVerb && !explicitFetchIntent;
 }
 
 function extractGenerationPrompt(text: string, type: "image" | "video"): string {
