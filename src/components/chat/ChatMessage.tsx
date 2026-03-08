@@ -432,12 +432,65 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
 
     const lines = text.split('\n');
 
+    // Render inline [IMG:url|source] tags as a horizontal image row
+    const renderInlineImages = (imgTags: { url: string; source: string }[], lineIndex: number) => {
+      if (imgTags.length === 0) return null;
+      return (
+        <div key={`inline-imgs-${lineIndex}`} className="flex gap-2 overflow-x-auto pb-1 my-1 overscroll-x-contain [touch-action:pan-x] [-webkit-overflow-scrolling:touch] scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+          {imgTags.map((img, idx) => (
+            <button
+              key={`iimg-${lineIndex}-${idx}`}
+              type="button"
+              onClick={() => setPreviewImage(img.url)}
+              className="flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity group relative"
+            >
+              <img
+                src={img.url}
+                alt=""
+                loading="lazy"
+                className="h-32 w-44 object-cover rounded-lg border border-border"
+                onError={(e) => { e.currentTarget.parentElement!.style.display = 'none'; }}
+              />
+              {img.source && (
+                <span className="absolute bottom-1 left-1 bg-black/70 text-white text-[9px] px-1.5 py-0.5 rounded truncate max-w-[90%]">
+                  {img.source}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      );
+    };
+
     return lines.map((rawLine, lineIndex) => {
       const line = rawLine.trim();
 
       if (!line) return <div key={`space-${lineIndex}`} className="h-1.5" />;
       if (/^---+$/.test(line)) return <hr key={`hr-${lineIndex}`} className="my-3 border-0 border-t border-border/70" />;
 
+      // Check if this line is an [IMG:url|source] tag
+      const imgTagMatch = line.match(/^\[IMG:(https?:\/\/[^|\]]+)\|?([^\]]*)\]$/);
+      if (imgTagMatch) {
+        // Collect consecutive IMG tags
+        const imgGroup: { url: string; source: string }[] = [{ url: imgTagMatch[1], source: imgTagMatch[2] || '' }];
+        // Look ahead for more consecutive IMG tags (they'll be rendered when we hit the first one)
+        let nextIdx = lineIndex + 1;
+        while (nextIdx < lines.length) {
+          const nextLine = lines[nextIdx].trim();
+          const nextMatch = nextLine.match(/^\[IMG:(https?:\/\/[^|\]]+)\|?([^\]]*)\]$/);
+          if (nextMatch) {
+            imgGroup.push({ url: nextMatch[1], source: nextMatch[2] || '' });
+            nextIdx++;
+          } else {
+            break;
+          }
+        }
+        // Only render the group on the first IMG line; skip subsequent ones
+        if (lineIndex === 0 || !lines[lineIndex - 1]?.trim().match(/^\[IMG:/)) {
+          return renderInlineImages(imgGroup, lineIndex);
+        }
+        return null; // Skip, already rendered by the first IMG in the group
+      }
 
       const markdownHeader = line.match(/^(#{1,3})\s+(.+)$/);
       if (markdownHeader) {

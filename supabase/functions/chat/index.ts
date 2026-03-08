@@ -186,6 +186,46 @@ function appendToStream(upstreamBody: ReadableStream<Uint8Array>, extraContent: 
   });
 }
 
+// Detect if user is asking about something visual that benefits from inline images
+function needsVisualContext(text: string): { needed: boolean; query: string } {
+  const lowerText = text.toLowerCase();
+
+  // Exclude code/abstract/math queries
+  const excludePatterns = [
+    /\b(code|function|algorithm|equation|formula|syntax|error|bug|fix|how to code|step by step|tutorial|implement|debug)\b/i,
+    /\b(calculate|solve|prove|derive|explain the concept)\b/i,
+    /\b(generate|create|make|draw|render)\s+(an?\s+)?(image|picture|video|clip)\b/i,
+  ];
+  if (excludePatterns.some(p => p.test(text))) return { needed: false, query: '' };
+
+  // Visual topic keywords (physical/visual things)
+  const visualTopics = /\b(cars?|hyper\s*cars?|super\s*cars?|sports?\s*cars?|vehicles?|animals?|birds?|fish|flowers?|foods?|dishes?|cuisines?|buildings?|cit(?:y|ies)|countr(?:y|ies)|places?|phones?|laptops?|watch(?:es)?|sneakers?|shoes?|fashion|outfits?|planets?|galax(?:y|ies)|mountains?|beach(?:es)?|islands?|dogs?|cats?|breeds?|weapons?|fighters?\s*jets?|planes?|aircrafts?|boats?|yachts?|ships?|motorcycles?|bikes?|guitars?|instruments?|paintings?|art(?:works?)?|statues?|monuments?|landmarks?|celebrities?|actors?|actresses?|singers?|athletes?|footballers?|players?|stadiums?|arenas?|hotels?|resorts?|houses?|mansions?|castles?|palaces?|bridges?|towers?|logos?|brands?|games?\s*consoles?|dinosaurs?|robots?|drones?|rockets?|tanks?|helicopters?|trucks?|trains?|restaurants?|desserts?|cakes?|cocktails?|drinks?|smartphones?|tablets?|headphones?|speakers?|cameras?|movies?|films?|tv\s*shows?|anime|manga|comics?|cartoons?|characters?|costumes?|jewelry|rings?|necklaces?|bags?|luxury|designer|vintage|classic|exotic|rare|famous|beautiful|stunning|gorgeous|coolest|best\s*looking|most\s*expensive|fastest|biggest|tallest|smallest)\b/i;
+
+  // List/comparison intent patterns
+  const listPatterns = [
+    /(?:list|show|tell me about|what are|name|give me|top\s*\d+|best|most popular|famous|types of|kinds of|examples of|different)\s+(?:some\s+|the\s+|all\s+)?([\w\s]+)/i,
+    /(?:compare|vs|versus|difference between)\s+([\w\s]+)/i,
+    /(?:what (?:is|are)|describe|explain)\s+(?:a |an |the )?([\w\s]+)/i,
+  ];
+
+  if (visualTopics.test(text)) {
+    for (const pattern of listPatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        // Use the full query for better image results
+        const query = match[1]?.trim() || text;
+        return { needed: true, query };
+      }
+    }
+    // Even without list pattern, if it's clearly a visual topic question
+    if (/\?/.test(text) || /\b(what|which|who|where)\b/i.test(text)) {
+      return { needed: true, query: lowerText.replace(/[?!.,]+$/g, '').trim() };
+    }
+  }
+
+  return { needed: false, query: '' };
+}
+
 // Detect if user is asking about real-time/current events that need fresh web data
 function needsFreshWebSearch(text: string): boolean {
   const realTimePatterns = [
@@ -355,6 +395,23 @@ serve(async (req) => {
         }
       }
 
+      // Auto visual context: detect if the topic would benefit from inline images
+      const visualCheck = needsVisualContext(lastContent);
+      if (visualCheck.needed && !mediaContext) {
+        try {
+          const imageResults = await performWebSearch(SUPABASE_URL!, visualCheck.query, "images");
+          if (imageResults.length > 0) {
+            const imgPool = imageResults.slice(0, 15).map((r: any, i: number) => 
+              `${i + 1}. "${r.title || 'Image'}" → ${r.imageUrl}${r.source ? ` (${r.source})` : ''}`
+            ).join("\n");
+            mediaContext = `\n\n[Visual Image Pool — USE THESE to illustrate your response. For each list item or key topic, embed 2-3 relevant images using this EXACT syntax on separate lines after the item title: [IMG:imageUrl|sourceDomain]\nPick images whose titles best match each item. If no good match exists for an item, skip it.]\n${imgPool}`;
+            console.log(`[chat] Auto-visual: found ${imageResults.length} images for "${visualCheck.query}"`);
+          }
+        } catch (e) {
+          console.error("Auto visual search error:", e);
+        }
+      }
+
       // Check for image fetch intent
       for (const pattern of IMAGE_FETCH_PATTERNS) {
         const match = lastContent.match(pattern);
@@ -451,6 +508,17 @@ IMPORTANT RESPONSE GUIDELINES:
 6. LINKS: Use markdown format [text](url) — keep URLs short, never paste raw long URLs.
 7. IMAGES FROM WEB: Use ONLY clean markdown image syntax ![alt](https://...) and never output rendering directives, transform snippets, or partial URL fragments.
 8. VIDEOS FROM WEB: Video cards are injected automatically — DO NOT write video titles, descriptions, or links yourself when videos were found. Just write a brief intro.
+9. INLINE VISUAL IMAGES: When a [Visual Image Pool] is provided, embed images using [IMG:imageUrl|sourceDomain] syntax on separate lines AFTER each list item title. Place 2-3 images per item. Example format:
+   1. **Ferrari SF90 Stradale**
+   [IMG:https://example.com/ferrari.jpg|example.com]
+   [IMG:https://example.com/ferrari2.jpg|example.com]
+   The SF90 is a plug-in hybrid supercar...
+   
+   2. **Lamborghini Revuelto**
+   [IMG:https://example.com/lambo.jpg|example.com]
+   Description here...
+   
+   IMPORTANT: Match image titles to list items. Use [IMG:url|source] NOT ![alt](url) for inline visual images.
 9. TABLES: Use compact 2-5 column tables only when comparison is necessary; otherwise prefer bullets.
 10. WEB SEARCH RESULTS: Always cite sources at the end with a [Sources] section using numbered markdown links.
 11. REAL-TIME DATA: When search results are provided, treat them as primary truth and do not invent facts.${timeContext}${userMemory}${searchContext}${mediaContext}${videoContext}`;
