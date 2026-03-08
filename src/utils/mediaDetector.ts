@@ -86,6 +86,9 @@ export function cleanMarkdownMedia(message: string): { cleanText: string; mediaI
   // Remove markdown media syntax
   cleanText = cleanText.replace(mdImageRegex, '');
 
+  // Keep [IMG:url|source] tags in text — they are rendered inline by ChatMessage
+  // Do NOT strip them here
+
   // Remove standalone giphy/tenor URLs that appear as text
   cleanText = cleanText.replace(/\n?https?:\/\/[^\s]*(?:giphy|tenor)[^\s]*/gi, '');
 
