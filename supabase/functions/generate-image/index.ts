@@ -101,7 +101,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { prompt, imageDataUrl, referenceImageUrl, style = "photoreal", aspectRatio = "1:1", modelId } = await req.json();
+    const { prompt, imageDataUrl, referenceImageUrl, style = "photoreal", aspectRatio = "1:1", modelId, appInForeground } = await req.json();
     if (!prompt && !imageDataUrl) throw new Error("Prompt or imageDataUrl is required");
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
