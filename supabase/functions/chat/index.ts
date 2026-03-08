@@ -220,8 +220,8 @@ serve(async (req) => {
       }
     }
 
-    // Check for web search intent (only if not generating image)
-    if (!shouldGenerateImage) {
+    // Check for web search intent (only if not generating image or video)
+    if (!shouldGenerateImage && !shouldGenerateVideo) {
       const shouldForceSearch = Boolean(forceWebSearch);
       const forcedQuery = typeof webSearchQuery === "string" && webSearchQuery.trim()
         ? webSearchQuery.trim()
