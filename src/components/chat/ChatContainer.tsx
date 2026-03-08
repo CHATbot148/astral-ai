@@ -180,13 +180,19 @@ export const ChatContainer = () => {
   };
 
   const deriveSearchQueryLabel = (raw: string) => {
-    const cleaned = raw.trim().replace(/^["'“”‘’`]+|["'“”‘’`]+$/g, '');
-    const stripped = cleaned
-      .replace(/^(?:please\s+)?(?:can\s+you\s+)?(?:search|google|look\s*up|find\s*out|find|check)\s+(?:for\s+|up\s+)?/i, '')
-      .replace(/\?+$/, '')
+    const cleaned = raw.trim().replace(/^['"“”‘’`]+|['"“”‘’`]+$/g, '');
+
+    const normalized = cleaned
+      .replace(/^(?:please\s+)?(?:can\s+you\s+)?(?:could\s+you\s+)?(?:would\s+you\s+)?/i, '')
+      .replace(/^(?:search|google|look\s*up|find\s*out|find|check|show\s+me)\s+(?:for\s+|up\s+|about\s+|on\s+|the\s+)?/i, '')
+      .replace(/^(?:the\s+)?(?:images?|photos?|pictures?|videos?)\s+(?:of|for|about)\s+/i, '')
+      .replace(/^(?:an?\s+)?(?:image|photo|picture|video)\s+(?:of|for|about)\s+/i, '')
+      .replace(/\b(?:please|for\s+me|thanks?)\b/gi, '')
+      .replace(/[?!.]+$/g, '')
+      .replace(/\s{2,}/g, ' ')
       .trim();
 
-    const label = stripped || cleaned;
+    const label = normalized || cleaned;
     return label.length > 70 ? `${label.slice(0, 67)}…` : label;
   };
 
