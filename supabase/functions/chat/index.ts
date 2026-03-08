@@ -330,10 +330,12 @@ serve(async (req) => {
           try {
             const videoResults = await performWebSearch(SUPABASE_URL!, query, "videos");
             if (videoResults.length > 0) {
-              videoContext = `\n\n[Web Videos for "${query}" - display these as video cards with thumbnails]:\n` +
-                videoResults.slice(0, 4).map((r: any, i: number) => 
-                  `${i + 1}. [VIDEO_CARD:${r.title}|${r.url}|${r.thumbnail}|${r.duration || ''}|${r.source || 'YouTube'}]`
-                ).join("\n");
+              // Build raw VIDEO_CARD tags to append after stream (AI reformats them if in prompt)
+              rawVideoCards = "\n\n" + videoResults.slice(0, 4).map((r: any) => 
+                `[VIDEO_CARD:${(r.title || 'Video').replace(/[|\[\]]/g, '')}|${r.url}|${r.thumbnail}|${r.duration || ''}|${r.source || 'YouTube'}]`
+              ).join("\n");
+              // Tell AI about videos briefly so it can write an intro
+              videoContext = `\n\n[Web Videos found for "${query}" — DO NOT list or format video results yourself, they will be displayed automatically as cards. Just write a brief intro sentence mentioning you found videos.]`;
             }
           } catch (e) {
             console.error("Video search error:", e);
