@@ -16,6 +16,7 @@ export type ImageGenOptions = {
   aspectRatio: "1:1" | "16:9" | "9:16" | "3:2" | "4:3";
   quality: "fast" | "balanced" | "high";
   referenceImageUrl?: string;
+  modelId?: string;
 };
 
 interface Props {
@@ -41,6 +42,15 @@ const ASPECT_PRESETS: Array<{ value: ImageGenOptions["aspectRatio"]; label: stri
   { value: "4:3", label: "Classic", icon: "📺" },
 ];
 
+const LEONARDO_MODELS: Array<{ value: string; label: string; hint: string }> = [
+  { value: "phoenix", label: "Phoenix", hint: "Best overall" },
+  { value: "kino", label: "Kino XL", hint: "Cinematic" },
+  { value: "diffusion", label: "Diffusion XL", hint: "Creative" },
+  { value: "anime_xl", label: "Anime XL", hint: "Anime/Manga" },
+  { value: "vision", label: "Vision XL", hint: "Photorealistic" },
+  { value: "lightning", label: "Lightning XL", hint: "Fast" },
+];
+
 // Removed quality presets as Gemini handles this automatically
 
 const PROMPT_SUGGESTIONS = [
@@ -56,6 +66,8 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   const [prompt, setPrompt] = useState(initialPrompt);
   const [style, setStyle] = useState<ImageGenOptions["style"]>("photoreal");
   const [aspectRatio, setAspectRatio] = useState<ImageGenOptions["aspectRatio"]>("1:1");
+  const [selectedModel, setSelectedModel] = useState("phoenix");
+  const canSelectModel = tier === "pro" || tier === "ultimate";
   const [isWorking, setIsWorking] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -116,8 +128,9 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
       prompt: (override?.prompt ?? prompt).trim(),
       style: override?.style ?? style,
       aspectRatio: override?.aspectRatio ?? aspectRatio,
-      quality: "balanced", // Fixed value, Gemini handles this
+      quality: "balanced",
       referenceImageUrl: useReferenceImage && referenceImage ? referenceImage : undefined,
+      modelId: canSelectModel ? selectedModel : undefined,
     };
 
     if (!opts.prompt) return;
@@ -239,6 +252,35 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
               ))}
             </div>
           </div>
+
+          {/* Model Selection (Pro/Ultimate only) */}
+          {canSelectModel && (
+            <div className="grid gap-2">
+              <Label className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4" />
+                AI Model
+              </Label>
+              <div className="flex flex-wrap gap-2">
+                {LEONARDO_MODELS.map((m) => (
+                  <button
+                    key={m.value}
+                    type="button"
+                    onClick={() => setSelectedModel(m.value)}
+                    disabled={isWorking}
+                    className={cn(
+                      "flex flex-col px-3 py-1.5 rounded-lg border transition-all text-xs",
+                      selectedModel === m.value
+                        ? "border-xai-cyan bg-xai-cyan/10 text-foreground"
+                        : "border-border bg-secondary/50 text-muted-foreground hover:border-xai-cyan/50"
+                    )}
+                  >
+                    <span className="font-medium">{m.label}</span>
+                    <span className="text-[10px] opacity-70">{m.hint}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Image-to-Image Toggle */}
           <div className="grid gap-3">

@@ -100,13 +100,16 @@ export async function subscribeToPush(userId: string): Promise<boolean> {
       return false;
     }
 
-    // 4. Store in DB (upsert by endpoint to avoid duplicates)
+    // 4. Remove all stale subscriptions for this user, then insert the fresh one
+    //    (Apple/iOS gives a new endpoint on every subscribe, so old ones pile up)
+    await supabase
+      .from('push_subscriptions')
+      .delete()
+      .eq('user_id', userId);
+
     const { error } = await supabase
       .from('push_subscriptions')
-      .upsert(
-        { user_id: userId, endpoint, p256dh, auth },
-        { onConflict: 'endpoint' }
-      );
+      .insert({ user_id: userId, endpoint, p256dh, auth });
 
     if (error) {
       console.error('Failed to store push subscription:', error);

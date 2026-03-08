@@ -16,7 +16,7 @@ serve(async (req) => {
     const LEONARDO_API_KEY = Deno.env.get("LEONARDO_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
-    const BREVO_API_KEY = Deno.env.get("BREVO_API_KEY");
+    const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) throw new Error("Backend not configured");
     if (!LEONARDO_API_KEY) throw new Error("Video generation API key not configured");
@@ -36,56 +36,52 @@ serve(async (req) => {
       if (data?.user?.email) userEmail = data.user.email;
     }
 
-    // Subscription tier check + daily video limits
     const CEO_EMAIL = "khaleelktn@gmail.com";
-    
-    if (userId !== "anonymous") {
-      const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
-      
-      // Fetch user's subscription
-      const { data: sub } = await admin
-        .from("subscriptions")
-        .select("tier, status, expires_at")
-        .eq("user_id", userId)
-        .eq("status", "active")
-        .maybeSingle();
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
-      const tier = (sub && sub.status === "active" && (!sub.expires_at || new Date(sub.expires_at) > new Date()))
-        ? sub.tier : "free";
-
-      // Free tier cannot generate videos at all
-      if (tier === "free") {
-        return new Response(JSON.stringify({
-          error: "Video generation requires a paid plan. Please upgrade.",
-          limit_reached: true,
-        }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-
-      const tierLimits: Record<string, number> = {
-        free: 0, basic: 2, pro: 8, ultimate: 999999,
-      };
-      const dailyLimit = userEmail === CEO_EMAIL ? 20 : (tierLimits[tier] || 0);
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      const { count } = await admin
-        .from("generated_videos")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", userId)
-        .gte("created_at", today.toISOString());
-      
-      if ((count || 0) >= dailyLimit) {
-        return new Response(JSON.stringify({
-          error: `Daily video limit reached (${dailyLimit}/day). Upgrade for more.`,
-          limit_reached: true,
-        }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-    } else {
-      // Anonymous users cannot generate videos
+    if (userId === "anonymous") {
       return new Response(JSON.stringify({
         error: "Please sign in and subscribe to generate videos.",
       }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // Subscription tier check + daily video limits
+    const { data: sub } = await admin
+      .from("subscriptions")
+      .select("tier, status, expires_at")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .maybeSingle();
+
+    const tier = (sub && sub.status === "active" && (!sub.expires_at || new Date(sub.expires_at) > new Date()))
+      ? sub.tier : "free";
+
+    if (tier === "free") {
+      return new Response(JSON.stringify({
+        error: "Video generation requires a paid plan. Please upgrade.",
+        limit_reached: true,
+      }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    const tierLimits: Record<string, number> = {
+      free: 0, basic: 2, pro: 8, ultimate: 999999,
+    };
+    const dailyLimit = userEmail === CEO_EMAIL ? 20 : (tierLimits[tier] || 0);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const { count } = await admin
+      .from("generated_videos")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .gte("created_at", today.toISOString());
+
+    if ((count || 0) >= dailyLimit) {
+      return new Response(JSON.stringify({
+        error: `Daily video limit reached (${dailyLimit}/day). Upgrade for more.`,
+        limit_reached: true,
+      }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     console.log(`Generating video with Leonardo text-to-video: "${prompt}"`);
@@ -110,10 +106,8 @@ serve(async (req) => {
     if (!createRes.ok) {
       const errText = await createRes.text();
       console.error("Leonardo text-to-video error:", createRes.status, errText);
-      
-      // If text-to-video not available, fallback to image → motion SVD
       console.log("Falling back to image → motion SVD approach...");
-        return await imageToMotionFallback(req, prompt, LEONARDO_API_KEY, SUPABASE_URL, SERVICE_ROLE_KEY, userId, BREVO_API_KEY);
+      return await imageToMotionFallback(prompt, LEONARDO_API_KEY, SUPABASE_URL, SERVICE_ROLE_KEY, userId);
     }
 
     const createData = await createRes.json();
@@ -123,8 +117,7 @@ serve(async (req) => {
 
     if (!generationId) {
       console.error("No generationId from text-to-video:", JSON.stringify(createData));
-      // Fallback
-      return await imageToMotionFallback(req, prompt, LEONARDO_API_KEY, SUPABASE_URL, SERVICE_ROLE_KEY, userId, BREVO_API_KEY);
+      return await imageToMotionFallback(prompt, LEONARDO_API_KEY, SUPABASE_URL, SERVICE_ROLE_KEY, userId);
     }
 
     console.log(`Text-to-video generation started, ID: ${generationId}`);
@@ -142,57 +135,16 @@ serve(async (req) => {
       const gen = pollData.generations_by_pk;
 
       if (gen?.status === "COMPLETE") {
-        // Check for video URL in generated_images
         const videoItem = gen.generated_images?.find((img: any) => img.motionMP4URL || img.url?.endsWith(".mp4"));
-        if (videoItem?.motionMP4URL) {
-          videoUrl = videoItem.motionMP4URL;
-          break;
-        }
-        if (videoItem?.url) {
-          videoUrl = videoItem.url;
-          break;
-        }
+        if (videoItem?.motionMP4URL) { videoUrl = videoItem.motionMP4URL; break; }
+        if (videoItem?.url) { videoUrl = videoItem.url; break; }
       }
       if (gen?.status === "FAILED") throw new Error("Video generation failed. Please try again.");
     }
 
     if (!videoUrl) throw new Error("Video generation timed out. Please try again.");
 
-    // Download and upload to storage
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
-    const videoRes = await fetch(videoUrl);
-    if (!videoRes.ok) throw new Error("Failed to download generated video");
-
-    const videoBytes = new Uint8Array(await videoRes.arrayBuffer());
-    const path = `${userId}/generated/vid-${Date.now()}.mp4`;
-    const { error: uploadError } = await admin.storage
-      .from("chat-files")
-      .upload(path, videoBytes, { contentType: "video/mp4", upsert: false });
-
-    if (uploadError) throw uploadError;
-
-    const ref = `storage:chat-files/${path}`;
-    console.log("Video generated and uploaded:", ref);
-
-    // Save to generated_videos table for gallery
-    if (userId !== "anonymous") {
-      await admin.from("generated_videos").insert({
-        user_id: userId,
-        prompt,
-        video_url: ref,
-      });
-    }
-
-    await notifyUserMediaReady({
-      admin,
-      supabaseUrl: SUPABASE_URL,
-      serviceRoleKey: SERVICE_ROLE_KEY,
-      brevoApiKey: BREVO_API_KEY,
-      userId,
-      prompt,
-      mediaType: "video",
-      mediaRef: ref,
-    });
+    const ref = await uploadVideo(admin, userId, prompt, videoUrl);
 
     return new Response(JSON.stringify({ video: ref }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -205,14 +157,36 @@ serve(async (req) => {
   }
 });
 
-// Fallback: generate image first, then apply motion SVD
+async function uploadVideo(admin: ReturnType<typeof createClient>, userId: string, prompt: string, videoUrl: string): Promise<string> {
+  const videoRes = await fetch(videoUrl);
+  if (!videoRes.ok) throw new Error("Failed to download generated video");
+
+  const videoBytes = new Uint8Array(await videoRes.arrayBuffer());
+  const path = `${userId}/generated/vid-${Date.now()}.mp4`;
+  const { error: uploadError } = await admin.storage
+    .from("chat-files")
+    .upload(path, videoBytes, { contentType: "video/mp4", upsert: false });
+
+  if (uploadError) throw uploadError;
+
+  const ref = `storage:chat-files/${path}`;
+  console.log("Video generated and uploaded:", ref);
+
+  if (userId !== "anonymous") {
+    await admin.from("generated_videos").insert({
+      user_id: userId, prompt, video_url: ref,
+    });
+  }
+
+  return ref;
+}
+
 async function imageToMotionFallback(
-  _req: Request, prompt: string, apiKey: string,
-  supabaseUrl: string, serviceRoleKey: string, userId: string, brevoApiKey?: string
+  prompt: string, apiKey: string,
+  supabaseUrl: string, serviceRoleKey: string, userId: string
 ) {
   console.log("Using image → motion SVD fallback");
 
-  // Step 1: Generate base image
   const imgRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations", {
     method: "POST",
     headers: {
@@ -222,7 +196,7 @@ async function imageToMotionFallback(
     },
     body: JSON.stringify({
       prompt,
-      modelId: "6bef9f1b-29cb-40c7-b9df-32b51c1f67d3",
+      modelId: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3",
       width: 832,
       height: 480,
       num_images: 1,
@@ -239,7 +213,6 @@ async function imageToMotionFallback(
   const genId = imgData.sdGenerationJob?.generationId;
   if (!genId) throw new Error("No generation ID for base image");
 
-  // Poll for base image
   let imageId = "";
   for (let i = 0; i < 30; i++) {
     await new Promise(r => setTimeout(r, 3000));
@@ -257,9 +230,7 @@ async function imageToMotionFallback(
   }
 
   if (!imageId) throw new Error("Base image generation timed out");
-  console.log("Base image ready, ID:", imageId);
 
-  // Step 2: Apply motion SVD using imageId (per Leonardo docs)
   const motionRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations-motion-svd", {
     method: "POST",
     headers: {
@@ -268,7 +239,7 @@ async function imageToMotionFallback(
       Accept: "application/json",
     },
     body: JSON.stringify({
-      imageId: imageId,
+      imageId,
       isPublic: false,
       motionStrength: 5,
     }),
@@ -283,7 +254,6 @@ async function imageToMotionFallback(
   const motionGenId = motionData.motionSvdGenerationJob?.generationId;
   if (!motionGenId) throw new Error("No motion generation ID");
 
-  // Poll for video
   let videoUrl = "";
   for (let i = 0; i < 40; i++) {
     await new Promise(r => setTimeout(r, 3000));
@@ -302,135 +272,10 @@ async function imageToMotionFallback(
 
   if (!videoUrl) throw new Error("Video generation timed out");
 
-  // Upload
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
-  const dlRes = await fetch(videoUrl);
-  if (!dlRes.ok) throw new Error("Failed to download video");
-  const videoBytes = new Uint8Array(await dlRes.arrayBuffer());
-  const path = `${userId}/generated/vid-${Date.now()}.mp4`;
-  const { error } = await admin.storage
-    .from("chat-files")
-    .upload(path, videoBytes, { contentType: "video/mp4", upsert: false });
-  if (error) throw error;
-
-  const ref = `storage:chat-files/${path}`;
-  console.log("Video (fallback) uploaded:", ref);
-
-  // Save to generated_videos table
-  if (userId !== "anonymous") {
-    await admin.from("generated_videos").insert({
-      user_id: userId,
-      prompt,
-      video_url: ref,
-    });
-  }
-
-  await notifyUserMediaReady({
-    admin,
-    supabaseUrl,
-    serviceRoleKey,
-    brevoApiKey,
-    userId,
-    prompt,
-    mediaType: "video",
-    mediaRef: ref,
-  });
+  const ref = await uploadVideo(admin, userId, prompt, videoUrl);
 
   return new Response(JSON.stringify({ video: ref }), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
-}
-
-async function notifyUserMediaReady(params: {
-  admin: ReturnType<typeof createClient>;
-  supabaseUrl: string;
-  serviceRoleKey: string;
-  brevoApiKey: string | undefined;
-  userId: string;
-  prompt: string;
-  mediaType: "image" | "video";
-  mediaRef: string;
-}) {
-  const { admin, supabaseUrl, serviceRoleKey, brevoApiKey, userId, prompt, mediaType, mediaRef } = params;
-
-  if (userId === "anonymous") return;
-
-  const content = mediaType === "image"
-    ? `🖼️ Your generated image is ready: "${prompt}"`
-    : `🎬 Your generated video is ready: "${prompt}"`;
-
-  const { data: latestConversation } = await admin
-    .from("conversations")
-    .select("id")
-    .eq("user_id", userId)
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const conversationId = latestConversation?.id;
-  if (conversationId) {
-    await admin.from("messages").insert({
-      conversation_id: conversationId,
-      role: "assistant",
-      content,
-      file_urls: [mediaRef],
-    });
-    await admin.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
-  }
-
-  const { data: profileData } = await admin
-    .from("profiles")
-    .select("notification_preference, notifications_enabled")
-    .eq("user_id", userId)
-    .single();
-
-  if (!profileData?.notifications_enabled) return;
-
-  const pref = profileData.notification_preference || "push_and_email";
-  const shouldPush = pref === "push_and_email" || pref === "push_only";
-  const shouldEmail = pref === "push_and_email" || pref === "email_only";
-
-  let pushDelivered = false;
-  if (shouldPush) {
-    const { data: pushSubs } = await admin.from("push_subscriptions").select("id").eq("user_id", userId).limit(1);
-    if ((pushSubs?.length ?? 0) > 0) {
-      const pushRes = await fetch(`${supabaseUrl}/functions/v1/send-push`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${serviceRoleKey}`,
-        },
-        body: JSON.stringify({
-          userId,
-          title: "Astraz Update",
-          body: content,
-          url: "/",
-        }),
-      });
-      if (pushRes.ok) {
-        const pushData = await pushRes.json().catch(() => ({}));
-        pushDelivered = Number(pushData?.sent ?? 0) > 0;
-      }
-    }
-  }
-
-  if (shouldEmail || !pushDelivered) {
-    const { data: userData, error } = await admin.auth.admin.getUserById(userId);
-    const email = error ? null : userData.user?.email ?? null;
-    if (email && brevoApiKey) {
-      await fetch("https://api.brevo.com/v3/smtp/email", {
-        method: "POST",
-        headers: {
-          "api-key": brevoApiKey,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          sender: { name: "Astraz", email: "xtechnly@gmail.com" },
-          to: [{ email }],
-          subject: mediaType === "video" ? "🎬 Your video is ready" : "🖼️ Your image is ready",
-          htmlContent: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 20px;"><p style="font-size: 16px; color: #111827;">${content}</p><p><a href="https://astraz.lovable.app">Open Astraz</a></p></div>`,
-        }),
-      });
-    }
-  }
 }
