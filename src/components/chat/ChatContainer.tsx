@@ -223,10 +223,11 @@ export const ChatContainer = () => {
     // Run generation in background (don't await)
     (async () => {
       setIsGeneratingImage(true);
+      setTypingLabel('Generating image…');
       try {
         const generatedImage = await generateImageWithOptions(opts);
         if (generatedImage) {
-          await addMessage(capturedConvId, 'assistant', `Here's your generated image for "${opts.prompt}":`, [generatedImage]);
+          await addMessage(capturedConvId, 'assistant', `Here's your image.`, [generatedImage]);
           toast({ title: '✅ Image ready!', description: opts.prompt.slice(0, 60) });
         } else {
           await addMessage(capturedConvId, 'assistant', `I couldn't generate that image. Please try again.`);
@@ -235,6 +236,7 @@ export const ChatContainer = () => {
         await addMessage(capturedConvId, 'assistant', `I couldn't generate that image. ${error instanceof Error ? error.message : 'Please try again.'}`);
       } finally {
         setIsGeneratingImage(false);
+        setTypingLabel(undefined);
       }
     })();
   };
