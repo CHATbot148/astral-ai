@@ -116,14 +116,14 @@ function relevanceScore(text: string, tokens: string[]): number {
     let results: SearchResult[] | ImageResult[] | VideoResult[] = [];
 
     if (type === "web") {
-      results = await searchSerpAPIWeb(query, count, SERPAPI_API_KEY);
+      results = await searchSerpAPIWeb(rewrittenQuery, safeCount, SERPAPI_API_KEY);
     } else if (type === "images") {
-      results = await searchSerpAPIImages(query, count, SERPAPI_API_KEY);
+      results = await searchSerpAPIImages(rewrittenQuery, safeCount, SERPAPI_API_KEY);
     } else if (type === "videos") {
-      results = await searchSerpAPIVideos(query, count, SERPAPI_API_KEY);
+      results = await searchSerpAPIVideos(rewrittenQuery, safeCount, SERPAPI_API_KEY);
     }
 
-    return new Response(JSON.stringify({ results, query, type }), {
+    return new Response(JSON.stringify({ results, query: rewrittenQuery, originalQuery: query, type }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
