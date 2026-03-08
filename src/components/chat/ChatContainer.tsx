@@ -683,16 +683,17 @@ export const ChatContainer = () => {
       setStreamingContent('');
 
       if (fullContent) {
-        const imageGenMatch = fullContent.match(/\[GENERATE_IMAGE:([^\]]+)\]/);
-        const videoGenMatch = fullContent.match(/\[GENERATE_VIDEO:([^\]]+)\]/);
+        const finalDirective = generationDirective ?? extractGenerationTag(fullContent);
 
-        if (imageGenMatch) {
-          const imgPrompt = imageGenMatch[1].trim();
-          // No text message before generation - just show indicator and start generating
+        if (finalDirective?.type === 'image') {
+          isInlineGenerationFlow = true;
           const capturedConvId = convId;
+          const imgPrompt = finalDirective.prompt;
+
           setIsGeneratingImage(true);
           setTypingLabel('Generating image…');
           setTypingMode('typing');
+
           (async () => {
             try {
               const generatedImage = await generateImageWithOptions({ prompt: imgPrompt, style: 'photoreal', aspectRatio: '1:1', quality: 'balanced' });
@@ -708,13 +709,15 @@ export const ChatContainer = () => {
               setTypingLabel(undefined);
             }
           })();
-        } else if (videoGenMatch) {
-          const vidPrompt = videoGenMatch[1].trim();
-          // No text message before generation - just show indicator and start generating
+        } else if (finalDirective?.type === 'video') {
+          isInlineGenerationFlow = true;
           const capturedConvId = convId;
+          const vidPrompt = finalDirective.prompt;
+
           setIsGeneratingVideo(true);
           setTypingLabel('Generating video…');
           setTypingMode('typing');
+
           (async () => {
             try {
               const { data, error } = await supabase.functions.invoke('generate-video', {
@@ -767,15 +770,20 @@ export const ChatContainer = () => {
           if (convId) await addMessage(convId, 'assistant', streamingContent + '... [stopped]');
         }
         setStreamingContent('');
+        setTypingLabel(undefined);
         return;
       }
       console.error('Chat error:', error);
       toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to send message', variant: 'destructive' });
+      setTypingLabel(undefined);
     } finally {
       setIsLoading(false);
-      setTypingLabel(undefined);
+      if (!isInlineGenerationFlow) {
+        setTypingLabel(undefined);
+        setIsGeneratingImage(false);
+        setIsGeneratingVideo(false);
+      }
       setTypingMode('typing');
-      setIsGeneratingImage(false);
       abortControllerRef.current = null;
     }
   };
