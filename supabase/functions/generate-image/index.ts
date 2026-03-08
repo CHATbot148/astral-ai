@@ -101,7 +101,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { prompt, imageDataUrl, referenceImageUrl, style = "photoreal", aspectRatio = "1:1", modelId, skipNotification } = await req.json();
+    const { prompt, imageDataUrl, referenceImageUrl, style = "photoreal", aspectRatio = "1:1", modelId } = await req.json();
     if (!prompt && !imageDataUrl) throw new Error("Prompt or imageDataUrl is required");
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -304,11 +304,13 @@ serve(async (req) => {
 
     const ref = await uploadAndSave(admin, userId, prompt, style, aspectRatio, imgBytes, imgMime);
 
-    // Only send notifications if the user is NOT actively in the app (skipNotification flag)
-    // The frontend sets skipNotification=true when user triggered generation from the UI
-    // so we don't double-notify them
-    if (!skipNotification) {
-      // No notification logic needed - frontend handles the message
+    // Send background notification respecting user's preference
+    if (userId !== "anonymous") {
+      try {
+        await sendGenerationNotification(admin, SUPABASE_URL!, SERVICE_ROLE_KEY!, userId, "image", prompt);
+      } catch (notifErr) {
+        console.error("Notification send failed (non-blocking):", notifErr);
+      }
     }
 
     return new Response(JSON.stringify({ image: ref }), {
@@ -321,3 +323,80 @@ serve(async (req) => {
     });
   }
 });
+
+async function sendGenerationNotification(
+  admin: ReturnType<typeof createClient>,
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  userId: string,
+  type: "image" | "video",
+  prompt: string,
+) {
+  // Check user's notification preference
+  const { data: profileData } = await admin
+    .from("profiles")
+    .select("notification_preference, notifications_enabled")
+    .eq("user_id", userId)
+    .single();
+
+  if (!profileData?.notifications_enabled) return;
+
+  const pref = profileData.notification_preference || "push_and_email";
+  const shouldPush = pref === "push_and_email" || pref === "push_only";
+  const shouldEmail = pref === "push_and_email" || pref === "email_only";
+
+  const title = type === "image" ? "🎨 Image Ready!" : "🎬 Video Ready!";
+  const body = `Your ${type} "${prompt.slice(0, 60)}" has been generated.`;
+
+  // Push notification
+  if (shouldPush) {
+    try {
+      const pushRes = await fetch(`${supabaseUrl}/functions/v1/send-push`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${serviceRoleKey}`,
+        },
+        body: JSON.stringify({ userId, title, body, url: "/" }),
+      });
+      if (!pushRes.ok) console.error("Push failed:", pushRes.status);
+    } catch (e) {
+      console.error("Push error:", e);
+    }
+  }
+
+  // Email notification
+  if (shouldEmail) {
+    const BREVO_API_KEY = Deno.env.get("BREVO_API_KEY");
+    if (BREVO_API_KEY) {
+      try {
+        const { data: userData } = await admin.auth.admin.getUserById(userId);
+        const email = userData?.user?.email;
+        if (email) {
+          await fetch("https://api.brevo.com/v3/smtp/email", {
+            method: "POST",
+            headers: { "api-key": BREVO_API_KEY, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sender: { name: "Astraz", email: "xtechnly@gmail.com" },
+              to: [{ email }],
+              subject: title,
+              htmlContent: `
+                <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                  <div style="background: linear-gradient(135deg, #00CED1, #9B59B6); padding: 20px; border-radius: 12px 12px 0 0;">
+                    <h1 style="color: white; margin: 0;">${title}</h1>
+                  </div>
+                  <div style="background: #f8f9fa; padding: 24px; border-radius: 0 0 12px 12px;">
+                    <p style="font-size: 16px; color: #333;">${body}</p>
+                    <a href="https://astraz.lovable.app" style="display: inline-block; background: linear-gradient(135deg, #00CED1, #9B59B6); color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 16px;">View in Astraz</a>
+                  </div>
+                </div>
+              `,
+            }),
+          });
+        }
+      } catch (e) {
+        console.error("Email error:", e);
+      }
+    }
+  }
+}

@@ -134,26 +134,17 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
 
     if (!opts.prompt) return;
 
-    setIsWorking(true);
-    setError(null);
-    setProgress(5);
     setLast(opts);
 
     try {
       await onGenerate(opts);
-      setProgress(100);
-      setTimeout(() => {
-        onOpenChange(false);
-        setPrompt("");
-        setProgress(0);
-        removeReferenceImage();
-        setUseReferenceImage(false);
-      }, 500);
+      // Close immediately — generation runs in background
+      onOpenChange(false);
+      setPrompt("");
+      removeReferenceImage();
+      setUseReferenceImage(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Generation failed");
-      setProgress(0);
-    } finally {
-      setIsWorking(false);
     }
   };
 

@@ -215,20 +215,28 @@ export const ChatContainer = () => {
       convId = newConv.id;
     }
     await addMessage(convId, 'user', `Generate an image: ${opts.prompt}`);
-    setIsGeneratingImage(true);
-    try {
-      const generatedImage = await generateImageWithOptions(opts);
-      if (generatedImage) {
-        await addMessage(convId, 'assistant', `Here's your generated image for "${opts.prompt}":`, [generatedImage]);
-      } else {
-        throw new Error('No image was generated');
+    
+    // Fire-and-forget: close dialog immediately, generate in background
+    toast({ title: '🎨 Generating image in background', description: "You'll be notified when it's ready." });
+    const capturedConvId = convId;
+    
+    // Run generation in background (don't await)
+    (async () => {
+      setIsGeneratingImage(true);
+      try {
+        const generatedImage = await generateImageWithOptions(opts);
+        if (generatedImage) {
+          await addMessage(capturedConvId, 'assistant', `Here's your generated image for "${opts.prompt}":`, [generatedImage]);
+          toast({ title: '✅ Image ready!', description: opts.prompt.slice(0, 60) });
+        } else {
+          await addMessage(capturedConvId, 'assistant', `I couldn't generate that image. Please try again.`);
+        }
+      } catch (error) {
+        await addMessage(capturedConvId, 'assistant', `I couldn't generate that image. ${error instanceof Error ? error.message : 'Please try again.'}`);
+      } finally {
+        setIsGeneratingImage(false);
       }
-    } catch (error) {
-      await addMessage(convId, 'assistant', `I couldn't generate that image. ${error instanceof Error ? error.message : 'Please try again.'}`);
-      throw error;
-    } finally {
-      setIsGeneratingImage(false);
-    }
+    })();
   };
 
   const handleVideoGenerate = async (opts: VideoGenOptions) => {
@@ -239,24 +247,32 @@ export const ChatContainer = () => {
       convId = newConv.id;
     }
     await addMessage(convId, 'user', `Generate a video: ${opts.prompt}`);
-    setIsGeneratingVideo(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('generate-video', {
-        body: { prompt: opts.prompt, modelId: opts.modelId, skipNotification: true },
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      if (data?.video) {
-        await addMessage(convId, 'assistant', `Here's your generated video for "${opts.prompt}":`, [data.video]);
-      } else {
-        throw new Error('No video was generated');
+    
+    // Fire-and-forget: close dialog immediately, generate in background
+    toast({ title: '🎬 Generating video in background', description: "You'll be notified when it's ready. This may take up to a minute." });
+    const capturedConvId = convId;
+    
+    // Run generation in background (don't await)
+    (async () => {
+      setIsGeneratingVideo(true);
+      try {
+        const { data, error } = await supabase.functions.invoke('generate-video', {
+          body: { prompt: opts.prompt, modelId: opts.modelId },
+        });
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+        if (data?.video) {
+          await addMessage(capturedConvId, 'assistant', `Here's your generated video for "${opts.prompt}":`, [data.video]);
+          toast({ title: '✅ Video ready!', description: opts.prompt.slice(0, 60) });
+        } else {
+          await addMessage(capturedConvId, 'assistant', `I couldn't generate that video. Please try again.`);
+        }
+      } catch (error) {
+        await addMessage(capturedConvId, 'assistant', `I couldn't generate that video. ${error instanceof Error ? error.message : 'Please try again.'}`);
+      } finally {
+        setIsGeneratingVideo(false);
       }
-    } catch (error) {
-      await addMessage(convId, 'assistant', `I couldn't generate that video. ${error instanceof Error ? error.message : 'Please try again.'}`);
-      throw error;
-    } finally {
-      setIsGeneratingVideo(false);
-    }
+    })();
   };
 
   const handleEditMessage = (messageId: string, content: string) => {
