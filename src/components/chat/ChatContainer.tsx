@@ -366,13 +366,34 @@ export const ChatContainer = () => {
       return answer;
     }
   };
-  const sanitizeAssistantMessage = (value: string) => {
+  const stripRenderableDirectives = (value: string) => {
     return value
-      .split('\n')
-      .filter((line) => !/^\s*:?max_bytes\(/i.test(line) && !/strip_icc\(\)/i.test(line))
-      .join('\n')
+      .replace(/\[GENERATE_(?:IMAGE|VIDEO):[^\]]*\]?/gi, '')
+      .replace(/\[GIF:[^\]]*\]?/gi, '')
+      .replace(/\[VIDEO_CARD:[^\]]*\]?/gi, '')
+      .replace(/!\[[^\]]*\]\((?:https?:\/\/|data:image\/|storage:)[^\)]*\)?/gi, '')
+      .replace(/\n?https?:\/\/[^\s]*(?:giphy|tenor)[^\s]*/gi, '')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
+  };
+
+  const extractGenerationTag = (value: string): { type: 'image' | 'video'; prompt: string } | null => {
+    const imageMatch = value.match(/\[GENERATE_IMAGE:([^\]]+)\]/);
+    if (imageMatch?.[1]) return { type: 'image', prompt: imageMatch[1].trim() };
+
+    const videoMatch = value.match(/\[GENERATE_VIDEO:([^\]]+)\]/);
+    if (videoMatch?.[1]) return { type: 'video', prompt: videoMatch[1].trim() };
+
+    return null;
+  };
+
+  const sanitizeAssistantMessage = (value: string) => {
+    return stripRenderableDirectives(
+      value
+        .split('\n')
+        .filter((line) => !/^\s*:?max_bytes\(/i.test(line) && !/strip_icc\(\)/i.test(line))
+        .join('\n')
+    );
   };
 
   const handleSend = async (content: string, files?: File[]) => {
@@ -398,6 +419,7 @@ export const ChatContainer = () => {
     setTypingLabel(undefined);
     setTypingMode('typing');
     abortControllerRef.current = new AbortController();
+    let isInlineGenerationFlow = false;
 
     try {
       let convId = currentConversation?.id;
@@ -563,10 +585,10 @@ export const ChatContainer = () => {
       let wordQueue: string[] = [];
       let displayedContent = '';
       let animInterval: ReturnType<typeof setInterval> | null = null;
+      let generationDirective: { type: 'image' | 'video'; prompt: string } | null = null;
 
       if (showTyping && typingStyle === 'typewriter') {
         animInterval = setInterval(() => {
-          // Drain multiple chars per tick for "extremely fast" feel
           const batch = charQueue.splice(0, 3);
           if (batch.length > 0) {
             displayedContent += batch.join('');
@@ -607,16 +629,42 @@ export const ChatContainer = () => {
             const content = parsed.choices?.[0]?.delta?.content;
             if (content) {
               fullContent += content;
+
+              if (!generationDirective) {
+                generationDirective = extractGenerationTag(fullContent);
+                if (generationDirective) {
+                  isInlineGenerationFlow = true;
+                  setStreamingContent('');
+                  setTypingMode('typing');
+                  if (generationDirective.type === 'image') {
+                    setIsGeneratingImage(true);
+                    setTypingLabel('Generating image…');
+                  } else {
+                    setIsGeneratingVideo(true);
+                    setTypingLabel('Generating video…');
+                  }
+                }
+              }
+
+              if (generationDirective) continue;
+
+              const visibleContent = stripRenderableDirectives(fullContent);
+
               if (showTyping) {
                 if (typingStyle === 'typewriter') {
-                  charQueue.push(...content.split(''));
+                  const safeDelta = visibleContent.slice(displayedContent.length);
+                  if (safeDelta) charQueue.push(...safeDelta.split(''));
                 } else if (typingStyle === 'word_by_word') {
-                  const words = content.match(/\S+\s*/g) || [content];
-                  wordQueue.push(...words);
+                  const safeDelta = visibleContent.slice(displayedContent.length);
+                  if (safeDelta) {
+                    const words = safeDelta.match(/\S+\s*/g) || [safeDelta];
+                    wordQueue.push(...words);
+                  }
                 } else {
-                  // normal, line_fade, slide_down
-                  setStreamingContent(fullContent);
+                  setStreamingContent(visibleContent);
                 }
+              } else {
+                setStreamingContent(visibleContent);
               }
             }
           } catch {
@@ -635,16 +683,17 @@ export const ChatContainer = () => {
       setStreamingContent('');
 
       if (fullContent) {
-        const imageGenMatch = fullContent.match(/\[GENERATE_IMAGE:([^\]]+)\]/);
-        const videoGenMatch = fullContent.match(/\[GENERATE_VIDEO:([^\]]+)\]/);
+        const finalDirective = generationDirective ?? extractGenerationTag(fullContent);
 
-        if (imageGenMatch) {
-          const imgPrompt = imageGenMatch[1].trim();
-          // No text message before generation - just show indicator and start generating
+        if (finalDirective?.type === 'image') {
+          isInlineGenerationFlow = true;
           const capturedConvId = convId;
+          const imgPrompt = finalDirective.prompt;
+
           setIsGeneratingImage(true);
           setTypingLabel('Generating image…');
           setTypingMode('typing');
+
           (async () => {
             try {
               const generatedImage = await generateImageWithOptions({ prompt: imgPrompt, style: 'photoreal', aspectRatio: '1:1', quality: 'balanced' });
@@ -660,13 +709,15 @@ export const ChatContainer = () => {
               setTypingLabel(undefined);
             }
           })();
-        } else if (videoGenMatch) {
-          const vidPrompt = videoGenMatch[1].trim();
-          // No text message before generation - just show indicator and start generating
+        } else if (finalDirective?.type === 'video') {
+          isInlineGenerationFlow = true;
           const capturedConvId = convId;
+          const vidPrompt = finalDirective.prompt;
+
           setIsGeneratingVideo(true);
           setTypingLabel('Generating video…');
           setTypingMode('typing');
+
           (async () => {
             try {
               const { data, error } = await supabase.functions.invoke('generate-video', {
@@ -719,15 +770,20 @@ export const ChatContainer = () => {
           if (convId) await addMessage(convId, 'assistant', streamingContent + '... [stopped]');
         }
         setStreamingContent('');
+        setTypingLabel(undefined);
         return;
       }
       console.error('Chat error:', error);
       toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to send message', variant: 'destructive' });
+      setTypingLabel(undefined);
     } finally {
       setIsLoading(false);
-      setTypingLabel(undefined);
+      if (!isInlineGenerationFlow) {
+        setTypingLabel(undefined);
+        setIsGeneratingImage(false);
+        setIsGeneratingVideo(false);
+      }
       setTypingMode('typing');
-      setIsGeneratingImage(false);
       abortControllerRef.current = null;
     }
   };

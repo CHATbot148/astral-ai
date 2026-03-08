@@ -104,6 +104,37 @@ const VIDEO_GENERATION_PATTERNS = [
 
 const STYLE_KEYWORDS = ['sketch', 'anime', 'cinematic', 'photoreal', 'realistic', 'cartoon', 'painting', 'watercolor', 'oil painting', '3d render'];
 
+function isLikelyImageGenerationIntent(text: string): boolean {
+  const hasImageNoun = /\b(image|picture|photo|illustration|art|artwork)\b/i.test(text);
+  const hasGenerationVerb = /\b(generate|create|make|draw|render|design|craft|produce|visuali[sz]e)\b/i.test(text);
+  const hasRequestFraming = /\b(can you|could you|please|i want|i need|give me)\b/i.test(text);
+  const explicitFetchIntent = /\b(search|find|get|look up|from (?:google|the web|internet)|download|stock image)\b/i.test(text);
+  return hasImageNoun && (hasGenerationVerb || hasRequestFraming) && !explicitFetchIntent;
+}
+
+function isLikelyVideoGenerationIntent(text: string): boolean {
+  const hasVideoNoun = /\b(video|clip|animation)\b/i.test(text);
+  const hasGenerationVerb = /\b(generate|create|make|render|design|produce|animate)\b/i.test(text);
+  const hasRequestFraming = /\b(can you|could you|please|i want|i need|give me)\b/i.test(text);
+  const explicitFetchIntent = /\b(search|find|get|look up|from (?:youtube|the web|internet)|download)\b/i.test(text);
+  return hasVideoNoun && (hasGenerationVerb || hasRequestFraming) && !explicitFetchIntent;
+}
+
+function extractGenerationPrompt(text: string, type: "image" | "video"): string {
+  const nounPattern = type === "image"
+    ? '(?:image|picture|photo|illustration|art(?:work)?)'
+    : '(?:video|clip|animation)';
+
+  const prompt = text
+    .replace(/^(?:can\s+you|could\s+you|would\s+you|please)\s+/i, '')
+    .replace(/^(?:i\s+(?:want|need)|give\s+me)\s+/i, '')
+    .replace(new RegExp(`^(?:generate|create|make|draw|render|design|craft|produce|visuali[sz]e|animate)\\s*(?:me\\s*)?(?:an?\\s*)?${nounPattern}?\\s*(?:of|showing|with|for)?\\s*`, 'i'), '')
+    .replace(new RegExp(`^(?:an?\\s*)?${nounPattern}\\s*(?:of|showing|with|for)?\\s*`, 'i'), '')
+    .trim();
+
+  return prompt || text.trim();
+}
+
 // Detect if user is asking about real-time/current events that need fresh web data
 function needsFreshWebSearch(text: string): boolean {
   const realTimePatterns = [
@@ -190,10 +221,8 @@ serve(async (req) => {
     for (const pattern of IMAGE_GENERATION_PATTERNS) {
       if (pattern.test(lastContent)) {
         shouldGenerateImage = true;
-        imagePrompt = lastContent
-          .replace(/^(generate|create|make|draw|visuali[sz]e)\s*(me\s*)?(an?\s*)?(image|picture|photo|illustration|art|artwork)?\s*(of\s*)?/i, '')
-          .trim() || lastContent;
-        
+        imagePrompt = extractGenerationPrompt(lastContent, "image");
+
         for (const style of STYLE_KEYWORDS) {
           if (lastContent.toLowerCase().includes(style)) {
             if (style === 'sketch') detectedStyle = 'sketch';
@@ -212,11 +241,20 @@ serve(async (req) => {
       for (const pattern of VIDEO_GENERATION_PATTERNS) {
         if (pattern.test(lastContent)) {
           shouldGenerateVideo = true;
-          videoPrompt = lastContent
-            .replace(/^(generate|create|make)\s*(me\s*)?(a\s*)?(video|clip|animation)?\s*(of\s*)?/i, '')
-            .trim() || lastContent;
+          videoPrompt = extractGenerationPrompt(lastContent, "video");
           break;
         }
+      }
+    }
+
+    // Heuristic fallback: treat natural generation requests as generation even when pattern isn't exact
+    if (!shouldGenerateImage && !shouldGenerateVideo) {
+      if (isLikelyImageGenerationIntent(lastContent)) {
+        shouldGenerateImage = true;
+        imagePrompt = extractGenerationPrompt(lastContent, "image");
+      } else if (isLikelyVideoGenerationIntent(lastContent)) {
+        shouldGenerateVideo = true;
+        videoPrompt = extractGenerationPrompt(lastContent, "video");
       }
     }
 
