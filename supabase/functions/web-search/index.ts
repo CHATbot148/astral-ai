@@ -99,16 +99,16 @@ function relevanceScore(text: string, tokens: string[]): number {
     const SERPAPI_API_KEY = Deno.env.get("SERPAPI_API_KEY");
     
     if (!SERPAPI_API_KEY) {
-      console.log("SERPAPI_API_KEY not configured, using fallback DuckDuckGo");
+      console.log("SERPAPI_API_KEY not configured, using provider fallback");
       let results: SearchResult[] | ImageResult[] | VideoResult[] = [];
       if (type === "web") {
-        results = await searchDuckDuckGo(query, count);
+        results = await searchDuckDuckGo(rewrittenQuery, safeCount);
       } else if (type === "images") {
-        results = await fallbackImageSearch(query, count);
+        results = await fallbackImageSearch(rewrittenQuery, safeCount);
       } else if (type === "videos") {
-        results = await fallbackVideoSearch(query, count);
+        results = await fallbackVideoSearch(rewrittenQuery, safeCount);
       }
-      return new Response(JSON.stringify({ results, query, type }), {
+      return new Response(JSON.stringify({ results, query: rewrittenQuery, originalQuery: query, type }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
