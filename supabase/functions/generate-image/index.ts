@@ -259,9 +259,9 @@ serve(async (req) => {
 
     // ===== PRIMARY: selected provider =====
     if (selectedModel.provider === "lovable" && selectedModel.lovableModel) {
-      console.log(`[PRIMARY] Lovable AI (${selectedModel.lovableModel}): "${enhancedPrompt}"`);
+      console.log(`[PRIMARY] Lovable AI (${selectedModel.lovableModel}): "${enhancedPrompt}"${referenceImageUrl ? ' [with reference image]' : ''}`);
       try {
-        const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel);
+        const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel, referenceImageUrl);
         if (generated) {
           imgBytes = generated.bytes;
           imgMime = generated.mime;
