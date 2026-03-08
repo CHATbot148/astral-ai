@@ -186,6 +186,46 @@ function appendToStream(upstreamBody: ReadableStream<Uint8Array>, extraContent: 
   });
 }
 
+// Detect if user is asking about something visual that benefits from inline images
+function needsVisualContext(text: string): { needed: boolean; query: string } {
+  const lowerText = text.toLowerCase();
+
+  // Exclude code/abstract/math queries
+  const excludePatterns = [
+    /\b(code|function|algorithm|equation|formula|syntax|error|bug|fix|how to code|step by step|tutorial|implement|debug)\b/i,
+    /\b(calculate|solve|prove|derive|explain the concept)\b/i,
+    /\b(generate|create|make|draw|render)\s+(an?\s+)?(image|picture|video|clip)\b/i,
+  ];
+  if (excludePatterns.some(p => p.test(text))) return { needed: false, query: '' };
+
+  // Visual topic keywords (physical/visual things)
+  const visualTopics = /\b(cars?|hyper\s*cars?|super\s*cars?|sports?\s*cars?|vehicles?|animals?|birds?|fish|flowers?|foods?|dishes?|cuisines?|buildings?|cit(?:y|ies)|countr(?:y|ies)|places?|phones?|laptops?|watch(?:es)?|sneakers?|shoes?|fashion|outfits?|planets?|galax(?:y|ies)|mountains?|beach(?:es)?|islands?|dogs?|cats?|breeds?|weapons?|fighters?\s*jets?|planes?|aircrafts?|boats?|yachts?|ships?|motorcycles?|bikes?|guitars?|instruments?|paintings?|art(?:works?)?|statues?|monuments?|landmarks?|celebrities?|actors?|actresses?|singers?|athletes?|footballers?|players?|stadiums?|arenas?|hotels?|resorts?|houses?|mansions?|castles?|palaces?|bridges?|towers?|logos?|brands?|games?\s*consoles?|dinosaurs?|robots?|drones?|rockets?|tanks?|helicopters?|trucks?|trains?|restaurants?|desserts?|cakes?|cocktails?|drinks?|smartphones?|tablets?|headphones?|speakers?|cameras?|movies?|films?|tv\s*shows?|anime|manga|comics?|cartoons?|characters?|costumes?|jewelry|rings?|necklaces?|bags?|luxury|designer|vintage|classic|exotic|rare|famous|beautiful|stunning|gorgeous|coolest|best\s*looking|most\s*expensive|fastest|biggest|tallest|smallest)\b/i;
+
+  // List/comparison intent patterns
+  const listPatterns = [
+    /(?:list|show|tell me about|what are|name|give me|top\s*\d+|best|most popular|famous|types of|kinds of|examples of|different)\s+(?:some\s+|the\s+|all\s+)?([\w\s]+)/i,
+    /(?:compare|vs|versus|difference between)\s+([\w\s]+)/i,
+    /(?:what (?:is|are)|describe|explain)\s+(?:a |an |the )?([\w\s]+)/i,
+  ];
+
+  if (visualTopics.test(text)) {
+    for (const pattern of listPatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        // Use the full query for better image results
+        const query = match[1]?.trim() || text;
+        return { needed: true, query };
+      }
+    }
+    // Even without list pattern, if it's clearly a visual topic question
+    if (/\?/.test(text) || /\b(what|which|who|where)\b/i.test(text)) {
+      return { needed: true, query: lowerText.replace(/[?!.,]+$/g, '').trim() };
+    }
+  }
+
+  return { needed: false, query: '' };
+}
+
 // Detect if user is asking about real-time/current events that need fresh web data
 function needsFreshWebSearch(text: string): boolean {
   const realTimePatterns = [
