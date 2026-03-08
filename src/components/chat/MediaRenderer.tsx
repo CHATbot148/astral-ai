@@ -71,8 +71,8 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
                 alt={item.alt || 'Image'}
                 loading="lazy"
                 className="max-w-[280px] max-h-[280px] rounded-lg border border-border object-contain"
-                onError={(e) => {
-                  e.currentTarget.closest('[data-media-item="true"]')?.remove();
+                onError={() => {
+                  // Keep slot stable; broken media should not collapse nearby content
                 }}
               />
             </button>
