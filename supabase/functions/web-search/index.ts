@@ -291,14 +291,14 @@ async function searchDuckDuckGo(query: string, count: number): Promise<SearchRes
   }
 }
 
-function fallbackImageSearch(query: string, count: number): ImageResult[] {
-  const encodedQuery = encodeURIComponent(query);
-  return [{ title: query, url: `https://www.google.com/search?q=${encodedQuery}&tbm=isch`, imageUrl: `https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?auto=format&fit=crop&w=900&q=80`, source: "Google Images" }];
+function fallbackImageSearch(query: string, _count: number): ImageResult[] {
+  console.warn(`Image fallback unavailable for query: ${query}`);
+  return [];
 }
 
-function fallbackVideoSearch(query: string, count: number): VideoResult[] {
-  const encodedQuery = encodeURIComponent(query);
-  return [{ title: query, url: `https://www.youtube.com/results?search_query=${encodedQuery}`, thumbnail: `https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg`, source: "YouTube" }];
+function fallbackVideoSearch(query: string, _count: number): VideoResult[] {
+  console.warn(`Video fallback unavailable for query: ${query}`);
+  return [];
 }
 
 function safeHostname(value: string): string {
