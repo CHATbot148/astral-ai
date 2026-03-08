@@ -57,24 +57,15 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   }, [isWorking]);
 
   const run = async () => {
-    if (!prompt.trim() || isWorking) return;
-    setIsWorking(true);
-    setError(null);
-    setProgress(5);
+    if (!prompt.trim()) return;
 
     try {
       await onGenerate({ prompt: prompt.trim(), modelId: selectedModel });
-      setProgress(100);
-      setTimeout(() => {
-        onOpenChange(false);
-        setPrompt("");
-        setProgress(0);
-      }, 500);
+      // Close immediately — generation runs in background
+      onOpenChange(false);
+      setPrompt("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Video generation failed");
-      setProgress(0);
-    } finally {
-      setIsWorking(false);
     }
   };
 
