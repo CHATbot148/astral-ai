@@ -81,19 +81,27 @@ function extractListKeyFromLine(line: string): string | null {
   return extractListItemFromLine(line)?.key ?? null;
 }
 
-function extractListItemFromLine(line: string): { key: string; query: string } | null {
+function extractListItemFromLine(
+  line: string
+): { key: string; query: string; kind: 'numbered' | 'bullet' } | null {
   const trimmed = line.trim();
   const numbered = trimmed.match(/^(\d+)[\.)]\s+(.+)$/);
   const bullet = trimmed.match(/^[-•]\s+(.+)$/);
   const body = (numbered?.[2] ?? bullet?.[1])?.trim();
-  if (!body) return null;
+  const kind: 'numbered' | 'bullet' | null = numbered ? 'numbered' : bullet ? 'bullet' : null;
+  if (!body || !kind) return null;
 
   const bold = body.match(/^\*\*(.+?)\*\*/);
-  const titleRaw = (bold?.[1] ?? body).split(/(?:\s+[-—–:]\s+|:\s+)/)[0].trim();
+  const titleCandidate = (bold?.[1] ?? body).trim();
+  const titleRaw = titleCandidate
+    .split(/(?:\s+[-—–:]\s+|:\s+)/)[0]
+    .replace(/\s*\([^)]*\)\s*$/g, '')
+    .trim();
+
   const query = stripMarkdownInline(titleRaw);
   const key = normalizeListKey(query);
   if (!key) return null;
-  return { key, query };
+  return { key, query, kind };
 }
 
 const GENERIC_LIST_SECTION_KEYS = new Set([
@@ -440,11 +448,11 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
   const isUser = role === 'user';
 
   const listItemsInMessage = useMemo(() => {
-    if (role !== 'assistant') return [] as Array<{ key: string; query: string }>;
+    if (role !== 'assistant') return [] as Array<{ key: string; query: string; kind: 'numbered' | 'bullet' }>;
 
     const withoutCode = content.replace(/```[\s\S]*?```/g, '');
     const lines = withoutCode.split('\n');
-    const items: Array<{ key: string; query: string }> = [];
+    const items: Array<{ key: string; query: string; kind: 'numbered' | 'bullet' }> = [];
     const seen = new Set<string>();
 
     for (const line of lines) {
@@ -480,18 +488,12 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
         const entries = await Promise.all(
           listItemsInMessage.map(async ({ key, query }) => {
             const desiredCount = desiredInlineImageCount(key);
-            const tryQueries = [query, `${query} photo`, `${query} wallpaper`];
 
-            let results: any[] = [];
-            for (const q of tryQueries) {
-              const { data, error } = await supabase.functions.invoke('web-search', {
-                body: { query: q, type: 'images', count: 20 },
-              });
-              if (!error && Array.isArray(data?.results) && data.results.length > 0) {
-                results = data.results;
-                if (results.length >= 3) break;
-              }
-            }
+            const { data, error } = await supabase.functions.invoke('web-search', {
+              body: { query, type: 'images', count: 30 },
+            });
+
+            const results: any[] = !error && Array.isArray(data?.results) ? data.results : [];
 
             const urls: InlineListImage[] = (results || [])
               .map((r: any) => ({ url: r.imageUrl, source: r.source || '' }))
