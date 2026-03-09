@@ -488,18 +488,12 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
         const entries = await Promise.all(
           listItemsInMessage.map(async ({ key, query }) => {
             const desiredCount = desiredInlineImageCount(key);
-            const tryQueries = [query, `${query} photo`, `${query} wallpaper`];
 
-            let results: any[] = [];
-            for (const q of tryQueries) {
-              const { data, error } = await supabase.functions.invoke('web-search', {
-                body: { query: q, type: 'images', count: 20 },
-              });
-              if (!error && Array.isArray(data?.results) && data.results.length > 0) {
-                results = data.results;
-                if (results.length >= 3) break;
-              }
-            }
+            const { data, error } = await supabase.functions.invoke('web-search', {
+              body: { query, type: 'images', count: 30 },
+            });
+
+            const results: any[] = !error && Array.isArray(data?.results) ? data.results : [];
 
             const urls: InlineListImage[] = (results || [])
               .map((r: any) => ({ url: r.imageUrl, source: r.source || '' }))
