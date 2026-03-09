@@ -3,6 +3,7 @@ import { Copy, Check, ThumbsUp, ThumbsDown, Heart, Sparkles, FileText, Volume2, 
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
 import { AudioPlayer } from './AudioPlayer';
 import { ImagePreviewModal } from './ImagePreviewModal';
 import { MediaRenderer } from './MediaRenderer';
