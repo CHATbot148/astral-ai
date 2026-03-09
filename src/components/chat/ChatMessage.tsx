@@ -584,16 +584,21 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
 
     const lines = text.split('\n');
 
-    // Render inline [IMG:url|source] tags as a horizontal image row
-    const renderInlineImages = (imgTags: { url: string; source: string }[], lineIndex: number) => {
+    const IMG_TAG_RE = /^\[IMG:(https?:\/\/[^|\]]+)\|?([^\]]*)\]$/;
+    const isImgTagLine = (value: string) => IMG_TAG_RE.test(value.trim());
+
+    const renderInlineImages = (imgTags: InlineListImage[], keySuffix: string) => {
       const visibleInlineImages = imgTags.filter((img) => !failedInlineImages.has(img.url));
       if (visibleInlineImages.length === 0) return null;
 
       return (
-        <div key={`inline-imgs-${lineIndex}`} className="flex gap-2 overflow-x-auto pb-2 my-2 overscroll-x-contain [touch-action:pan-x] [-webkit-overflow-scrolling:touch] scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+        <div
+          key={`inline-imgs-${keySuffix}`}
+          className="flex gap-2 overflow-x-auto pb-2 my-2 overscroll-x-contain [touch-action:pan-x] [-webkit-overflow-scrolling:touch] scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent"
+        >
           {visibleInlineImages.map((img, idx) => (
             <button
-              key={`iimg-${lineIndex}-${idx}`}
+              key={`iimg-${keySuffix}-${idx}`}
               type="button"
               onClick={() => setPreviewImage(img.url)}
               className="flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity group relative"
@@ -622,22 +627,77 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
       );
     };
 
-    return lines.map((rawLine, lineIndex) => {
+    const renderLoadingImagesRow = (count: number, keySuffix: string) => {
+      if (count <= 0) return null;
+
+      return (
+        <div key={`inline-loading-${keySuffix}`} className="my-2">
+          <div className="text-xs font-medium leading-5 text-transparent bg-clip-text bg-[linear-gradient(90deg,hsl(var(--muted-foreground))_0%,hsl(var(--foreground))_45%,hsl(var(--muted-foreground))_100%)] bg-[length:220%_100%] animate-[shimmer_1.8s_linear_infinite]">
+            Loading images…
+          </div>
+          <div className="mt-2 flex gap-2 overflow-x-auto pb-2 overscroll-x-contain [touch-action:pan-x] [-webkit-overflow-scrolling:touch] scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+            {Array.from({ length: count }).map((_, i) => (
+              <div
+                key={`sk-${keySuffix}-${i}`}
+                className="relative h-40 w-52 rounded-lg border border-border bg-muted overflow-hidden"
+              >
+                <div className="absolute inset-0 bg-[linear-gradient(90deg,hsl(var(--muted))_0%,hsl(var(--background))_45%,hsl(var(--muted))_100%)] bg-[length:220%_100%] animate-[shimmer_1.8s_linear_infinite]" />
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
+
+    const mergeUniqueByUrl = (base: InlineListImage[], extra: InlineListImage[], limit: number) => {
+      const seen = new Set<string>();
+      const merged: InlineListImage[] = [];
+      for (const img of [...base, ...extra]) {
+        if (!img?.url) continue;
+        if (seen.has(img.url)) continue;
+        seen.add(img.url);
+        merged.push(img);
+        if (merged.length >= limit) break;
+      }
+      return merged;
+    };
+
+    const getNextNonEmptyLine = (fromIndex: number) => {
+      for (let i = fromIndex + 1; i < lines.length; i++) {
+        const t = lines[i]?.trim();
+        if (!t) continue;
+        return t;
+      }
+      return '';
+    };
+
+    const out: React.ReactNode[] = [];
+    let activeListKey: string | null = null;
+
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const rawLine = lines[lineIndex];
       const line = rawLine.trim();
 
-      if (!line) return <div key={`space-${lineIndex}`} className="h-1.5" />;
-      if (/^---+$/.test(line)) return <hr key={`hr-${lineIndex}`} className="my-3 border-0 border-t border-border/70" />;
+      if (!line) {
+        out.push(<div key={`space-${lineIndex}`} className="h-1.5" />);
+        continue;
+      }
+      if (/^---+$/.test(line)) {
+        out.push(<hr key={`hr-${lineIndex}`} className="my-3 border-0 border-t border-border/70" />);
+        continue;
+      }
 
-      // Check if this line is an [IMG:url|source] tag
-      const imgTagMatch = line.match(/^\[IMG:(https?:\/\/[^|\]]+)\|?([^\]]*)\]$/);
+      const listItem = extractListItemFromLine(line);
+      if (listItem) activeListKey = listItem.key;
+
+      // Inline IMG group (may need supplementation to reach 3-5)
+      const imgTagMatch = line.match(IMG_TAG_RE);
       if (imgTagMatch) {
-        // Collect consecutive IMG tags
-        const imgGroup: { url: string; source: string }[] = [{ url: imgTagMatch[1], source: imgTagMatch[2] || '' }];
-        // Look ahead for more consecutive IMG tags (they'll be rendered when we hit the first one)
+        const imgGroup: InlineListImage[] = [{ url: imgTagMatch[1], source: imgTagMatch[2] || '' }];
         let nextIdx = lineIndex + 1;
         while (nextIdx < lines.length) {
           const nextLine = lines[nextIdx].trim();
-          const nextMatch = nextLine.match(/^\[IMG:(https?:\/\/[^|\]]+)\|?([^\]]*)\]$/);
+          const nextMatch = nextLine.match(IMG_TAG_RE);
           if (nextMatch) {
             imgGroup.push({ url: nextMatch[1], source: nextMatch[2] || '' });
             nextIdx++;
@@ -645,49 +705,84 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
             break;
           }
         }
-        // Only render the group on the first IMG line; skip subsequent ones
-        if (lineIndex === 0 || !lines[lineIndex - 1]?.trim().match(/^\[IMG:/)) {
-          return renderInlineImages(imgGroup, lineIndex);
+
+        const isFirstInGroup = lineIndex === 0 || !lines[lineIndex - 1]?.trim().startsWith('[IMG:');
+        if (isFirstInGroup) {
+          const keyForImgs = activeListKey;
+          const desired = keyForImgs ? desiredInlineImageCount(keyForImgs) : imgGroup.length;
+          const supplemental = keyForImgs ? (autoListImagesByKey[keyForImgs] ?? []) : [];
+          const merged = mergeUniqueByUrl(imgGroup, supplemental, desired);
+
+          out.push(renderInlineImages(merged, `${lineIndex}`));
+
+          if (keyForImgs && merged.length < desired && autoListImagesLoading) {
+            out.push(renderLoadingImagesRow(desired - merged.length, `${keyForImgs}-${lineIndex}`));
+          }
         }
-        return null; // Skip, already rendered by the first IMG in the group
+
+        lineIndex = nextIdx - 1;
+        continue;
       }
 
       const markdownHeader = line.match(/^(#{1,3})\s+(.+)$/);
       if (markdownHeader) {
+        activeListKey = null;
         const level = markdownHeader[1].length;
         const body = formatInline(markdownHeader[2]);
         const headerClass = level === 1 ? 'text-xl font-semibold mt-3' : level === 2 ? 'text-lg font-semibold mt-2.5' : 'text-base font-semibold mt-2';
-        return <p key={`header-${lineIndex}`} className={headerClass} dangerouslySetInnerHTML={{ __html: body }} />;
+        out.push(<p key={`header-${lineIndex}`} className={headerClass} dangerouslySetInnerHTML={{ __html: body }} />);
+        continue;
       }
+
+      const maybeAppendAutoImages = (key: string, suffix: string) => {
+        if (!shouldAutoFetchListImages) return;
+
+        const nextLine = getNextNonEmptyLine(lineIndex);
+        if (nextLine && isImgTagLine(nextLine)) return; // IMG group will render itself
+
+        const desired = desiredInlineImageCount(key);
+        const imgs = autoListImagesByKey[key] ?? [];
+        if (imgs.length > 0) {
+          out.push(renderInlineImages(imgs.slice(0, desired), suffix));
+        } else if (autoListImagesLoading) {
+          out.push(renderLoadingImagesRow(desired, suffix));
+        }
+      };
 
       const bulletMatch = line.match(/^[-•]\s+(.+)$/);
       if (bulletMatch) {
-        return (
+        out.push(
           <div key={`bullet-${lineIndex}`} className="my-1 grid grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-2 pl-3 pr-1">
             <span className="pt-0.5 text-muted-foreground">•</span>
             <span className="min-w-0 text-[0.95rem] leading-7 text-foreground" dangerouslySetInnerHTML={{ __html: formatInline(bulletMatch[1]) }} />
           </div>
         );
+        if (listItem) maybeAppendAutoImages(listItem.key, `bullet-${listItem.key}-${lineIndex}`);
+        continue;
       }
 
       const numberedMatch = line.match(/^(\d+)[\.)]\s+(.+)$/);
       if (numberedMatch) {
-        return (
+        out.push(
           <div key={`number-${lineIndex}`} className="my-1 grid grid-cols-[auto_minmax(0,1fr)] items-start gap-2 pl-3 pr-1">
             <span className="pt-0.5 text-muted-foreground">{numberedMatch[1]}.</span>
             <span className="min-w-0 text-[0.95rem] leading-7 text-foreground" dangerouslySetInnerHTML={{ __html: formatInline(numberedMatch[2]) }} />
           </div>
         );
+        if (listItem) maybeAppendAutoImages(listItem.key, `number-${listItem.key}-${lineIndex}`);
+        continue;
       }
 
-      return (
+      out.push(
         <p
           key={`paragraph-${lineIndex}`}
           className="my-1.5 text-[0.95rem] leading-7 text-foreground"
           dangerouslySetInnerHTML={{ __html: formatInline(rawLine) }}
         />
       );
-    });
+    }
+
+    return out;
   };
 
   const isImageLike = (url: string) => {
