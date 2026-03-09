@@ -96,6 +96,55 @@ function extractListItemFromLine(line: string): { key: string; query: string } |
   return { key, query };
 }
 
+const GENERIC_LIST_SECTION_KEYS = new Set([
+  'performance',
+  'design',
+  'value',
+  'pros',
+  'cons',
+  'overview',
+  'summary',
+  'verdict',
+  'features',
+  'specs',
+  'pricing',
+  'price',
+  'cost',
+  'why',
+  'how',
+]);
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Only attach auto-fetched images to “real” list items (entity names),
+ * not explanatory bullets like “Performance:” or sentence-long bullets.
+ */
+function isEligibleAutoImageListItem(line: string, item: { key: string; query: string } | null): boolean {
+  if (!item) return false;
+
+  const trimmed = line.trim();
+  const query = stripMarkdownInline(item.query);
+  const queryKey = normalizeListKey(query);
+
+  // Avoid section headers like: "Performance: ..." (single-word label + colon)
+  if (!query.includes(' ') && new RegExp(`^[-•\\d\\.)\\s]*\\*{0,2}${escapeRegExp(query)}\\*{0,2}:\\s`, 'i').test(trimmed)) {
+    return false;
+  }
+
+  // Avoid generic headings even if formatting varies
+  if (GENERIC_LIST_SECTION_KEYS.has(queryKey)) return false;
+
+  // Avoid sentence-like bullets (usually explanations)
+  const wordCount = query.split(/\s+/).filter(Boolean).length;
+  if (wordCount > 8) return false;
+
+  return true;
+}
+
+
 // Language color mapping for syntax highlighting
 const LANGUAGE_COLORS: Record<string, { bg: string; text: string; label: string }> = {
   javascript: { bg: 'bg-yellow-500/20', text: 'text-yellow-500', label: 'JavaScript' },
@@ -401,6 +450,7 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
     for (const line of lines) {
       const item = extractListItemFromLine(line);
       if (!item) continue;
+      if (!isEligibleAutoImageListItem(line, item)) continue;
       if (seen.has(item.key)) continue;
       seen.add(item.key);
       items.push(item);
@@ -688,7 +738,13 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
       }
 
       const listItem = extractListItemFromLine(line);
-      if (listItem) activeListKey = listItem.key;
+      const isListLine = /^(\d+)[\.)]\s+/.test(line) || /^[-•]\s+/.test(line);
+      const canAttachAutoImages = !!listItem && isEligibleAutoImageListItem(rawLine, listItem);
+
+      // Only treat eligible list items as “active” (prevents images for explanatory bullets)
+      if (isListLine) {
+        activeListKey = canAttachAutoImages ? listItem!.key : null;
+      }
 
       // Inline IMG group (may need supplementation to reach 3-5)
       const imgTagMatch = line.match(IMG_TAG_RE);
@@ -757,7 +813,7 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
             <span className="min-w-0 text-[0.95rem] leading-7 text-foreground" dangerouslySetInnerHTML={{ __html: formatInline(bulletMatch[1]) }} />
           </div>
         );
-        if (listItem) maybeAppendAutoImages(listItem.key, `bullet-${listItem.key}-${lineIndex}`);
+        if (canAttachAutoImages && listItem) maybeAppendAutoImages(listItem.key, `bullet-${listItem.key}-${lineIndex}`);
         continue;
       }
 
@@ -769,7 +825,7 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
             <span className="min-w-0 text-[0.95rem] leading-7 text-foreground" dangerouslySetInnerHTML={{ __html: formatInline(numberedMatch[2]) }} />
           </div>
         );
-        if (listItem) maybeAppendAutoImages(listItem.key, `number-${listItem.key}-${lineIndex}`);
+        if (canAttachAutoImages && listItem) maybeAppendAutoImages(listItem.key, `number-${listItem.key}-${lineIndex}`);
         continue;
       }
 
