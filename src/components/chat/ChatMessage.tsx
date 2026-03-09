@@ -738,7 +738,13 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
       }
 
       const listItem = extractListItemFromLine(line);
-      if (listItem) activeListKey = listItem.key;
+      const isListLine = /^(\d+)[\.)]\s+/.test(line) || /^[-•]\s+/.test(line);
+      const canAttachAutoImages = !!listItem && isEligibleAutoImageListItem(rawLine, listItem);
+
+      // Only treat eligible list items as “active” (prevents images for explanatory bullets)
+      if (isListLine) {
+        activeListKey = canAttachAutoImages ? listItem!.key : null;
+      }
 
       // Inline IMG group (may need supplementation to reach 3-5)
       const imgTagMatch = line.match(IMG_TAG_RE);
