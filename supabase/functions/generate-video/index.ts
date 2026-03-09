@@ -14,14 +14,155 @@ const VIDEO_MODELS: Record<string, { apiModel?: string }> = {
 
 const DEFAULT_VIDEO_MODEL = "sora_2";
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function resolveStorageRefToSignedUrl(
+  admin: ReturnType<typeof createClient>,
+  storageRef: string
+): Promise<string> {
+  // storage:bucket/path
+  const raw = storageRef.slice("storage:".length);
+  const slashIdx = raw.indexOf("/");
+  const bucket = raw.slice(0, slashIdx);
+  const path = raw.slice(slashIdx + 1);
+  const { data } = await admin.storage.from(bucket).createSignedUrl(path, 60 * 60);
+  return data?.signedUrl || storageRef;
+}
+
+async function geminiUploadResumable(
+  geminiKey: string,
+  bytes: ArrayBuffer,
+  contentType: string
+): Promise<{ fileUri: string; mimeType: string; fileName: string }> {
+  const startRes = await fetch(
+    `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${geminiKey}`,
+    {
+      method: "POST",
+      headers: {
+        "X-Goog-Upload-Protocol": "resumable",
+        "X-Goog-Upload-Command": "start",
+        "X-Goog-Upload-Header-Content-Length": String(bytes.byteLength),
+        "X-Goog-Upload-Header-Content-Type": contentType,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ file: { display_name: "reference-media" } }),
+    }
+  );
+
+  const uploadUrl = startRes.headers.get("x-goog-upload-url");
+  if (!uploadUrl) {
+    const t = await startRes.text().catch(() => "");
+    throw new Error(`Gemini Files API start failed (${startRes.status}): ${t}`);
+  }
+
+  const uploadRes = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      "Content-Length": String(bytes.byteLength),
+      "X-Goog-Upload-Offset": "0",
+      "X-Goog-Upload-Command": "upload, finalize",
+    },
+    body: bytes,
+  });
+
+  const info = await uploadRes.json();
+  const fileUri = info?.file?.uri;
+  const fileName = info?.file?.name;
+  if (!fileUri || !fileName) {
+    throw new Error("Gemini Files API upload failed: missing file URI");
+  }
+
+  // Wait for processing
+  let state = info?.file?.state;
+  let attempts = 0;
+  while (state === "PROCESSING" && attempts < 30) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const checkRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${geminiKey}`
+    );
+    const checkData = await checkRes.json();
+    state = checkData.state;
+    attempts++;
+  }
+
+  if (state !== "ACTIVE") {
+    throw new Error(`Reference media processing failed (${state || "unknown"})`);
+  }
+
+  return { fileUri, mimeType: contentType, fileName };
+}
+
+async function describeReferenceWithGemini(
+  geminiKey: string,
+  mediaBytes: ArrayBuffer,
+  contentType: string
+): Promise<string> {
+  const instruction =
+    "Describe the reference media for video generation. " +
+    "Return a concise description of: subject(s), setting, style, colors, lighting, camera angle, and mood. " +
+    "If there is a logo/text, describe it faithfully. Do not add extra guesses.";
+
+  // Inline only for non-gif images (small enough in typical cases)
+  const isInlineImage = contentType.startsWith("image/") && contentType !== "image/gif";
+
+  let parts: any[];
+  if (isInlineImage) {
+    const base64 = bytesToBase64(new Uint8Array(mediaBytes));
+    parts = [{ inlineData: { mimeType: contentType, data: base64 } }, { text: instruction }];
+  } else {
+    // Video/GIF via Files API
+    const supported =
+      contentType === "video/mp4" ||
+      contentType === "video/webm" ||
+      contentType === "image/gif" ||
+      contentType.startsWith("video/");
+
+    if (!supported) {
+      throw new Error(`Unsupported reference media type: ${contentType}`);
+    }
+
+    const uploaded = await geminiUploadResumable(geminiKey, mediaBytes, contentType);
+    parts = [{ fileData: { mimeType: uploaded.mimeType, fileUri: uploaded.fileUri } }, { text: instruction }];
+  }
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts }],
+        generationConfig: { maxOutputTokens: 384, temperature: 0.2 },
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Gemini reference analysis failed (${res.status}): ${errText}`);
+  }
+
+  const data = await res.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  return String(text || "").trim();
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { prompt, modelId, duration, quality, appInForeground } = await req.json();
+    const { prompt, modelId, duration, quality, appInForeground, referenceMediaUrl } = await req.json();
     if (!prompt) throw new Error("Prompt is required");
 
     const LEONARDO_API_KEY = Deno.env.get("LEONARDO_API_KEY_NEW") || Deno.env.get("LEONARDO_API_KEY");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
     const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -48,9 +189,12 @@ serve(async (req) => {
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
     if (userId === "anonymous") {
-      return new Response(JSON.stringify({
-        error: "Please sign in and subscribe to generate videos.",
-      }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(
+        JSON.stringify({
+          error: "Please sign in and subscribe to generate videos.",
+        }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // Subscription tier check + daily video limits
@@ -61,18 +205,25 @@ serve(async (req) => {
       .eq("status", "active")
       .maybeSingle();
 
-    const tier = (sub && sub.status === "active" && (!sub.expires_at || new Date(sub.expires_at) > new Date()))
-      ? sub.tier : "free";
+    const tier = sub && sub.status === "active" && (!sub.expires_at || new Date(sub.expires_at) > new Date())
+      ? sub.tier
+      : "free";
 
     if (tier === "free") {
-      return new Response(JSON.stringify({
-        error: "Video generation requires a paid plan. Please upgrade.",
-        limit_reached: true,
-      }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(
+        JSON.stringify({
+          error: "Video generation requires a paid plan. Please upgrade.",
+          limit_reached: true,
+        }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const tierLimits: Record<string, number> = {
-      free: 0, basic: 2, pro: 8, ultimate: 999999,
+      free: 0,
+      basic: 2,
+      pro: 8,
+      ultimate: 999999,
     };
     const dailyLimit = userEmail === CEO_EMAIL ? 20 : (tierLimits[tier] || 0);
 
@@ -86,10 +237,41 @@ serve(async (req) => {
       .gte("created_at", today.toISOString());
 
     if ((count || 0) >= dailyLimit) {
-      return new Response(JSON.stringify({
-        error: `Daily video limit reached (${dailyLimit}/day). Upgrade for more.`,
-        limit_reached: true,
-      }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(
+        JSON.stringify({
+          error: `Daily video limit reached (${dailyLimit}/day). Upgrade for more.`,
+          limit_reached: true,
+        }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Reference media -> prompt augmentation via Google AI Studio (Gemini)
+    let generationPrompt = String(prompt);
+    if (referenceMediaUrl) {
+      if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured for reference analysis");
+
+      let url = String(referenceMediaUrl);
+      if (url.startsWith("storage:")) {
+        url = await resolveStorageRefToSignedUrl(admin, url);
+      }
+
+      const refRes = await fetch(url);
+      if (!refRes.ok) {
+        throw new Error(`Failed to download reference media (${refRes.status})`);
+      }
+
+      const bytes = await refRes.arrayBuffer();
+      const contentType = refRes.headers.get("content-type") || "application/octet-stream";
+
+      try {
+        const desc = await describeReferenceWithGemini(GEMINI_API_KEY, bytes, contentType);
+        if (!desc) throw new Error("Empty reference description");
+        generationPrompt = `${prompt}\n\nReference description: ${desc}`;
+      } catch (e) {
+        // If Gemini rejects the type, bubble up clearly (matches "allow only if it accepts")
+        throw new Error(e instanceof Error ? e.message : "Reference analysis failed");
+      }
     }
 
     const selectedModel = VIDEO_MODELS[modelId] ? modelId : DEFAULT_VIDEO_MODEL;
@@ -103,7 +285,9 @@ serve(async (req) => {
     // Duration: 6 or 10 seconds (default 6)
     const vidDuration = duration === 10 ? 10 : 6;
 
-    console.log(`Generating video with Leonardo text-to-video (${selectedModel}): "${prompt}" | ${vidWidth}x${vidHeight} | ${vidDuration}s`);
+    console.log(
+      `Generating video with Leonardo text-to-video (${selectedModel}): "${generationPrompt}" | ${vidWidth}x${vidHeight} | ${vidDuration}s`
+    );
 
     // Use Leonardo's direct text-to-video endpoint
     const createRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations-text-to-video", {
@@ -114,7 +298,7 @@ serve(async (req) => {
         Accept: "application/json",
       },
       body: JSON.stringify({
-        prompt,
+        prompt: generationPrompt,
         height: vidHeight,
         width: vidWidth,
         isPublic: false,
@@ -128,17 +312,32 @@ serve(async (req) => {
       const errText = await createRes.text();
       console.error("Leonardo text-to-video error:", createRes.status, errText);
       console.log("Falling back to image → motion SVD approach...");
-      return await imageToMotionFallback(prompt, LEONARDO_API_KEY, SUPABASE_URL, SERVICE_ROLE_KEY, userId);
+      return await imageToMotionFallback(
+        generationPrompt,
+        LEONARDO_API_KEY,
+        SUPABASE_URL,
+        SERVICE_ROLE_KEY,
+        userId,
+        prompt
+      );
     }
 
     const createData = await createRes.json();
-    const generationId = createData.motionVideoGenerationJob?.generationId
-      || createData.textToVideoGenerationJob?.generationId
-      || createData.generationId;
+    const generationId =
+      createData.motionVideoGenerationJob?.generationId ||
+      createData.textToVideoGenerationJob?.generationId ||
+      createData.generationId;
 
     if (!generationId) {
       console.error("No generationId from text-to-video:", JSON.stringify(createData));
-      return await imageToMotionFallback(prompt, LEONARDO_API_KEY, SUPABASE_URL, SERVICE_ROLE_KEY, userId);
+      return await imageToMotionFallback(
+        generationPrompt,
+        LEONARDO_API_KEY,
+        SUPABASE_URL,
+        SERVICE_ROLE_KEY,
+        userId,
+        prompt
+      );
     }
 
     console.log(`Text-to-video generation started, ID: ${generationId}`);
@@ -146,7 +345,7 @@ serve(async (req) => {
     // Poll for completion (up to 150 seconds)
     let videoUrl = "";
     for (let i = 0; i < 50; i++) {
-      await new Promise(r => setTimeout(r, 3000));
+      await new Promise((r) => setTimeout(r, 3000));
       const pollRes = await fetch(`https://cloud.leonardo.ai/api/rest/v1/generations/${generationId}`, {
         headers: { Authorization: `Bearer ${LEONARDO_API_KEY}`, Accept: "application/json" },
       });
@@ -157,8 +356,14 @@ serve(async (req) => {
 
       if (gen?.status === "COMPLETE") {
         const videoItem = gen.generated_images?.find((img: any) => img.motionMP4URL || img.url?.endsWith(".mp4"));
-        if (videoItem?.motionMP4URL) { videoUrl = videoItem.motionMP4URL; break; }
-        if (videoItem?.url) { videoUrl = videoItem.url; break; }
+        if (videoItem?.motionMP4URL) {
+          videoUrl = videoItem.motionMP4URL;
+          break;
+        }
+        if (videoItem?.url) {
+          videoUrl = videoItem.url;
+          break;
+        }
       }
       if (gen?.status === "FAILED") throw new Error("Video generation failed. Please try again.");
     }
@@ -180,12 +385,18 @@ serve(async (req) => {
   } catch (e) {
     console.error("generate-video error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
 
-async function uploadVideo(admin: ReturnType<typeof createClient>, userId: string, prompt: string, videoUrl: string): Promise<string> {
+async function uploadVideo(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  prompt: string,
+  videoUrl: string
+): Promise<string> {
   const videoRes = await fetch(videoUrl);
   if (!videoRes.ok) throw new Error("Failed to download generated video");
 
@@ -202,7 +413,9 @@ async function uploadVideo(admin: ReturnType<typeof createClient>, userId: strin
 
   if (userId !== "anonymous") {
     await admin.from("generated_videos").insert({
-      user_id: userId, prompt, video_url: ref,
+      user_id: userId,
+      prompt,
+      video_url: ref,
     });
   }
 
@@ -210,8 +423,12 @@ async function uploadVideo(admin: ReturnType<typeof createClient>, userId: strin
 }
 
 async function imageToMotionFallback(
-  prompt: string, apiKey: string,
-  supabaseUrl: string, serviceRoleKey: string, userId: string
+  generationPrompt: string,
+  apiKey: string,
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  userId: string,
+  userPromptForDb: string
 ) {
   console.log("Using image → motion SVD fallback");
 
@@ -223,7 +440,7 @@ async function imageToMotionFallback(
       Accept: "application/json",
     },
     body: JSON.stringify({
-      prompt,
+      prompt: generationPrompt,
       modelId: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3",
       width: 832,
       height: 480,
@@ -243,7 +460,7 @@ async function imageToMotionFallback(
 
   let imageId = "";
   for (let i = 0; i < 30; i++) {
-    await new Promise(r => setTimeout(r, 3000));
+    await new Promise((r) => setTimeout(r, 3000));
     const pollRes = await fetch(`https://cloud.leonardo.ai/api/rest/v1/generations/${genId}`, {
       headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
     });
@@ -284,7 +501,7 @@ async function imageToMotionFallback(
 
   let videoUrl = "";
   for (let i = 0; i < 40; i++) {
-    await new Promise(r => setTimeout(r, 3000));
+    await new Promise((r) => setTimeout(r, 3000));
     const pollRes = await fetch(`https://cloud.leonardo.ai/api/rest/v1/generations/${motionGenId}`, {
       headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
     });
@@ -293,7 +510,10 @@ async function imageToMotionFallback(
     const gen = pollData.generations_by_pk;
     if (gen?.status === "COMPLETE") {
       const video = gen.generated_images?.find((img: any) => img.motionMP4URL);
-      if (video?.motionMP4URL) { videoUrl = video.motionMP4URL; break; }
+      if (video?.motionMP4URL) {
+        videoUrl = video.motionMP4URL;
+        break;
+      }
     }
     if (gen?.status === "FAILED") throw new Error("Video generation failed");
   }
@@ -301,7 +521,7 @@ async function imageToMotionFallback(
   if (!videoUrl) throw new Error("Video generation timed out");
 
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
-  const ref = await uploadVideo(admin, userId, prompt, videoUrl);
+  const ref = await uploadVideo(admin, userId, userPromptForDb, videoUrl);
 
   return new Response(JSON.stringify({ video: ref }), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -314,7 +534,7 @@ async function sendGenerationNotification(
   serviceRoleKey: string,
   userId: string,
   type: "image" | "video",
-  prompt: string,
+  prompt: string
 ) {
   const { data: profileData } = await admin
     .from("profiles")
