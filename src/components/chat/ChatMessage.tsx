@@ -385,8 +385,96 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [failedInlineImages, setFailedInlineImages] = useState<Set<string>>(new Set());
   const [notificationActed, setNotificationActed] = useState(false);
+  const [autoListImagesByKey, setAutoListImagesByKey] = useState<Record<string, InlineListImage[]>>({});
+  const [autoListImagesLoading, setAutoListImagesLoading] = useState(false);
   const { toast } = useToast();
   const isUser = role === 'user';
+
+  const listItemsInMessage = useMemo(() => {
+    if (role !== 'assistant') return [] as Array<{ key: string; query: string }>;
+
+    const withoutCode = content.replace(/```[\s\S]*?```/g, '');
+    const lines = withoutCode.split('\n');
+    const items: Array<{ key: string; query: string }> = [];
+    const seen = new Set<string>();
+
+    for (const line of lines) {
+      const item = extractListItemFromLine(line);
+      if (!item) continue;
+      if (seen.has(item.key)) continue;
+      seen.add(item.key);
+      items.push(item);
+      if (items.length >= 8) break;
+    }
+
+    return items;
+  }, [content, role]);
+
+  const shouldAutoFetchListImages =
+    role === 'assistant' &&
+    listItemsInMessage.length > 0 &&
+    VISUAL_LIST_HINT_RE.test(content);
+
+  useEffect(() => {
+    if (!shouldAutoFetchListImages) {
+      setAutoListImagesByKey({});
+      setAutoListImagesLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setAutoListImagesLoading(true);
+
+    (async () => {
+      try {
+        const entries = await Promise.all(
+          listItemsInMessage.map(async ({ key, query }) => {
+            const desiredCount = desiredInlineImageCount(key);
+            const tryQueries = [query, `${query} photo`, `${query} wallpaper`];
+
+            let results: any[] = [];
+            for (const q of tryQueries) {
+              const { data, error } = await supabase.functions.invoke('web-search', {
+                body: { query: q, type: 'images', count: 20 },
+              });
+              if (!error && Array.isArray(data?.results) && data.results.length > 0) {
+                results = data.results;
+                if (results.length >= 3) break;
+              }
+            }
+
+            const urls: InlineListImage[] = (results || [])
+              .map((r: any) => ({ url: r.imageUrl, source: r.source || '' }))
+              .filter((r: InlineListImage) => !!r.url);
+
+            const seed = fnv1aHash(key);
+            const shuffled = seededShuffle(urls, seed);
+
+            const picked: InlineListImage[] = [];
+            for (let i = 0; i < shuffled.length && picked.length < desiredCount; i++) {
+              picked.push(shuffled[i]);
+            }
+            while (picked.length < desiredCount && shuffled.length > 0) {
+              picked.push(shuffled[picked.length % shuffled.length]);
+            }
+
+            return [key, picked] as const;
+          })
+        );
+
+        if (cancelled) return;
+        setAutoListImagesByKey(Object.fromEntries(entries));
+      } catch (e) {
+        console.warn('Auto list image fetch failed:', e);
+      } finally {
+        if (!cancelled) setAutoListImagesLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldAutoFetchListImages, listItemsInMessage]);
 
   const copyToClipboardUser = async () => {
     await navigator.clipboard.writeText(content);
