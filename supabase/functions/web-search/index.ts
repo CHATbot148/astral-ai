@@ -190,6 +190,9 @@ async function searchSerpAPIImages(query: string, count: number, apiKey: string)
   try {
     const params = new URLSearchParams({ q: query, api_key: apiKey, engine: "google_images", num: String(Math.min(count + 30, 50)) });
     const response = await fetch(`https://serpapi.com/search.json?${params}`);
+    if (response.status === 429 || response.status === 403) {
+      throw new Error(`SerpAPI quota exceeded (${response.status})`);
+    }
     if (!response.ok) throw new Error(`SerpAPI images error: ${response.status}`);
     const data = await response.json();
 
