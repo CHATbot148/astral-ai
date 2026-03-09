@@ -448,11 +448,11 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
   const isUser = role === 'user';
 
   const listItemsInMessage = useMemo(() => {
-    if (role !== 'assistant') return [] as Array<{ key: string; query: string }>;
+    if (role !== 'assistant') return [] as Array<{ key: string; query: string; kind: 'numbered' | 'bullet' }>;
 
     const withoutCode = content.replace(/```[\s\S]*?```/g, '');
     const lines = withoutCode.split('\n');
-    const items: Array<{ key: string; query: string }> = [];
+    const items: Array<{ key: string; query: string; kind: 'numbered' | 'bullet' }> = [];
     const seen = new Set<string>();
 
     for (const line of lines) {
