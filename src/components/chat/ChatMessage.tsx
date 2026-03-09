@@ -78,6 +78,10 @@ function seededShuffle<T>(arr: T[], seed: number): T[] {
 }
 
 function extractListKeyFromLine(line: string): string | null {
+  return extractListItemFromLine(line)?.key ?? null;
+}
+
+function extractListItemFromLine(line: string): { key: string; query: string } | null {
   const trimmed = line.trim();
   const numbered = trimmed.match(/^(\d+)[\.)]\s+(.+)$/);
   const bullet = trimmed.match(/^[-•]\s+(.+)$/);
@@ -85,9 +89,11 @@ function extractListKeyFromLine(line: string): string | null {
   if (!body) return null;
 
   const bold = body.match(/^\*\*(.+?)\*\*/);
-  const title = (bold?.[1] ?? body).split(/(?:\s+[-—–:]\s+|:\s+)/)[0].trim();
-  const key = normalizeListKey(title);
-  return key || null;
+  const titleRaw = (bold?.[1] ?? body).split(/(?:\s+[-—–:]\s+|:\s+)/)[0].trim();
+  const query = stripMarkdownInline(titleRaw);
+  const key = normalizeListKey(query);
+  if (!key) return null;
+  return { key, query };
 }
 
 // Language color mapping for syntax highlighting
