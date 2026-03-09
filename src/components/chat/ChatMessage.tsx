@@ -81,19 +81,27 @@ function extractListKeyFromLine(line: string): string | null {
   return extractListItemFromLine(line)?.key ?? null;
 }
 
-function extractListItemFromLine(line: string): { key: string; query: string } | null {
+function extractListItemFromLine(
+  line: string
+): { key: string; query: string; kind: 'numbered' | 'bullet' } | null {
   const trimmed = line.trim();
   const numbered = trimmed.match(/^(\d+)[\.)]\s+(.+)$/);
   const bullet = trimmed.match(/^[-•]\s+(.+)$/);
   const body = (numbered?.[2] ?? bullet?.[1])?.trim();
-  if (!body) return null;
+  const kind: 'numbered' | 'bullet' | null = numbered ? 'numbered' : bullet ? 'bullet' : null;
+  if (!body || !kind) return null;
 
   const bold = body.match(/^\*\*(.+?)\*\*/);
-  const titleRaw = (bold?.[1] ?? body).split(/(?:\s+[-—–:]\s+|:\s+)/)[0].trim();
+  const titleCandidate = (bold?.[1] ?? body).trim();
+  const titleRaw = titleCandidate
+    .split(/(?:\s+[-—–:]\s+|:\s+)/)[0]
+    .replace(/\s*\([^)]*\)\s*$/g, '')
+    .trim();
+
   const query = stripMarkdownInline(titleRaw);
   const key = normalizeListKey(query);
   if (!key) return null;
-  return { key, query };
+  return { key, query, kind };
 }
 
 const GENERIC_LIST_SECTION_KEYS = new Set([
