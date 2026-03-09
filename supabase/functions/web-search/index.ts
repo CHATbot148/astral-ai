@@ -160,6 +160,9 @@ async function searchSerpAPIWeb(query: string, count: number, apiKey: string): P
   try {
     const params = new URLSearchParams({ q: query, api_key: apiKey, engine: "google", num: String(Math.min(count, 10)) });
     const response = await fetch(`https://serpapi.com/search.json?${params}`);
+    if (response.status === 429 || response.status === 403) {
+      throw new Error(`SerpAPI quota exceeded (${response.status})`);
+    }
     if (!response.ok) throw new Error(`SerpAPI error: ${response.status}`);
     const data = await response.json();
     const results: SearchResult[] = [];
