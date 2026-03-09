@@ -813,7 +813,7 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
             <span className="min-w-0 text-[0.95rem] leading-7 text-foreground" dangerouslySetInnerHTML={{ __html: formatInline(bulletMatch[1]) }} />
           </div>
         );
-        if (listItem) maybeAppendAutoImages(listItem.key, `bullet-${listItem.key}-${lineIndex}`);
+        if (canAttachAutoImages && listItem) maybeAppendAutoImages(listItem.key, `bullet-${listItem.key}-${lineIndex}`);
         continue;
       }
 
