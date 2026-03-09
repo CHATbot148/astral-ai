@@ -456,6 +456,8 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
       items.push(item);
       if (items.length >= 8) break;
     }
+
+    return items;
   }, [content, role]);
 
   const shouldAutoFetchListImages =
