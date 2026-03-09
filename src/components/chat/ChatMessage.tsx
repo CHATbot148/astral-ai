@@ -450,13 +450,12 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
     for (const line of lines) {
       const item = extractListItemFromLine(line);
       if (!item) continue;
+      if (!isEligibleAutoImageListItem(line, item)) continue;
       if (seen.has(item.key)) continue;
       seen.add(item.key);
       items.push(item);
       if (items.length >= 8) break;
     }
-
-    return items;
   }, [content, role]);
 
   const shouldAutoFetchListImages =
