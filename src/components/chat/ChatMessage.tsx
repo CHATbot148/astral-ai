@@ -122,9 +122,7 @@ const GENERIC_LIST_SECTION_KEYS = new Set([
   'how',
 ]);
 
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+// (escapeRegExp removed - no longer needed)
 
 /**
  * Only attach auto-fetched images to “real” list items (entity names),
