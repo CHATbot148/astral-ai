@@ -105,10 +105,13 @@ serve(async (req) => {
     const rewrittenQuery = rewriteSearchQuery(query, type);
     const safeCount = Math.max(1, Math.min(count, type === "web" ? 10 : 8));
 
-    const SERPAPI_API_KEY = Deno.env.get("SERPAPI_API_KEY");
+    const serpApiKeys = [
+      Deno.env.get("SERPAPI_API_KEY"),
+      Deno.env.get("SERPAPI_API_KEY_BACKUP"),
+    ].filter(Boolean) as string[];
     
-    if (!SERPAPI_API_KEY) {
-      console.log("SERPAPI_API_KEY not configured, using provider fallback");
+    if (serpApiKeys.length === 0) {
+      console.log("No SERPAPI keys configured, using provider fallback");
       let results: SearchResult[] | ImageResult[] | VideoResult[] = [];
       if (type === "web") {
         results = await searchDuckDuckGo(rewrittenQuery, safeCount);
@@ -124,12 +127,21 @@ serve(async (req) => {
 
     let results: SearchResult[] | ImageResult[] | VideoResult[] = [];
 
-    if (type === "web") {
-      results = await searchSerpAPIWeb(rewrittenQuery, safeCount, SERPAPI_API_KEY);
-    } else if (type === "images") {
-      results = await searchSerpAPIImages(rewrittenQuery, safeCount, SERPAPI_API_KEY);
-    } else if (type === "videos") {
-      results = await searchSerpAPIVideos(rewrittenQuery, safeCount, SERPAPI_API_KEY);
+    for (const apiKey of serpApiKeys) {
+      try {
+        if (type === "web") {
+          results = await searchSerpAPIWeb(rewrittenQuery, safeCount, apiKey);
+        } else if (type === "images") {
+          results = await searchSerpAPIImages(rewrittenQuery, safeCount, apiKey);
+        } else if (type === "videos") {
+          results = await searchSerpAPIVideos(rewrittenQuery, safeCount, apiKey);
+        }
+        // If we got results, break out of the loop
+        if (results.length > 0) break;
+      } catch (e) {
+        console.warn(`SerpAPI key failed, trying next key...`, e);
+        continue;
+      }
     }
 
     return new Response(JSON.stringify({ results, query: rewrittenQuery, originalQuery: query, type }), {
@@ -148,6 +160,9 @@ async function searchSerpAPIWeb(query: string, count: number, apiKey: string): P
   try {
     const params = new URLSearchParams({ q: query, api_key: apiKey, engine: "google", num: String(Math.min(count, 10)) });
     const response = await fetch(`https://serpapi.com/search.json?${params}`);
+    if (response.status === 429 || response.status === 403) {
+      throw new Error(`SerpAPI quota exceeded (${response.status})`);
+    }
     if (!response.ok) throw new Error(`SerpAPI error: ${response.status}`);
     const data = await response.json();
     const results: SearchResult[] = [];
@@ -175,6 +190,9 @@ async function searchSerpAPIImages(query: string, count: number, apiKey: string)
   try {
     const params = new URLSearchParams({ q: query, api_key: apiKey, engine: "google_images", num: String(Math.min(count + 30, 50)) });
     const response = await fetch(`https://serpapi.com/search.json?${params}`);
+    if (response.status === 429 || response.status === 403) {
+      throw new Error(`SerpAPI quota exceeded (${response.status})`);
+    }
     if (!response.ok) throw new Error(`SerpAPI images error: ${response.status}`);
     const data = await response.json();
 
@@ -227,6 +245,9 @@ async function searchSerpAPIVideos(query: string, count: number, apiKey: string)
   try {
     const params = new URLSearchParams({ q: query, api_key: apiKey, engine: "google_videos", num: String(Math.min(count + 14, 36)) });
     const response = await fetch(`https://serpapi.com/search.json?${params}`);
+    if (response.status === 429 || response.status === 403) {
+      throw new Error(`SerpAPI quota exceeded (${response.status})`);
+    }
     if (!response.ok) throw new Error(`SerpAPI videos error: ${response.status}`);
     const data = await response.json();
 
