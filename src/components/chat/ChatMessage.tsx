@@ -27,12 +27,68 @@ interface ChatMessageProps {
 
 type Reaction = 'like' | 'dislike' | 'love' | 'sparkle' | null;
 
+type InlineListImage = { url: string; source: string };
+
 const reactionIcons = {
   like: ThumbsUp,
   dislike: ThumbsDown,
   love: Heart,
   sparkle: Sparkles,
 };
+
+const VISUAL_LIST_HINT_RE = /\b(cars?|super\s*cars?|hyper\s*cars?|animals?|breeds?|foods?|dishes?|cuisines?|buildings?|cities?|countries?|places?|phones?|laptops?|sneakers?|shoes?|watches?|fashion|outfits?|hotels?|resorts?|yachts?|motorcycles?|bikes?)\b/i;
+
+function stripMarkdownInline(value: string): string {
+  return value
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, '$1')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/<[^>]+>/g, '')
+    .trim();
+}
+
+function normalizeListKey(value: string): string {
+  const stripped = stripMarkdownInline(value).toLowerCase();
+  return stripped.replace(/[^a-z0-9\s]/g, ' ').replace(/\s{2,}/g, ' ').trim();
+}
+
+function fnv1aHash(str: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+function desiredInlineImageCount(key: string): number {
+  return 3 + (fnv1aHash(key) % 3);
+}
+
+function seededShuffle<T>(arr: T[], seed: number): T[] {
+  const out = [...arr];
+  let s = seed || 1;
+  for (let i = out.length - 1; i > 0; i--) {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    const j = s % (i + 1);
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+function extractListKeyFromLine(line: string): string | null {
+  const trimmed = line.trim();
+  const numbered = trimmed.match(/^(\d+)[\.)]\s+(.+)$/);
+  const bullet = trimmed.match(/^[-•]\s+(.+)$/);
+  const body = (numbered?.[2] ?? bullet?.[1])?.trim();
+  if (!body) return null;
+
+  const bold = body.match(/^\*\*(.+?)\*\*/);
+  const title = (bold?.[1] ?? body).split(/(?:\s+[-—–:]\s+|:\s+)/)[0].trim();
+  const key = normalizeListKey(title);
+  return key || null;
+}
 
 // Language color mapping for syntax highlighting
 const LANGUAGE_COLORS: Record<string, { bg: string; text: string; label: string }> = {
