@@ -1,18 +1,24 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, Sparkles, AlertCircle, Video, Lock, Clock, Monitor } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Loader2, Sparkles, AlertCircle, Video, Lock, Clock, Monitor, Upload, X, FileVideo } from "lucide-react";
 import { useSubscription } from "@/hooks/useSubscription";
+
+export type VideoGenReference =
+  | { kind: "image"; dataUrl: string }
+  | { kind: "video"; file: File };
 
 export type VideoGenOptions = {
   prompt: string;
   modelId?: string;
   duration?: 6 | 10;
   quality?: "720p" | "1080p";
+  reference?: VideoGenReference;
 };
 
 interface Props {
@@ -55,6 +61,12 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
+  // Reference media
+  const [useReference, setUseReference] = useState(false);
+  const [reference, setReference] = useState<VideoGenReference | null>(null);
+  const [referencePreview, setReferencePreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const isPaid = tier !== "free";
 
   useEffect(() => {
@@ -62,29 +74,71 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   }, [initialPrompt]);
 
   useEffect(() => {
-    if (!isWorking) { setProgress(0); return; }
+    if (!isWorking) {
+      setProgress(0);
+      return;
+    }
     const duration = 60000;
     const interval = 200;
     const increment = (100 / duration) * interval * 0.9;
     const timer = setInterval(() => {
-      setProgress(prev => Math.min(prev + increment, 90));
+      setProgress((prev) => Math.min(prev + increment, 90));
     }, interval);
     return () => clearInterval(timer);
   }, [isWorking]);
+
+  const resetReference = () => {
+    setReference(null);
+    setReferencePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target?.result as string;
+        setReference({ kind: "image", dataUrl });
+        setReferencePreview(dataUrl);
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    if (file.type === "video/mp4" || file.type === "video/webm" || file.type.startsWith("video/")) {
+      setReference({ kind: "video", file });
+      setReferencePreview(null);
+      return;
+    }
+
+    setError("Unsupported reference type. Please upload an image or an mp4/webm video.");
+  };
 
   const run = async () => {
     if (!prompt.trim()) return;
 
     try {
+      setIsWorking(true);
+      setError(null);
+
       await onGenerate({
         prompt: prompt.trim(),
         modelId: selectedModel,
         ...(isPaid ? { duration: selectedDuration, quality: selectedQuality } : {}),
+        ...(useReference && reference ? { reference } : {}),
       });
+
       onOpenChange(false);
       setPrompt("");
+      setUseReference(false);
+      resetReference();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Video generation failed");
+    } finally {
+      setIsWorking(false);
     }
   };
 
@@ -127,6 +181,82 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Reference media */}
+          <div className="grid gap-3">
+            <div className="flex items-center justify-between">
+              <Label className="flex items-center gap-2">
+                <Upload className="h-4 w-4" />
+                Use Reference (image/video)
+              </Label>
+              <Switch checked={useReference} onCheckedChange={setUseReference} disabled={isWorking} />
+            </div>
+
+            <AnimatePresence>
+              {useReference && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="space-y-2"
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,video/mp4,video/webm"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
+
+                  {reference?.kind === "image" && referencePreview ? (
+                    <div className="relative inline-block">
+                      <img
+                        src={referencePreview}
+                        alt="Reference"
+                        className="h-24 w-24 object-cover rounded-lg border border-border"
+                      />
+                      <button
+                        type="button"
+                        onClick={resetReference}
+                        className="absolute -top-2 -right-2 p-1 rounded-full bg-destructive text-destructive-foreground shadow-md"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : reference?.kind === "video" ? (
+                    <div className="relative inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-secondary/50">
+                      <FileVideo className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground max-w-[280px] truncate">
+                        {reference.file.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={resetReference}
+                        className="ml-2 p-1 rounded-full bg-destructive text-destructive-foreground shadow-md"
+                        aria-label="Remove reference"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isWorking}
+                      className="w-full gap-2"
+                    >
+                      <Upload className="h-4 w-4" />
+                      Upload Reference
+                    </Button>
+                  )}
+
+                  <p className="text-xs text-muted-foreground">
+                    Images are used as visual guidance; video references are analyzed only if supported.
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Model selector - paid only */}
@@ -235,9 +365,7 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
                   <span className="text-xai-cyan">{Math.round(progress)}%</span>
                 </div>
                 <Progress value={progress} className="h-2" />
-                <p className="text-xs text-muted-foreground text-center">
-                  This may take up to a minute 🎬
-                </p>
+                <p className="text-xs text-muted-foreground text-center">This may take up to a minute 🎬</p>
               </motion.div>
             )}
           </AnimatePresence>
@@ -262,12 +390,16 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
             <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/30">
               <Lock className="h-4 w-4 text-destructive shrink-0" />
               <p className="text-sm text-destructive">
-                {tier === 'free' ? 'Video generation requires a paid plan. Please upgrade.' : `Daily video limit reached (${tierConfig.limits.videosPerDay}/day). Upgrade for more.`}
+                {tier === "free"
+                  ? "Video generation requires a paid plan. Please upgrade."
+                  : `Daily video limit reached (${tierConfig.limits.videosPerDay}/day). Upgrade for more.`}
               </p>
             </div>
           )}
           {canGenerateVideo && (
-            <p className="text-xs text-muted-foreground">{remainingVideos} video{remainingVideos !== 1 ? 's' : ''} remaining today</p>
+            <p className="text-xs text-muted-foreground">
+              {remainingVideos} video{remainingVideos !== 1 ? "s" : ""} remaining today
+            </p>
           )}
 
           <div className="flex justify-end pt-2">

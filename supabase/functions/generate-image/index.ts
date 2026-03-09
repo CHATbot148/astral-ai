@@ -25,7 +25,10 @@ const ASPECT_RATIO_MAP: Record<string, { width: number; height: number }> = {
 };
 
 // Provider model mapping
-const IMAGE_MODELS: Record<string, { provider: "lovable" | "leonardo"; lovableModel?: string; leonardoId?: string }> = {
+const IMAGE_MODELS: Record<
+  string,
+  { provider: "lovable" | "leonardo"; lovableModel?: string; leonardoId?: string }
+> = {
   nano_banana_2: { provider: "lovable", lovableModel: "google/gemini-2.5-flash-image" },
   seedream_4_5: { provider: "leonardo", leonardoId: "b24e16ff-06e3-43eb-8d33-4c419f36e1b7" },
   lucid_origin: { provider: "leonardo", leonardoId: "5c232a9e-9061-4777-980a-ddc8e65647c6" },
@@ -44,9 +47,30 @@ function parseDataUrl(dataUrl: string): { mime: string; bytes: Uint8Array } {
   return { mime: match[1], bytes };
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
 async function uploadAndSave(
-  admin: any, userId: string, prompt: string, style: string,
-  aspectRatio: string, imgBytes: Uint8Array, mime: string
+  admin: any,
+  userId: string,
+  prompt: string,
+  style: string,
+  aspectRatio: string,
+  imgBytes: Uint8Array,
+  mime: string
 ) {
   const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
   const path = `${userId}/generated/img-${Date.now()}.${ext}`;
@@ -58,13 +82,53 @@ async function uploadAndSave(
   const ref = `storage:chat-files/${path}`;
   if (userId !== "anonymous") {
     await admin.from("generated_images").insert({
-      user_id: userId, prompt, image_url: ref, style, aspect_ratio: aspectRatio,
+      user_id: userId,
+      prompt,
+      image_url: ref,
+      style,
+      aspect_ratio: aspectRatio,
     });
   }
   return ref;
 }
 
-async function generateWithLovable(prompt: string, model: string, referenceImageUrl?: string): Promise<{ bytes: Uint8Array; mime: string } | null> {
+async function resolveStorageRefToSignedUrl(storageRef: string): Promise<string> {
+  // Expects storage:bucket/path
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+  const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!SUPABASE_URL || !SERVICE_ROLE_KEY) return storageRef;
+
+  const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+  const raw = storageRef.slice("storage:".length);
+  const slashIdx = raw.indexOf("/");
+  const bucket = raw.slice(0, slashIdx);
+  const path = raw.slice(slashIdx + 1);
+  const { data: signed } = await admin.storage.from(bucket).createSignedUrl(path, 60 * 60);
+  return signed?.signedUrl || storageRef;
+}
+
+async function resolveReferenceImageToBytes(referenceImageUrl: string): Promise<{ bytes: Uint8Array; mime: string }> {
+  if (referenceImageUrl.startsWith("data:")) {
+    return parseDataUrl(referenceImageUrl);
+  }
+
+  let url = referenceImageUrl;
+  if (referenceImageUrl.startsWith("storage:")) {
+    url = await resolveStorageRefToSignedUrl(referenceImageUrl);
+  }
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to download reference image (${res.status})`);
+  const mime = res.headers.get("content-type") || "image/jpeg";
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  return { bytes, mime };
+}
+
+async function generateWithLovable(
+  prompt: string,
+  model: string,
+  referenceImageUrl?: string
+): Promise<{ bytes: Uint8Array; mime: string } | null> {
   const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
   if (!LOVABLE_API_KEY) return null;
 
@@ -74,19 +138,13 @@ async function generateWithLovable(prompt: string, model: string, referenceImage
     // Resolve reference image to a usable URL
     let imageUrl = referenceImageUrl;
     if (referenceImageUrl.startsWith("storage:")) {
-      // Resolve storage ref to signed URL
-      const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-      const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-      if (SUPABASE_URL && SERVICE_ROLE_KEY) {
-        const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
-        const raw = referenceImageUrl.slice("storage:".length);
-        const slashIdx = raw.indexOf("/");
-        const bucket = raw.slice(0, slashIdx);
-        const path = raw.slice(slashIdx + 1);
-        const { data: signed } = await admin.storage.from(bucket).createSignedUrl(path, 3600);
-        if (signed?.signedUrl) imageUrl = signed.signedUrl;
+      try {
+        imageUrl = await resolveStorageRefToSignedUrl(referenceImageUrl);
+      } catch {
+        // non-blocking
       }
     }
+
     messageContent = [
       { type: "text", text: `Using the attached image as a reference, create a variation: ${prompt}` },
       { type: "image_url", image_url: { url: imageUrl } },
@@ -124,11 +182,77 @@ async function generateWithLovable(prompt: string, model: string, referenceImage
   return { bytes: parsed.bytes, mime: parsed.mime || "image/png" };
 }
 
+async function generateWithGeminiStudioImage(
+  userInstruction: string,
+  referenceImageUrl: string
+): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+  if (!GEMINI_API_KEY) return null;
+
+  // Gemini requires inline bytes or file URIs; for reference-edit we use inline bytes.
+  const { bytes, mime } = await resolveReferenceImageToBytes(referenceImageUrl);
+  const base64 = bytesToBase64(bytes);
+
+  const parts: any[] = [
+    { inlineData: { mimeType: mime, data: base64 } },
+    {
+      text:
+        `You are editing an existing image.\n` +
+        `User instruction: ${userInstruction}\n\n` +
+        `Rules:\n` +
+        `- Preserve ALL other details exactly unless the user explicitly asks to change them.\n` +
+        `- Do not add new objects, text, logos, or watermarks.\n` +
+        `- Output only the edited image.`
+    },
+  ];
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts }],
+        generationConfig: { maxOutputTokens: 1024, temperature: 0.4 },
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error("Gemini Studio image edit failed:", res.status, errText);
+    return null;
+  }
+
+  const data = await res.json();
+  const candidateParts = data?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(candidateParts)) return null;
+
+  for (const part of candidateParts) {
+    const inline = part?.inlineData || part?.inline_data;
+    if (inline?.data && (inline?.mimeType || inline?.mime_type)) {
+      const outMime = inline.mimeType || inline.mime_type || "image/png";
+      const outBytes = base64ToBytes(String(inline.data));
+      return { bytes: outBytes, mime: outMime };
+    }
+  }
+
+  return null;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { prompt, imageDataUrl, referenceImageUrl, style = "photoreal", aspectRatio = "1:1", modelId, appInForeground } = await req.json();
+    const {
+      prompt,
+      imageDataUrl,
+      referenceImageUrl,
+      style = "photoreal",
+      aspectRatio = "1:1",
+      modelId,
+      appInForeground,
+    } = await req.json();
     if (!prompt && !imageDataUrl) throw new Error("Prompt or imageDataUrl is required");
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -137,9 +261,12 @@ serve(async (req) => {
     const LEONARDO_API_KEY = Deno.env.get("LEONARDO_API_KEY");
     const STABILITY_API_KEY = Deno.env.get("STABILITY_API_KEY");
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) throw new Error("Backend is not configured");
-    if (!LEONARDO_API_KEY && !STABILITY_API_KEY && !LOVABLE_API_KEY) throw new Error("Image generation API key not configured");
+    if (!LEONARDO_API_KEY && !STABILITY_API_KEY && !LOVABLE_API_KEY && !GEMINI_API_KEY) {
+      throw new Error("Image generation API key not configured");
+    }
 
     // Auth
     const authHeader = req.headers.get("Authorization") || "";
@@ -152,7 +279,10 @@ serve(async (req) => {
         auth: { persistSession: false },
       });
       const { data } = await uc.auth.getUser();
-      if (data?.user?.id) { userId = data.user.id; userEmail = data.user.email || ""; }
+      if (data?.user?.id) {
+        userId = data.user.id;
+        userEmail = data.user.email || "";
+      }
     }
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
@@ -167,15 +297,20 @@ serve(async (req) => {
         .eq("status", "active")
         .maybeSingle();
 
-      tier = (sub && sub.status === "active" && (!sub.expires_at || new Date(sub.expires_at) > new Date()))
-        ? sub.tier : "free";
+      tier = sub && sub.status === "active" && (!sub.expires_at || new Date(sub.expires_at) > new Date())
+        ? sub.tier
+        : "free";
 
       const tierLimits: Record<string, number> = {
-        free: 5, basic: 10, pro: 25, ultimate: 999999,
+        free: 5,
+        basic: 10,
+        pro: 25,
+        ultimate: 999999,
       };
 
       const dailyLimit = userEmail === CEO_EMAIL ? 20 : (tierLimits[tier] || 5);
-      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
       const { count } = await admin
         .from("generated_images")
         .select("*", { count: "exact", head: true })
@@ -183,10 +318,15 @@ serve(async (req) => {
         .gte("created_at", today.toISOString());
 
       if ((count || 0) >= dailyLimit) {
-        return new Response(JSON.stringify({
-          error: `Daily image limit reached (${dailyLimit}/day). Upgrade your plan for more.`,
-          limit_reached: true, remaining: 0, limit: dailyLimit,
-        }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(
+          JSON.stringify({
+            error: `Daily image limit reached (${dailyLimit}/day). Upgrade your plan for more.`,
+            limit_reached: true,
+            remaining: 0,
+            limit: dailyLimit,
+          }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
     }
 
@@ -205,9 +345,7 @@ serve(async (req) => {
 
     // Resolve model: allow Pro/Ultimate to pick, otherwise use Nano Banana 2 by default
     const canSelectModel = tier === "pro" || tier === "ultimate" || userEmail === CEO_EMAIL;
-    const selectedModelKey = canSelectModel && modelId && IMAGE_MODELS[modelId]
-      ? modelId
-      : DEFAULT_MODEL;
+    const selectedModelKey = canSelectModel && modelId && IMAGE_MODELS[modelId] ? modelId : DEFAULT_MODEL;
     const selectedModel = IMAGE_MODELS[selectedModelKey] || IMAGE_MODELS[DEFAULT_MODEL];
 
     let imgBytes: Uint8Array | null = null;
@@ -238,7 +376,10 @@ serve(async (req) => {
               const parsed = parseDataUrl(referenceImageUrl);
               refBytes = parsed.bytes;
             } else {
-              const refRes = await fetch(referenceImageUrl);
+              const resolvedUrl = referenceImageUrl.startsWith("storage:")
+                ? await resolveStorageRefToSignedUrl(referenceImageUrl)
+                : referenceImageUrl;
+              const refRes = await fetch(resolvedUrl);
               refBytes = new Uint8Array(await refRes.arrayBuffer());
             }
             const uploadRes = await fetch(uploadUrl, {
@@ -259,21 +400,27 @@ serve(async (req) => {
 
     // ===== PRIMARY: selected provider =====
     if (selectedModel.provider === "lovable" && selectedModel.lovableModel) {
-      console.log(`[PRIMARY] Lovable AI (${selectedModel.lovableModel}): "${enhancedPrompt}"${referenceImageUrl ? ' [with reference image]' : ''}`);
-      try {
-        const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel, referenceImageUrl);
-        if (generated) {
-          imgBytes = generated.bytes;
-          imgMime = generated.mime;
+      // IMPORTANT: avoid Lovable AI for reference-image requests (credits)
+      if (!referenceImageUrl) {
+        console.log(`[PRIMARY] Lovable AI (${selectedModel.lovableModel}): "${enhancedPrompt}"`);
+        try {
+          const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel);
+          if (generated) {
+            imgBytes = generated.bytes;
+            imgMime = generated.mime;
+          }
+        } catch (e) {
+          console.error("Lovable AI failed:", e);
         }
-      } catch (e) {
-        console.error("Lovable AI failed:", e);
+      } else {
+        console.log("[PRIMARY] Skipping Lovable AI for reference-image request");
       }
     }
 
+    // ===== FALLBACK: Leonardo (supports init image) =====
     if (!imgBytes && LEONARDO_API_KEY) {
       const leonardoModelId = selectedModel.leonardoId || IMAGE_MODELS.phoenix.leonardoId!;
-      console.log(`[FALLBACK] Leonardo AI (model: ${leonardoModelId}): "${enhancedPrompt}"`);
+      console.log(`[FALLBACK] Leonardo AI (model: ${leonardoModelId}): "${enhancedPrompt}"${referenceImageUrl ? " [with reference]" : ""}`);
       try {
         const createRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations", {
           method: "POST",
@@ -306,7 +453,7 @@ serve(async (req) => {
         if (!generationId) throw new Error("No generation ID from Leonardo");
 
         for (let i = 0; i < 30; i++) {
-          await new Promise(r => setTimeout(r, 3000));
+          await new Promise((r) => setTimeout(r, 3000));
           const pollRes = await fetch(`https://cloud.leonardo.ai/api/rest/v1/generations/${generationId}`, {
             headers: { Authorization: `Bearer ${LEONARDO_API_KEY}`, Accept: "application/json" },
           });
@@ -325,6 +472,20 @@ serve(async (req) => {
         }
       } catch (e) {
         console.error("Leonardo AI failed:", e);
+      }
+    }
+
+    // ===== FALLBACK (reference only): Google AI Studio (Gemini) =====
+    if (!imgBytes && referenceImageUrl) {
+      console.log(`[FALLBACK] Google AI Studio (Gemini 2.5 Flash Image): "${prompt}" [with reference]`);
+      try {
+        const edited = await generateWithGeminiStudioImage(prompt, referenceImageUrl);
+        if (edited) {
+          imgBytes = edited.bytes;
+          imgMime = edited.mime;
+        }
+      } catch (e) {
+        console.error("Gemini Studio fallback failed:", e);
       }
     }
 
@@ -391,7 +552,8 @@ serve(async (req) => {
   } catch (e) {
     console.error("generate-image error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
@@ -402,7 +564,7 @@ async function sendGenerationNotification(
   serviceRoleKey: string,
   userId: string,
   type: "image" | "video",
-  prompt: string,
+  prompt: string
 ) {
   // Check user's notification preference
   const { data: profileData } = await admin

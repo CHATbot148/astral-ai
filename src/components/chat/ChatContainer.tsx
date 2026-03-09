@@ -280,18 +280,34 @@ export const ChatContainer = () => {
       convId = newConv.id;
     }
     await addMessage(convId, 'user', `Generate a video: ${opts.prompt}`);
-    
+
     // Fire-and-forget: close dialog immediately, generate in background
     toast({ title: '🎬 Generating video in background', description: "You'll be notified when it's ready. This may take up to a minute." });
     const capturedConvId = convId;
-    
+
     // Run generation in background (don't await)
     (async () => {
       setIsGeneratingVideo(true);
       setTypingLabel('Generating video…');
       try {
+        let referenceMediaUrl: string | undefined;
+
+        if (opts.reference?.kind === 'image') {
+          referenceMediaUrl = opts.reference.dataUrl;
+        } else if (opts.reference?.kind === 'video') {
+          const uploaded = await uploadFiles([opts.reference.file]);
+          referenceMediaUrl = uploaded[0];
+        }
+
         const { data, error } = await supabase.functions.invoke('generate-video', {
-          body: { prompt: opts.prompt, modelId: opts.modelId, duration: opts.duration, quality: opts.quality, appInForeground: isAppInForeground() },
+          body: {
+            prompt: opts.prompt,
+            modelId: opts.modelId,
+            duration: opts.duration,
+            quality: opts.quality,
+            referenceMediaUrl,
+            appInForeground: isAppInForeground(),
+          },
         });
         if (error) throw error;
         if (data?.error) throw new Error(data.error);
