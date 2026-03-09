@@ -122,30 +122,30 @@ const GENERIC_LIST_SECTION_KEYS = new Set([
   'how',
 ]);
 
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+// (escapeRegExp removed - no longer needed)
 
 /**
  * Only attach auto-fetched images to “real” list items (entity names),
  * not explanatory bullets like “Performance:” or sentence-long bullets.
  */
-function isEligibleAutoImageListItem(line: string, item: { key: string; query: string } | null): boolean {
+function isEligibleAutoImageListItem(
+  lineRaw: string,
+  item: { key: string; query: string; kind: 'numbered' | 'bullet' } | null
+): boolean {
   if (!item) return false;
 
-  const trimmed = line.trim();
+  // Only numbered entity items get images
+  if (item.kind !== 'numbered') return false;
+
+  const trimmedRaw = lineRaw.trim();
   const query = stripMarkdownInline(item.query);
   const queryKey = normalizeListKey(query);
 
-  // Avoid section headers like: "Performance: ..." (single-word label + colon)
-  if (!query.includes(' ') && new RegExp(`^[-•\\d\\.)\\s]*\\*{0,2}${escapeRegExp(query)}\\*{0,2}:\\s`, 'i').test(trimmed)) {
-    return false;
-  }
+  // If line contains ":" it's likely a key/value explanation
+  if (trimmedRaw.includes(':')) return false;
 
-  // Avoid generic headings even if formatting varies
   if (GENERIC_LIST_SECTION_KEYS.has(queryKey)) return false;
 
-  // Avoid sentence-like bullets (usually explanations)
   const wordCount = query.split(/\s+/).filter(Boolean).length;
   if (wordCount > 8) return false;
 
