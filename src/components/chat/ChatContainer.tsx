@@ -685,7 +685,7 @@ export const ChatContainer = () => {
             if (content) {
               fullContent += content;
 
-              if (!generationDirective && userRequestedInlineGeneration) {
+              if (!generationDirective) {
                 generationDirective = extractGenerationTag(fullContent);
                 if (generationDirective) {
                   isInlineGenerationFlow = true;
