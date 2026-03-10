@@ -627,22 +627,28 @@ IMPORTANT RESPONSE GUIDELINES:
       (msg: { imageUrls?: string[] }) => (msg.imageUrls || []).some((url) => isGifUrl(url))
     );
 
-    // Build messages array
-    const formattedMessages = messages.map(
-      (msg: { role: string; content: string; imageUrls?: string[]; videoUrls?: string[] }) => {
-        if ((msg.imageUrls && msg.imageUrls.length > 0) || (msg.videoUrls && msg.videoUrls.length > 0)) {
-          const content: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }> = [
-            { type: "text", text: msg.content }
-          ];
-          for (const url of (msg.imageUrls || [])) {
-            content.push({ type: "image_url", image_url: { url } });
+    // Build messages array — filter out empty-content messages to prevent Mistral 400 errors
+    const formattedMessages = messages
+      .filter((msg: { role: string; content: string }) => {
+        // Drop assistant messages with empty/whitespace-only content (can happen after tag stripping)
+        if (msg.role === "assistant" && (!msg.content || !msg.content.trim())) return false;
+        return true;
+      })
+      .map(
+        (msg: { role: string; content: string; imageUrls?: string[]; videoUrls?: string[] }) => {
+          if ((msg.imageUrls && msg.imageUrls.length > 0) || (msg.videoUrls && msg.videoUrls.length > 0)) {
+            const content: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }> = [
+              { type: "text", text: msg.content }
+            ];
+            for (const url of (msg.imageUrls || [])) {
+              content.push({ type: "image_url", image_url: { url } });
+            }
+            // Video/GIF URLs are handled via Gemini when applicable
+            return { role: msg.role, content };
           }
-          // Video/GIF URLs are handled via Gemini when applicable
-          return { role: msg.role, content };
+          return { role: msg.role, content: msg.content };
         }
-        return { role: msg.role, content: msg.content };
-      }
-    );
+      );
 
     // === VIDEO/GIF ANALYSIS VIA GEMINI ===
     if (hasVideos || hasGifs) {
