@@ -548,8 +548,10 @@ export const ChatContainer = () => {
         url.match(/\.(mp4|webm|mov|avi)(\?.*)?$/i)
       );
 
-      const apiMessages = await Promise.all(
+      const apiMessages = (await Promise.all(
         messages.map(async (m) => {
+          // Skip empty assistant messages (leftover from stripped generation tags)
+          if (m.role === 'assistant' && (!m.content || !m.content.trim())) return null;
           const resolved = await resolveUrls(m.file_urls);
           return {
             role: m.role,
@@ -566,7 +568,7 @@ export const ChatContainer = () => {
               : [],
           };
         })
-      );
+      )).filter(Boolean) as Array<{ role: string; content: string; imageUrls: string[]; videoUrls: string[] }>;
 
       apiMessages.push({
         role: 'user' as const,
