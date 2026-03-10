@@ -822,7 +822,10 @@ export const ChatContainer = () => {
           }
 
           processedContent = sanitizeAssistantMessage(processedContent);
-          await addMessage(convId, 'assistant', processedContent);
+          // Never save empty assistant messages (can happen when generation tags are stripped)
+          if (processedContent) {
+            await addMessage(convId, 'assistant', processedContent);
+          }
         }
       }
       setStreamingContent('');
