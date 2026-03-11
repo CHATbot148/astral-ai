@@ -230,8 +230,31 @@ export const ChatContainer = () => {
   const isAppInForeground = () => document.visibilityState === 'visible' && document.hasFocus();
 
   const generateImageWithOptions = async (opts: ImageGenOptions): Promise<string | null> => {
+    let refUrl = opts.referenceImageUrl;
+
+    // Upload base64 reference images to storage first to avoid payload size issues
+    if (refUrl && refUrl.startsWith('data:') && user) {
+      try {
+        const match = refUrl.match(/^data:(.+?);base64,(.+)$/);
+        if (match) {
+          const mime = match[1];
+          const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg';
+          const binary = atob(match[2]);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const path = `${user.id}/ref-${Date.now()}.${ext}`;
+          const { error: uploadErr } = await supabase.storage.from('chat-files').upload(path, bytes, { contentType: mime });
+          if (!uploadErr) {
+            refUrl = makeStorageRef('chat-files', path);
+          }
+        }
+      } catch (e) {
+        console.error('Reference image upload failed, sending as-is:', e);
+      }
+    }
+
     const { data, error } = await supabase.functions.invoke('generate-image', {
-      body: { prompt: opts.prompt, style: opts.style, aspectRatio: opts.aspectRatio, referenceImageUrl: opts.referenceImageUrl, modelId: opts.modelId, appInForeground: isAppInForeground() },
+      body: { prompt: opts.prompt, style: opts.style, aspectRatio: opts.aspectRatio, referenceImageUrl: refUrl, modelId: opts.modelId, appInForeground: isAppInForeground() },
     });
     if (error) throw error;
     if (data?.error) throw new Error(data.error);
@@ -293,7 +316,28 @@ export const ChatContainer = () => {
         let referenceMediaUrl: string | undefined;
 
         if (opts.reference?.kind === 'image') {
-          referenceMediaUrl = opts.reference.dataUrl;
+          // Upload base64 to storage to avoid payload size limits
+          let refUrl = opts.reference.dataUrl;
+          if (refUrl.startsWith('data:') && user) {
+            try {
+              const match = refUrl.match(/^data:(.+?);base64,(.+)$/);
+              if (match) {
+                const mime = match[1];
+                const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg';
+                const binary = atob(match[2]);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                const path = `${user.id}/ref-${Date.now()}.${ext}`;
+                const { error: uploadErr } = await supabase.storage.from('chat-files').upload(path, bytes, { contentType: mime });
+                if (!uploadErr) {
+                  refUrl = makeStorageRef('chat-files', path);
+                }
+              }
+            } catch (e) {
+              console.error('Video ref image upload failed:', e);
+            }
+          }
+          referenceMediaUrl = refUrl;
         } else if (opts.reference?.kind === 'video') {
           const uploaded = await uploadFiles([opts.reference.file]);
           referenceMediaUrl = uploaded[0];
