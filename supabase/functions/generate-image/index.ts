@@ -498,19 +498,7 @@ serve(async (req) => {
       }
     }
 
-    // ===== FALLBACK (reference only): Google AI Studio (Gemini) =====
-    if (!imgBytes && referenceImageUrl) {
-      console.log(`[FALLBACK] Google AI Studio (Gemini 2.5 Flash Image): "${prompt}" [with reference]`);
-      try {
-        const edited = await generateWithGeminiStudioImage(prompt, referenceImageUrl);
-        if (edited) {
-          imgBytes = edited.bytes;
-          imgMime = edited.mime;
-        }
-      } catch (e) {
-        console.error("Gemini Studio fallback failed:", e);
-      }
-    }
+    // (Gemini reference fallback already handled above as primary)
 
     // ===== FALLBACK 1: Stability AI =====
     if (!imgBytes && STABILITY_API_KEY) {
