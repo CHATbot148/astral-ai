@@ -398,22 +398,45 @@ serve(async (req) => {
       }
     }
 
-    // ===== PRIMARY: selected provider =====
-    if (selectedModel.provider === "lovable" && selectedModel.lovableModel) {
-      // IMPORTANT: avoid Lovable AI for reference-image requests (credits)
-      if (!referenceImageUrl) {
-        console.log(`[PRIMARY] Lovable AI (${selectedModel.lovableModel}): "${enhancedPrompt}"`);
+    // ===== PRIMARY for reference images: Gemini Studio (reliable multimodal) =====
+    if (referenceImageUrl) {
+      console.log(`[PRIMARY] Google AI Studio (Gemini) for reference-image edit: "${prompt}"`);
+      try {
+        const edited = await generateWithGeminiStudioImage(prompt, referenceImageUrl);
+        if (edited) {
+          imgBytes = edited.bytes;
+          imgMime = edited.mime;
+        }
+      } catch (e) {
+        console.error("Gemini Studio primary (reference) failed:", e);
+      }
+
+      // Fallback: try Lovable AI with multimodal reference
+      if (!imgBytes && selectedModel.provider === "lovable" && selectedModel.lovableModel) {
+        console.log(`[FALLBACK] Lovable AI multimodal for reference: "${enhancedPrompt}"`);
         try {
-          const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel);
+          const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel, referenceImageUrl);
           if (generated) {
             imgBytes = generated.bytes;
             imgMime = generated.mime;
           }
         } catch (e) {
-          console.error("Lovable AI failed:", e);
+          console.error("Lovable AI reference fallback failed:", e);
         }
-      } else {
-        console.log("[PRIMARY] Skipping Lovable AI for reference-image request");
+      }
+    }
+
+    // ===== PRIMARY for non-reference: Lovable AI =====
+    if (!imgBytes && !referenceImageUrl && selectedModel.provider === "lovable" && selectedModel.lovableModel) {
+      console.log(`[PRIMARY] Lovable AI (${selectedModel.lovableModel}): "${enhancedPrompt}"`);
+      try {
+        const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel);
+        if (generated) {
+          imgBytes = generated.bytes;
+          imgMime = generated.mime;
+        }
+      } catch (e) {
+        console.error("Lovable AI failed:", e);
       }
     }
 
