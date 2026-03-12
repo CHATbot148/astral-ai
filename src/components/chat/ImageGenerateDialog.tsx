@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Sparkles, RotateCcw, Image as ImageIcon, Wand2, AlertCircle, Upload, X } from "lucide-react";
+import { Loader2, Sparkles, RotateCcw, Image as ImageIcon, Wand2, AlertCircle, Upload, X, FileVideo } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSubscription } from "@/hooks/useSubscription";
 
