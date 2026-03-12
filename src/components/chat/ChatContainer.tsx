@@ -853,8 +853,9 @@ export const ChatContainer = () => {
 
           (async () => {
             try {
+              const referenceMediaUrl = imageUrls[0] ?? videoFileUrls[0];
               const { data, error } = await supabase.functions.invoke('generate-video', {
-                body: { prompt: vidPrompt, modelId: 'sora_2', appInForeground: isAppInForeground() },
+                body: { prompt: vidPrompt, modelId: 'sora_2', referenceMediaUrl, appInForeground: isAppInForeground() },
               });
               if (error) throw error;
               if (data?.error) throw new Error(data.error);
