@@ -350,6 +350,7 @@ serve(async (req) => {
       prompt,
       imageDataUrl,
       referenceImageUrl,
+      referenceMediaUrl,
       style = "photoreal",
       aspectRatio = "1:1",
       modelId,
