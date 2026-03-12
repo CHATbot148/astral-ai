@@ -23,6 +23,7 @@ interface ChatMessageProps {
   onEdit?: (content: string) => void;
   canEdit?: boolean;
   onNotificationAction?: (action: 'accept' | 'cancel', data: any) => void;
+  enableAutoListImages?: boolean;
 }
 
 type Reaction = 'like' | 'dislike' | 'love' | 'sparkle' | null;
