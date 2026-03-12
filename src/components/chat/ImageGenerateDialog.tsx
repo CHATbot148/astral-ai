@@ -79,10 +79,10 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   const [error, setError] = useState<string | null>(null);
   const [last, setLast] = useState<ImageGenOptions | null>(null);
   
-  // Image-to-image state
-  const [useReferenceImage, setUseReferenceImage] = useState(false);
-  const [referenceImage, setReferenceImage] = useState<string | null>(null);
-  const [referenceFile, setReferenceFile] = useState<File | null>(null);
+  // Reference media state
+  const [useReferenceMedia, setUseReferenceMedia] = useState(false);
+  const [reference, setReference] = useState<ImageGenReference | null>(null);
+  const [referencePreview, setReferencePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Reset prompt when initialPrompt changes
@@ -92,22 +92,34 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
     }
   }, [initialPrompt]);
 
-  // Handle file selection for image-to-image
+  // Handle file selection for reference media
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
-    setReferenceFile(file);
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      setReferenceImage(ev.target?.result as string);
-    };
-    reader.readAsDataURL(file);
+
+    if (file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target?.result as string;
+        setReference({ kind: "image", dataUrl });
+        setReferencePreview(dataUrl);
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    if (file.type === "video/mp4" || file.type === "video/webm" || file.type.startsWith("video/")) {
+      setReference({ kind: "video", file });
+      setReferencePreview(null);
+      return;
+    }
+
+    setError("Unsupported reference type. Please upload an image or mp4/webm video.");
   };
 
-  const removeReferenceImage = () => {
-    setReferenceImage(null);
-    setReferenceFile(null);
+  const removeReference = () => {
+    setReference(null);
+    setReferencePreview(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
