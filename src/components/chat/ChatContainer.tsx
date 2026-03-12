@@ -634,16 +634,8 @@ export const ChatContainer = () => {
           return {
             role: m.role,
             content: m.content,
-            imageUrls: m.role === 'user'
-              ? resolved.filter((url) =>
-                  url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) || url.startsWith('data:image/')
-                )
-              : [],
-            videoUrls: m.role === 'user'
-              ? resolved.filter((url) =>
-                  url.match(/\.(mp4|webm|mov|avi)(\?.*)?$/i)
-                )
-              : [],
+            imageUrls: m.role === 'user' ? resolved.filter((url) => isImageFileUrl(url)) : [],
+            videoUrls: m.role === 'user' ? resolved.filter((url) => isVideoFileUrl(url)) : [],
           };
         })
       )).filter(Boolean) as Array<{ role: string; content: string; imageUrls: string[]; videoUrls: string[] }>;
