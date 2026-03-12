@@ -54,7 +54,26 @@ const VIDEO_GENERATION_PATTERNS = [
 // Emoji regex for stripping from search queries
 const EMOJI_REGEX = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu;
 
-export const ChatContainer = () => {
+const IMAGE_FILE_URL_PATTERN = /\.(?:jpe?g|png|gif|webp|svg|bmp|avif|heic|heif)(\?.*)?$/i;
+const VIDEO_FILE_URL_PATTERN = /\.(?:mp4|webm|mov|avi|mkv|m4v)(\?.*)?$/i;
+const VISUAL_TOPIC_HINT_PATTERN = /\b(cars?|super\s*cars?|hyper\s*cars?|animals?|breeds?|foods?|dishes?|cuisines?|buildings?|cities?|countries?|places?|phones?|laptops?|sneakers?|shoes?|watches?|fashion|outfits?|hotels?|resorts?|yachts?|motorcycles?|bikes?)\b/i;
+const VISUAL_INLINE_REQUEST_PATTERN = /\b(show|display|see|look(?:\s+like)?|images?|photos?|pictures?|gallery|visual(?:ize|ise)?|what does .+ look like)\b/i;
+const LIST_VISUAL_REQUEST_PATTERN = /\b(top\s*\d+|best|most popular|list|rank|ranking|compare|comparison|vs|versus)\b/i;
+const ABSTRACT_DISCUSSION_PATTERN = /\b(why|should|reason|because|ethic|moral|justice|opinion|debate|punishment|law|policy|philosophy|rights?)\b/i;
+
+const isImageFileUrl = (url: string) => url.startsWith('data:image/') || IMAGE_FILE_URL_PATTERN.test(url);
+const isVideoFileUrl = (url: string) => url.startsWith('data:video/') || VIDEO_FILE_URL_PATTERN.test(url);
+
+const hasExplicitVisualIntent = (text: string) => {
+  const normalized = text.trim();
+  if (!normalized) return false;
+
+  if (VISUAL_INLINE_REQUEST_PATTERN.test(normalized)) return true;
+
+  return LIST_VISUAL_REQUEST_PATTERN.test(normalized) &&
+    VISUAL_TOPIC_HINT_PATTERN.test(normalized) &&
+    !ABSTRACT_DISCUSSION_PATTERN.test(normalized);
+};
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
