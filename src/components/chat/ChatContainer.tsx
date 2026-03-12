@@ -821,14 +821,14 @@ export const ChatContainer = () => {
 
           (async () => {
             try {
-              // Use the first uploaded image as a reference if available
-              const referenceImageUrl = imageUrls.length > 0 ? imageUrls[0] : undefined;
+              // Use first attached media as reference (image first, then video)
+              const referenceMediaUrl = imageUrls[0] ?? videoFileUrls[0];
               const generatedImage = await generateImageWithOptions({ 
                 prompt: imgPrompt, 
                 style: 'photoreal', 
                 aspectRatio: '1:1', 
                 quality: 'balanced',
-                referenceImageUrl,
+                referenceMediaUrl,
               });
               if (generatedImage) {
                 await addMessage(capturedConvId, 'assistant', `Here's your image.`, [generatedImage]);
