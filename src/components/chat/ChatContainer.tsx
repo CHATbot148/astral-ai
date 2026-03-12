@@ -676,7 +676,7 @@ export const ChatContainer = () => {
         body: JSON.stringify({
           messages: apiMessages,
           fileContext: fileUrls.length > 0
-            ? `User uploaded ${fileUrls.length} file(s): ${fileUrls.map((url) => url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) ? 'image' : 'document').join(', ')}`
+            ? `User uploaded ${fileUrls.length} file(s): ${fileUrls.map((url) => isImageFileUrl(url) ? 'image' : isVideoFileUrl(url) ? 'video' : 'document').join(', ')}`
             : undefined,
           userId: user?.id,
           forceWebSearch: shouldWebSearch,
