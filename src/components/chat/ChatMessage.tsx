@@ -143,6 +143,8 @@ function isEligibleAutoImageListItem(
   const query = stripMarkdownInline(item.query);
   const queryKey = normalizeListKey(query);
 
+  if (!query || /[><=≠±]/.test(query) || ABSTRACT_LIST_ITEM_RE.test(query)) return false;
+
   // If line contains ":" it's likely a key/value explanation
   if (trimmedRaw.includes(':')) return false;
 
