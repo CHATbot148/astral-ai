@@ -6,15 +6,22 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Sparkles, RotateCcw, Image as ImageIcon, Wand2, AlertCircle, Upload, X } from "lucide-react";
+import { Loader2, Sparkles, RotateCcw, Image as ImageIcon, Wand2, AlertCircle, Upload, X, FileVideo } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSubscription } from "@/hooks/useSubscription";
+
+export type ImageGenReference =
+  | { kind: "image"; dataUrl: string }
+  | { kind: "video"; file: File };
 
 export type ImageGenOptions = {
   prompt: string;
   style: "cinematic" | "photoreal" | "anime" | "sketch" | "none";
   aspectRatio: "1:1" | "16:9" | "9:16" | "3:2" | "4:3";
   quality: "fast" | "balanced" | "high";
+  reference?: ImageGenReference;
+  referenceMediaUrl?: string;
+  // Backward-compatible fallback for legacy callers
   referenceImageUrl?: string;
   modelId?: string;
 };
@@ -72,10 +79,10 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   const [error, setError] = useState<string | null>(null);
   const [last, setLast] = useState<ImageGenOptions | null>(null);
   
-  // Image-to-image state
-  const [useReferenceImage, setUseReferenceImage] = useState(false);
-  const [referenceImage, setReferenceImage] = useState<string | null>(null);
-  const [referenceFile, setReferenceFile] = useState<File | null>(null);
+  // Reference media state
+  const [useReferenceMedia, setUseReferenceMedia] = useState(false);
+  const [reference, setReference] = useState<ImageGenReference | null>(null);
+  const [referencePreview, setReferencePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Reset prompt when initialPrompt changes
@@ -85,22 +92,34 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
     }
   }, [initialPrompt]);
 
-  // Handle file selection for image-to-image
+  // Handle file selection for reference media
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
-    setReferenceFile(file);
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      setReferenceImage(ev.target?.result as string);
-    };
-    reader.readAsDataURL(file);
+
+    if (file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target?.result as string;
+        setReference({ kind: "image", dataUrl });
+        setReferencePreview(dataUrl);
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    if (file.type === "video/mp4" || file.type === "video/webm" || file.type.startsWith("video/")) {
+      setReference({ kind: "video", file });
+      setReferencePreview(null);
+      return;
+    }
+
+    setError("Unsupported reference type. Please upload an image or mp4/webm video.");
   };
 
-  const removeReferenceImage = () => {
-    setReferenceImage(null);
-    setReferenceFile(null);
+  const removeReference = () => {
+    setReference(null);
+    setReferencePreview(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -128,7 +147,7 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
       style: override?.style ?? style,
       aspectRatio: override?.aspectRatio ?? aspectRatio,
       quality: "balanced",
-      referenceImageUrl: useReferenceImage && referenceImage ? referenceImage : undefined,
+      reference: useReferenceMedia && reference ? reference : undefined,
       modelId: canSelectModel ? selectedModel : "nano_banana_2",
     };
 
@@ -141,8 +160,8 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
       // Close immediately — generation runs in background
       onOpenChange(false);
       setPrompt("");
-      removeReferenceImage();
-      setUseReferenceImage(false);
+      removeReference();
+      setUseReferenceMedia(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Generation failed");
     }
@@ -272,22 +291,22 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
             </div>
           )}
 
-          {/* Image-to-Image Toggle */}
+          {/* Reference media toggle */}
           <div className="grid gap-3">
             <div className="flex items-center justify-between">
               <Label className="flex items-center gap-2">
                 <Upload className="h-4 w-4" />
-                Image-to-Image Variation
+                Use Reference (image/video)
               </Label>
               <Switch
-                checked={useReferenceImage}
-                onCheckedChange={setUseReferenceImage}
+                checked={useReferenceMedia}
+                onCheckedChange={setUseReferenceMedia}
                 disabled={isWorking}
               />
             </div>
             
             <AnimatePresence>
-              {useReferenceImage && (
+              {useReferenceMedia && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
@@ -297,22 +316,35 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/*"
+                    accept="image/*,video/mp4,video/webm"
                     onChange={handleFileSelect}
                     className="hidden"
                   />
                   
-                  {referenceImage ? (
+                  {reference?.kind === "image" && referencePreview ? (
                     <div className="relative inline-block">
                       <img 
-                        src={referenceImage} 
+                        src={referencePreview} 
                         alt="Reference" 
                         className="h-24 w-24 object-cover rounded-lg border border-border"
                       />
                       <button
                         type="button"
-                        onClick={removeReferenceImage}
+                        onClick={removeReference}
                         className="absolute -top-2 -right-2 p-1 rounded-full bg-destructive text-destructive-foreground shadow-md"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : reference?.kind === "video" ? (
+                    <div className="relative inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-secondary/50">
+                      <FileVideo className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground max-w-[260px] truncate">{reference.file.name}</span>
+                      <button
+                        type="button"
+                        onClick={removeReference}
+                        className="ml-2 p-1 rounded-full bg-destructive text-destructive-foreground shadow-md"
+                        aria-label="Remove reference"
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -325,11 +357,11 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
                       className="w-full gap-2"
                     >
                       <Upload className="h-4 w-4" />
-                      Upload Reference Image
+                      Upload Reference Media
                     </Button>
                   )}
                   <p className="text-xs text-muted-foreground">
-                    Upload an image to create variations based on it
+                    Add an image or video reference so generation follows the same style/content.
                   </p>
                 </motion.div>
               )}

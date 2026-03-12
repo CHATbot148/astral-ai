@@ -23,6 +23,7 @@ interface ChatMessageProps {
   onEdit?: (content: string) => void;
   canEdit?: boolean;
   onNotificationAction?: (action: 'accept' | 'cancel', data: any) => void;
+  enableAutoListImages?: boolean;
 }
 
 type Reaction = 'like' | 'dislike' | 'love' | 'sparkle' | null;
@@ -37,6 +38,7 @@ const reactionIcons = {
 };
 
 const VISUAL_LIST_HINT_RE = /\b(cars?|super\s*cars?|hyper\s*cars?|animals?|breeds?|foods?|dishes?|cuisines?|buildings?|cities?|countries?|places?|phones?|laptops?|sneakers?|shoes?|watches?|fashion|outfits?|hotels?|resorts?|yachts?|motorcycles?|bikes?)\b/i;
+const ABSTRACT_LIST_ITEM_RE = /\b(life|justice|punishment|reason|morals?|ethics?|rights?|law|policy|pros?|cons?|summary|verdict|analysis|argument|debate)\b/i;
 
 function stripMarkdownInline(value: string): string {
   return value
@@ -140,6 +142,8 @@ function isEligibleAutoImageListItem(
   const trimmedRaw = lineRaw.trim();
   const query = stripMarkdownInline(item.query);
   const queryKey = normalizeListKey(query);
+
+  if (!query || /[><=≠±]/.test(query) || ABSTRACT_LIST_ITEM_RE.test(query)) return false;
 
   // If line contains ":" it's likely a key/value explanation
   if (trimmedRaw.includes(':')) return false;
@@ -433,7 +437,7 @@ const AnimatedLines = ({ text, style, formatText }: { text: string; style: strin
   );
 };
 
-export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUrls, userAvatar, userName, onEdit, canEdit = true, onNotificationAction }: ChatMessageProps) => {
+export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUrls, userAvatar, userName, onEdit, canEdit = true, onNotificationAction, enableAutoListImages = false }: ChatMessageProps) => {
   const [copied, setCopied] = useState(false);
   const [reaction, setReaction] = useState<Reaction>(null);
   const [showReactions, setShowReactions] = useState(false);
@@ -470,6 +474,7 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
 
   const shouldAutoFetchListImages =
     role === 'assistant' &&
+    enableAutoListImages &&
     listItemsInMessage.length > 0 &&
     VISUAL_LIST_HINT_RE.test(content);
 

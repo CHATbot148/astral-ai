@@ -54,6 +54,27 @@ const VIDEO_GENERATION_PATTERNS = [
 // Emoji regex for stripping from search queries
 const EMOJI_REGEX = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu;
 
+const IMAGE_FILE_URL_PATTERN = /\.(?:jpe?g|png|gif|webp|svg|bmp|avif|heic|heif)(\?.*)?$/i;
+const VIDEO_FILE_URL_PATTERN = /\.(?:mp4|webm|mov|avi|mkv|m4v)(\?.*)?$/i;
+const VISUAL_TOPIC_HINT_PATTERN = /\b(cars?|super\s*cars?|hyper\s*cars?|animals?|breeds?|foods?|dishes?|cuisines?|buildings?|cities?|countries?|places?|phones?|laptops?|sneakers?|shoes?|watches?|fashion|outfits?|hotels?|resorts?|yachts?|motorcycles?|bikes?)\b/i;
+const VISUAL_INLINE_REQUEST_PATTERN = /\b(show|display|see|look(?:\s+like)?|images?|photos?|pictures?|gallery|visual(?:ize|ise)?|what does .+ look like)\b/i;
+const LIST_VISUAL_REQUEST_PATTERN = /\b(top\s*\d+|best|most popular|list|rank|ranking|compare|comparison|vs|versus)\b/i;
+const ABSTRACT_DISCUSSION_PATTERN = /\b(why|should|reason|because|ethic|moral|justice|opinion|debate|punishment|law|policy|philosophy|rights?)\b/i;
+
+const isImageFileUrl = (url: string) => url.startsWith('data:image/') || IMAGE_FILE_URL_PATTERN.test(url);
+const isVideoFileUrl = (url: string) => url.startsWith('data:video/') || VIDEO_FILE_URL_PATTERN.test(url);
+
+const hasExplicitVisualIntent = (text: string) => {
+  const normalized = text.trim();
+  if (!normalized) return false;
+
+  if (VISUAL_INLINE_REQUEST_PATTERN.test(normalized)) return true;
+
+  return LIST_VISUAL_REQUEST_PATTERN.test(normalized) &&
+    VISUAL_TOPIC_HINT_PATTERN.test(normalized) &&
+    !ABSTRACT_DISCUSSION_PATTERN.test(normalized);
+};
+
 export const ChatContainer = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
@@ -230,31 +251,48 @@ export const ChatContainer = () => {
   const isAppInForeground = () => document.visibilityState === 'visible' && document.hasFocus();
 
   const generateImageWithOptions = async (opts: ImageGenOptions): Promise<string | null> => {
-    let refUrl = opts.referenceImageUrl;
+    let referenceMediaUrl = opts.referenceMediaUrl ?? opts.referenceImageUrl;
 
-    // Upload base64 reference images to storage first to avoid payload size issues
-    if (refUrl && refUrl.startsWith('data:') && user) {
+    if (!referenceMediaUrl && opts.reference?.kind === 'image') {
+      referenceMediaUrl = opts.reference.dataUrl;
+    }
+
+    if (!referenceMediaUrl && opts.reference?.kind === 'video') {
+      const uploaded = await uploadFiles([opts.reference.file]);
+      referenceMediaUrl = uploaded[0];
+    }
+
+    // Upload base64 reference media to storage first to avoid payload size issues
+    if (referenceMediaUrl && referenceMediaUrl.startsWith('data:') && user) {
       try {
-        const match = refUrl.match(/^data:(.+?);base64,(.+)$/);
+        const match = referenceMediaUrl.match(/^data:(.+?);base64,(.+)$/);
         if (match) {
           const mime = match[1];
-          const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg';
+          const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : mime.includes('mp4') ? 'mp4' : 'jpg';
           const binary = atob(match[2]);
           const bytes = new Uint8Array(binary.length);
           for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
           const path = `${user.id}/ref-${Date.now()}.${ext}`;
           const { error: uploadErr } = await supabase.storage.from('chat-files').upload(path, bytes, { contentType: mime });
           if (!uploadErr) {
-            refUrl = makeStorageRef('chat-files', path);
+            referenceMediaUrl = makeStorageRef('chat-files', path);
           }
         }
       } catch (e) {
-        console.error('Reference image upload failed, sending as-is:', e);
+        console.error('Reference media upload failed, sending as-is:', e);
       }
     }
 
     const { data, error } = await supabase.functions.invoke('generate-image', {
-      body: { prompt: opts.prompt, style: opts.style, aspectRatio: opts.aspectRatio, referenceImageUrl: refUrl, modelId: opts.modelId, appInForeground: isAppInForeground() },
+      body: {
+        prompt: opts.prompt,
+        style: opts.style,
+        aspectRatio: opts.aspectRatio,
+        referenceMediaUrl,
+        referenceImageUrl: referenceMediaUrl,
+        modelId: opts.modelId,
+        appInForeground: isAppInForeground(),
+      },
     });
     if (error) throw error;
     if (data?.error) throw new Error(data.error);
@@ -585,12 +623,8 @@ export const ChatContainer = () => {
       };
 
       const resolvedFileUrls = await resolveUrls(fileUrls);
-      const imageUrls = resolvedFileUrls.filter((url) =>
-        url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) || url.startsWith('data:image/')
-      );
-      const videoFileUrls = resolvedFileUrls.filter((url) =>
-        url.match(/\.(mp4|webm|mov|avi)(\?.*)?$/i)
-      );
+      const imageUrls = resolvedFileUrls.filter((url) => isImageFileUrl(url));
+      const videoFileUrls = resolvedFileUrls.filter((url) => isVideoFileUrl(url));
 
       const apiMessages = (await Promise.all(
         messages.map(async (m) => {
@@ -600,16 +634,8 @@ export const ChatContainer = () => {
           return {
             role: m.role,
             content: m.content,
-            imageUrls: m.role === 'user'
-              ? resolved.filter((url) =>
-                  url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) || url.startsWith('data:image/')
-                )
-              : [],
-            videoUrls: m.role === 'user'
-              ? resolved.filter((url) =>
-                  url.match(/\.(mp4|webm|mov|avi)(\?.*)?$/i)
-                )
-              : [],
+            imageUrls: m.role === 'user' ? resolved.filter((url) => isImageFileUrl(url)) : [],
+            videoUrls: m.role === 'user' ? resolved.filter((url) => isVideoFileUrl(url)) : [],
           };
         })
       )).filter(Boolean) as Array<{ role: string; content: string; imageUrls: string[]; videoUrls: string[] }>;
@@ -650,7 +676,7 @@ export const ChatContainer = () => {
         body: JSON.stringify({
           messages: apiMessages,
           fileContext: fileUrls.length > 0
-            ? `User uploaded ${fileUrls.length} file(s): ${fileUrls.map((url) => url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) ? 'image' : 'document').join(', ')}`
+            ? `User uploaded ${fileUrls.length} file(s): ${fileUrls.map((url) => isImageFileUrl(url) ? 'image' : isVideoFileUrl(url) ? 'video' : 'document').join(', ')}`
             : undefined,
           userId: user?.id,
           forceWebSearch: shouldWebSearch,
@@ -795,14 +821,14 @@ export const ChatContainer = () => {
 
           (async () => {
             try {
-              // Use the first uploaded image as a reference if available
-              const referenceImageUrl = imageUrls.length > 0 ? imageUrls[0] : undefined;
+              // Use first attached media as reference (image first, then video)
+              const referenceMediaUrl = imageUrls[0] ?? videoFileUrls[0];
               const generatedImage = await generateImageWithOptions({ 
                 prompt: imgPrompt, 
                 style: 'photoreal', 
                 aspectRatio: '1:1', 
                 quality: 'balanced',
-                referenceImageUrl,
+                referenceMediaUrl,
               });
               if (generatedImage) {
                 await addMessage(capturedConvId, 'assistant', `Here's your image.`, [generatedImage]);
@@ -827,8 +853,9 @@ export const ChatContainer = () => {
 
           (async () => {
             try {
+              const referenceMediaUrl = imageUrls[0] ?? videoFileUrls[0];
               const { data, error } = await supabase.functions.invoke('generate-video', {
-                body: { prompt: vidPrompt, modelId: 'sora_2', appInForeground: isAppInForeground() },
+                body: { prompt: vidPrompt, modelId: 'sora_2', referenceMediaUrl, appInForeground: isAppInForeground() },
               });
               if (error) throw error;
               if (data?.error) throw new Error(data.error);
@@ -958,16 +985,27 @@ export const ChatContainer = () => {
               </motion.div>
             ) : (
               <motion.div key="messages" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto pt-14 lg:pt-4">
-                {displayMessages.map((msg) => {
+                {displayMessages.map((msg, msgIndex) => {
                   const userMessages = displayMessages.filter(m => m.role === 'user');
                   const userMsgIndex = userMessages.findIndex(m => m.id === msg.id);
                   const canEdit = msg.role === 'user' && userMsgIndex >= userMessages.length - 3;
+
+                  let previousUserContent = '';
+                  for (let i = msgIndex - 1; i >= 0; i--) {
+                    if (displayMessages[i].role === 'user') {
+                      previousUserContent = displayMessages[i].content;
+                      break;
+                    }
+                  }
+                  const enableAutoListImages = msg.role === 'assistant' && hasExplicitVisualIntent(previousUserContent);
+
                   return (
                     <ChatMessage key={msg.id} role={msg.role} content={msg.content} isStreaming={msg.id === 'streaming'}
                       streamingStyle={msg.id === 'streaming' ? streamingStyle : undefined}
                       fileUrls={msg.file_urls} userAvatar={profile?.avatar_url} userName={profile?.full_name}
                       onEdit={canEdit ? (content: string) => handleEditMessage(msg.id, content) : undefined} canEdit={canEdit}
-                      onNotificationAction={handleNotificationAction} />
+                      onNotificationAction={handleNotificationAction}
+                      enableAutoListImages={enableAutoListImages} />
                   );
                 })}
                 {isLoading && !streamingContent && !isGeneratingImage && !isGeneratingVideo && (
