@@ -38,6 +38,7 @@ const reactionIcons = {
 };
 
 const VISUAL_LIST_HINT_RE = /\b(cars?|super\s*cars?|hyper\s*cars?|animals?|breeds?|foods?|dishes?|cuisines?|buildings?|cities?|countries?|places?|phones?|laptops?|sneakers?|shoes?|watches?|fashion|outfits?|hotels?|resorts?|yachts?|motorcycles?|bikes?)\b/i;
+const ABSTRACT_LIST_ITEM_RE = /\b(life|justice|punishment|reason|morals?|ethics?|rights?|law|policy|pros?|cons?|summary|verdict|analysis|argument|debate)\b/i;
 
 function stripMarkdownInline(value: string): string {
   return value
