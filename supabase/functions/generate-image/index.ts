@@ -121,10 +121,109 @@ async function resolveReferenceImageToBytes(referenceImageUrl: string): Promise<
   }
 
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to download reference image (${res.status})`);
-  const mime = res.headers.get("content-type") || "image/jpeg";
+  if (!res.ok) throw new Error(`Failed to download reference media (${res.status})`);
+  const mime = res.headers.get("content-type") || (isLikelyVideoReference(referenceImageUrl) ? "video/mp4" : "image/jpeg");
   const bytes = new Uint8Array(await res.arrayBuffer());
   return { bytes, mime };
+}
+
+async function geminiUploadResumable(
+  geminiKey: string,
+  bytes: ArrayBuffer,
+  contentType: string
+): Promise<{ fileUri: string; mimeType: string; fileName: string }> {
+  const startRes = await fetch(
+    `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${geminiKey}`,
+    {
+      method: "POST",
+      headers: {
+        "X-Goog-Upload-Protocol": "resumable",
+        "X-Goog-Upload-Command": "start",
+        "X-Goog-Upload-Header-Content-Length": String(bytes.byteLength),
+        "X-Goog-Upload-Header-Content-Type": contentType,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ file: { display_name: "reference-media" } }),
+    }
+  );
+
+  const uploadUrl = startRes.headers.get("x-goog-upload-url");
+  if (!uploadUrl) {
+    const t = await startRes.text().catch(() => "");
+    throw new Error(`Gemini Files API start failed (${startRes.status}): ${t}`);
+  }
+
+  const uploadRes = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      "Content-Length": String(bytes.byteLength),
+      "X-Goog-Upload-Offset": "0",
+      "X-Goog-Upload-Command": "upload, finalize",
+    },
+    body: bytes,
+  });
+
+  const info = await uploadRes.json();
+  const fileUri = info?.file?.uri;
+  const fileName = info?.file?.name;
+  if (!fileUri || !fileName) {
+    throw new Error("Gemini Files API upload failed: missing file URI");
+  }
+
+  let state = info?.file?.state;
+  let attempts = 0;
+  while (state === "PROCESSING" && attempts < 30) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const checkRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${geminiKey}`);
+    const checkData = await checkRes.json();
+    state = checkData.state;
+    attempts++;
+  }
+
+  if (state !== "ACTIVE") {
+    throw new Error(`Reference media processing failed (${state || "unknown"})`);
+  }
+
+  return { fileUri, mimeType: contentType, fileName };
+}
+
+async function describeVideoReferenceForImagePrompt(
+  userInstruction: string,
+  referenceMediaUrl: string
+): Promise<string | null> {
+  const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+  if (!GEMINI_API_KEY) return null;
+
+  const { bytes, mime } = await resolveReferenceImageToBytes(referenceMediaUrl);
+  if (!(mime.startsWith("video/") || mime === "image/gif")) return null;
+
+  const uploaded = await geminiUploadResumable(GEMINI_API_KEY, bytes.buffer, mime);
+  const instruction =
+    "Describe this reference media for image generation. " +
+    "Return a concise visual brief with subject, composition, style, colors, lighting, and mood. " +
+    "No extra guesses.";
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ fileData: { mimeType: uploaded.mimeType, fileUri: uploaded.fileUri } }, { text: instruction }] }],
+        generationConfig: { maxOutputTokens: 384, temperature: 0.2 },
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Gemini video reference analysis failed (${res.status}): ${errText}`);
+  }
+
+  const data = await res.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) return null;
+  return `Use this reference-media visual brief while following the prompt "${userInstruction}": ${String(text).trim()}`;
 }
 
 async function generateWithLovable(
