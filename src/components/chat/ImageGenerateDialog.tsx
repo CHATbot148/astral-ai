@@ -291,22 +291,22 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
             </div>
           )}
 
-          {/* Image-to-Image Toggle */}
+          {/* Reference media toggle */}
           <div className="grid gap-3">
             <div className="flex items-center justify-between">
               <Label className="flex items-center gap-2">
                 <Upload className="h-4 w-4" />
-                Image-to-Image Variation
+                Use Reference (image/video)
               </Label>
               <Switch
-                checked={useReferenceImage}
-                onCheckedChange={setUseReferenceImage}
+                checked={useReferenceMedia}
+                onCheckedChange={setUseReferenceMedia}
                 disabled={isWorking}
               />
             </div>
             
             <AnimatePresence>
-              {useReferenceImage && (
+              {useReferenceMedia && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
@@ -316,22 +316,35 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/*"
+                    accept="image/*,video/mp4,video/webm"
                     onChange={handleFileSelect}
                     className="hidden"
                   />
                   
-                  {referenceImage ? (
+                  {reference?.kind === "image" && referencePreview ? (
                     <div className="relative inline-block">
                       <img 
-                        src={referenceImage} 
+                        src={referencePreview} 
                         alt="Reference" 
                         className="h-24 w-24 object-cover rounded-lg border border-border"
                       />
                       <button
                         type="button"
-                        onClick={removeReferenceImage}
+                        onClick={removeReference}
                         className="absolute -top-2 -right-2 p-1 rounded-full bg-destructive text-destructive-foreground shadow-md"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : reference?.kind === "video" ? (
+                    <div className="relative inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-secondary/50">
+                      <FileVideo className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground max-w-[260px] truncate">{reference.file.name}</span>
+                      <button
+                        type="button"
+                        onClick={removeReference}
+                        className="ml-2 p-1 rounded-full bg-destructive text-destructive-foreground shadow-md"
+                        aria-label="Remove reference"
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -344,11 +357,11 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
                       className="w-full gap-2"
                     >
                       <Upload className="h-4 w-4" />
-                      Upload Reference Image
+                      Upload Reference Media
                     </Button>
                   )}
                   <p className="text-xs text-muted-foreground">
-                    Upload an image to create variations based on it
+                    Add an image or video reference so generation follows the same style/content.
                   </p>
                 </motion.div>
               )}
