@@ -985,16 +985,27 @@ export const ChatContainer = () => {
               </motion.div>
             ) : (
               <motion.div key="messages" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto pt-14 lg:pt-4">
-                {displayMessages.map((msg) => {
+                {displayMessages.map((msg, msgIndex) => {
                   const userMessages = displayMessages.filter(m => m.role === 'user');
                   const userMsgIndex = userMessages.findIndex(m => m.id === msg.id);
                   const canEdit = msg.role === 'user' && userMsgIndex >= userMessages.length - 3;
+
+                  let previousUserContent = '';
+                  for (let i = msgIndex - 1; i >= 0; i--) {
+                    if (displayMessages[i].role === 'user') {
+                      previousUserContent = displayMessages[i].content;
+                      break;
+                    }
+                  }
+                  const enableAutoListImages = msg.role === 'assistant' && hasExplicitVisualIntent(previousUserContent);
+
                   return (
                     <ChatMessage key={msg.id} role={msg.role} content={msg.content} isStreaming={msg.id === 'streaming'}
                       streamingStyle={msg.id === 'streaming' ? streamingStyle : undefined}
                       fileUrls={msg.file_urls} userAvatar={profile?.avatar_url} userName={profile?.full_name}
                       onEdit={canEdit ? (content: string) => handleEditMessage(msg.id, content) : undefined} canEdit={canEdit}
-                      onNotificationAction={handleNotificationAction} />
+                      onNotificationAction={handleNotificationAction}
+                      enableAutoListImages={enableAutoListImages} />
                   );
                 })}
                 {isLoading && !streamingContent && !isGeneratingImage && !isGeneratingVideo && (
