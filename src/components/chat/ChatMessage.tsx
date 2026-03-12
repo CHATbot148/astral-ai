@@ -474,6 +474,7 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
 
   const shouldAutoFetchListImages =
     role === 'assistant' &&
+    enableAutoListImages &&
     listItemsInMessage.length > 0 &&
     VISUAL_LIST_HINT_RE.test(content);
 
