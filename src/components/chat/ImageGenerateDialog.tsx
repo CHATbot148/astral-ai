@@ -147,7 +147,7 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
       style: override?.style ?? style,
       aspectRatio: override?.aspectRatio ?? aspectRatio,
       quality: "balanced",
-      referenceImageUrl: useReferenceImage && referenceImage ? referenceImage : undefined,
+      reference: useReferenceMedia && reference ? reference : undefined,
       modelId: canSelectModel ? selectedModel : "nano_banana_2",
     };
 
@@ -160,8 +160,8 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
       // Close immediately — generation runs in background
       onOpenChange(false);
       setPrompt("");
-      removeReferenceImage();
-      setUseReferenceImage(false);
+      removeReference();
+      setUseReferenceMedia(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Generation failed");
     }
