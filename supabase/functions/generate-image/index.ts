@@ -37,6 +37,9 @@ const IMAGE_MODELS: Record<
 };
 
 const DEFAULT_MODEL = "nano_banana_2";
+const VIDEO_REFERENCE_PATTERN = /\.(mp4|webm|mov|avi|mkv|m4v|gif)(\?|$)/i;
+
+const isLikelyVideoReference = (ref: string) => ref.startsWith("data:video/") || VIDEO_REFERENCE_PATTERN.test(ref);
 
 function parseDataUrl(dataUrl: string): { mime: string; bytes: Uint8Array } {
   const match = dataUrl.match(/^data:(.+?);base64,(.+)$/);
