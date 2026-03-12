@@ -623,12 +623,8 @@ export const ChatContainer = () => {
       };
 
       const resolvedFileUrls = await resolveUrls(fileUrls);
-      const imageUrls = resolvedFileUrls.filter((url) =>
-        url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) || url.startsWith('data:image/')
-      );
-      const videoFileUrls = resolvedFileUrls.filter((url) =>
-        url.match(/\.(mp4|webm|mov|avi)(\?.*)?$/i)
-      );
+      const imageUrls = resolvedFileUrls.filter((url) => isImageFileUrl(url));
+      const videoFileUrls = resolvedFileUrls.filter((url) => isVideoFileUrl(url));
 
       const apiMessages = (await Promise.all(
         messages.map(async (m) => {
