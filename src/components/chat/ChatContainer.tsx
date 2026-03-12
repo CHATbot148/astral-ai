@@ -251,31 +251,48 @@ export const ChatContainer = () => {
   const isAppInForeground = () => document.visibilityState === 'visible' && document.hasFocus();
 
   const generateImageWithOptions = async (opts: ImageGenOptions): Promise<string | null> => {
-    let refUrl = opts.referenceImageUrl;
+    let referenceMediaUrl = opts.referenceMediaUrl ?? opts.referenceImageUrl;
 
-    // Upload base64 reference images to storage first to avoid payload size issues
-    if (refUrl && refUrl.startsWith('data:') && user) {
+    if (!referenceMediaUrl && opts.reference?.kind === 'image') {
+      referenceMediaUrl = opts.reference.dataUrl;
+    }
+
+    if (!referenceMediaUrl && opts.reference?.kind === 'video') {
+      const uploaded = await uploadFiles([opts.reference.file]);
+      referenceMediaUrl = uploaded[0];
+    }
+
+    // Upload base64 reference media to storage first to avoid payload size issues
+    if (referenceMediaUrl && referenceMediaUrl.startsWith('data:') && user) {
       try {
-        const match = refUrl.match(/^data:(.+?);base64,(.+)$/);
+        const match = referenceMediaUrl.match(/^data:(.+?);base64,(.+)$/);
         if (match) {
           const mime = match[1];
-          const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg';
+          const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : mime.includes('mp4') ? 'mp4' : 'jpg';
           const binary = atob(match[2]);
           const bytes = new Uint8Array(binary.length);
           for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
           const path = `${user.id}/ref-${Date.now()}.${ext}`;
           const { error: uploadErr } = await supabase.storage.from('chat-files').upload(path, bytes, { contentType: mime });
           if (!uploadErr) {
-            refUrl = makeStorageRef('chat-files', path);
+            referenceMediaUrl = makeStorageRef('chat-files', path);
           }
         }
       } catch (e) {
-        console.error('Reference image upload failed, sending as-is:', e);
+        console.error('Reference media upload failed, sending as-is:', e);
       }
     }
 
     const { data, error } = await supabase.functions.invoke('generate-image', {
-      body: { prompt: opts.prompt, style: opts.style, aspectRatio: opts.aspectRatio, referenceImageUrl: refUrl, modelId: opts.modelId, appInForeground: isAppInForeground() },
+      body: {
+        prompt: opts.prompt,
+        style: opts.style,
+        aspectRatio: opts.aspectRatio,
+        referenceMediaUrl,
+        referenceImageUrl: referenceMediaUrl,
+        modelId: opts.modelId,
+        appInForeground: isAppInForeground(),
+      },
     });
     if (error) throw error;
     if (data?.error) throw new Error(data.error);
