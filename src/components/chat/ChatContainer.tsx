@@ -77,6 +77,7 @@ const hasExplicitVisualIntent = (text: string) => {
 
 export const ChatContainer = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [streamingStyle, setStreamingStyle] = useState<string>('typewriter');
   const [profile, setProfile] = useState<{ full_name: string | null; avatar_url: string | null } | null>(null);
