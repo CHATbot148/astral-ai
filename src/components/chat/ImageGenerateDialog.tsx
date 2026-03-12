@@ -10,11 +10,18 @@ import { Loader2, Sparkles, RotateCcw, Image as ImageIcon, Wand2, AlertCircle, U
 import { cn } from "@/lib/utils";
 import { useSubscription } from "@/hooks/useSubscription";
 
+export type ImageGenReference =
+  | { kind: "image"; dataUrl: string }
+  | { kind: "video"; file: File };
+
 export type ImageGenOptions = {
   prompt: string;
   style: "cinematic" | "photoreal" | "anime" | "sketch" | "none";
   aspectRatio: "1:1" | "16:9" | "9:16" | "3:2" | "4:3";
   quality: "fast" | "balanced" | "high";
+  reference?: ImageGenReference;
+  referenceMediaUrl?: string;
+  // Backward-compatible fallback for legacy callers
   referenceImageUrl?: string;
   modelId?: string;
 };
