@@ -36,9 +36,11 @@ const PROMPT_SUGGESTIONS = [
 ];
 
 const VIDEO_MODELS: Array<{ value: string; label: string; hint: string }> = [
-  { value: "sora_2", label: "Sora 2", hint: "Best quality + consistency" },
-  { value: "sora_2_pro", label: "Sora 2 Pro", hint: "Higher fidelity output" },
-  { value: "motion_2", label: "Motion 2.0", hint: "Legacy fallback" },
+  { value: "veo_31", label: "Veo 3.1", hint: "Best quality — Google AI Studio" },
+  { value: "veo_3", label: "Veo 3", hint: "High quality + audio" },
+  { value: "veo_31_fast", label: "Veo 3.1 Fast", hint: "Faster, cost-effective" },
+  { value: "sora_2", label: "Sora 2", hint: "Leonardo — legacy" },
+  { value: "sora_2_pro", label: "Sora 2 Pro", hint: "Leonardo — higher fidelity" },
 ];
 
 const DURATION_OPTIONS: Array<{ value: 6 | 10; label: string }> = [
@@ -55,7 +57,7 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   const { canGenerateVideo, remainingVideos, tier, tierConfig } = useSubscription();
   const [prompt, setPrompt] = useState(initialPrompt);
   const [isWorking, setIsWorking] = useState(false);
-  const [selectedModel, setSelectedModel] = useState("sora_2");
+  const [selectedModel, setSelectedModel] = useState("veo_31");
   const [selectedDuration, setSelectedDuration] = useState<6 | 10>(6);
   const [selectedQuality, setSelectedQuality] = useState<"720p" | "1080p">("720p");
   const [progress, setProgress] = useState(0);
