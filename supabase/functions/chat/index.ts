@@ -494,6 +494,9 @@ serve(async (req) => {
 
     // Build system prompt
     let systemContent = `You are Astraz, an intelligent AI assistant created by X-Tech.
+${modePrompt}
+${voiceRestrictions}
+${followUpInstruction}
 
 About X-Tech:
 - Founded September 29th, 2023 by Khaleel Abdallah, a 15-year-old high schooler from Nigeria
