@@ -262,27 +262,22 @@ serve(async (req) => {
     }
 
     if (useGeminiVeo) {
-      console.log(`[generate-video] Using Gemini Veo for generation (reference: ${!!referenceMediaUrl})`);
+      console.log(`[generate-video] Using Gemini Veo for generation (reference: ${!!referenceMediaUrl}, model: ${modelId})`);
 
-      // Determine Veo model
+      // Determine Veo model with fallback order
       const veoModelMap: Record<string, string> = {
         veo_3: "veo-3.0-generate-preview",
         veo_31: "veo-3.1-generate-preview",
         veo_31_fast: "veo-3.1-fast-generate-preview",
       };
-      const veoModel = (modelId && veoModelMap[modelId]) || "veo-3.1-generate-preview";
+      const primaryModel = (modelId && veoModelMap[modelId]) || "veo-3.1-generate-preview";
+      const fallbackModels = ["veo-3.1-generate-preview", "veo-3.0-generate-preview", "veo-3.1-fast-generate-preview"]
+        .filter(m => m !== primaryModel);
 
-      // Build request body
-      const veoBody: any = {
-        instances: [{ prompt: prompt }],
-        parameters: {
-          aspectRatio: quality === "1080p" ? "16:9" : "16:9",
-          personGeneration: "allow_all",
-          durationSeconds: duration === 10 ? 10 : 6,
-        },
-      };
+      // Prepare reference data once
+      let referenceImage: { bytesBase64Encoded: string; mimeType: string } | null = null;
+      let referencePromptAugment = "";
 
-      // If reference media, upload to Gemini Files API and use as image input
       if (referenceMediaUrl) {
         let refUrl = String(referenceMediaUrl);
         if (refUrl.startsWith("storage:")) {
@@ -295,105 +290,140 @@ serve(async (req) => {
         const refContentType = refRes.headers.get("content-type") || "image/png";
 
         if (refContentType.startsWith("image/")) {
-          // Image-to-video: pass image as reference
-          const base64 = bytesToBase64(new Uint8Array(refBytes));
-          veoBody.instances[0].image = {
-            bytesBase64Encoded: base64,
+          referenceImage = {
+            bytesBase64Encoded: bytesToBase64(new Uint8Array(refBytes)),
             mimeType: refContentType,
           };
-          console.log(`[generate-video] Added image reference (${refContentType})`);
+          console.log(`[generate-video] Prepared image reference (${refContentType}, ${refBytes.byteLength} bytes)`);
         } else {
-          // Video reference: describe it with Gemini and augment prompt
           try {
             const desc = await describeReferenceWithGemini(GEMINI_API_KEY!, refBytes, refContentType);
-            if (desc) {
-              veoBody.instances[0].prompt = `${prompt}\n\nReference description: ${desc}`;
-            }
+            if (desc) referencePromptAugment = `\n\nReference description: ${desc}`;
           } catch (e) {
             console.error("Video reference analysis failed:", e);
           }
         }
       }
 
-      // Call Veo API
+      // Try Veo models in order
+      const modelsToTry = [primaryModel, ...fallbackModels];
       const BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
-      const veoRes = await fetch(`${BASE_URL}/models/${veoModel}:predictLongRunning`, {
-        method: "POST",
-        headers: {
-          "x-goog-api-key": GEMINI_API_KEY!,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(veoBody),
-      });
+      let veoSuccess = false;
 
-      if (!veoRes.ok) {
-        const errText = await veoRes.text();
-        console.error(`Veo API error (${veoRes.status}):`, errText);
-        // Fall back to Leonardo if Veo fails
-        console.log("[generate-video] Veo failed, falling back to Leonardo...");
-      } else {
-        const veoData = await veoRes.json();
-        const operationName = veoData.name;
-        if (!operationName) throw new Error("No operation name from Veo API");
+      for (const veoModel of modelsToTry) {
+        console.log(`[generate-video] Trying Veo model: ${veoModel}`);
+        
+        const veoBody: any = {
+          instances: [{ prompt: referencePromptAugment ? `${prompt}${referencePromptAugment}` : prompt }],
+          parameters: {
+            aspectRatio: "16:9",
+            personGeneration: "allow_all",
+            durationSeconds: duration === 10 ? 10 : 6,
+          },
+        };
 
-        console.log(`[generate-video] Veo operation started: ${operationName}`);
-
-        // Poll for completion (up to 5 minutes)
-        let videoUri = "";
-        for (let i = 0; i < 60; i++) {
-          await new Promise((r) => setTimeout(r, 5000));
-          const pollRes = await fetch(`${BASE_URL}/${operationName}`, {
-            headers: { "x-goog-api-key": GEMINI_API_KEY! },
-          });
-
-          if (!pollRes.ok) continue;
-          const pollData = await pollRes.json();
-
-          if (pollData.done) {
-            const samples = pollData.response?.generateVideoResponse?.generatedSamples;
-            if (samples && samples.length > 0) {
-              videoUri = samples[0]?.video?.uri;
-            }
-            if (!videoUri) {
-              const errMsg = pollData.error?.message || "Video generation failed";
-              throw new Error(errMsg);
-            }
-            break;
-          }
-        }
-
-        if (!videoUri) throw new Error("Veo video generation timed out");
-
-        // Download the video using the API key
-        const videoDownload = await fetch(`${videoUri}`, {
-          headers: { "x-goog-api-key": GEMINI_API_KEY! },
-          redirect: "follow",
-        });
-        if (!videoDownload.ok) throw new Error("Failed to download Veo video");
-
-        const videoBytes = new Uint8Array(await videoDownload.arrayBuffer());
-        const path = `${userId}/generated/vid-${Date.now()}.mp4`;
-        const { error: uploadError } = await admin.storage
-          .from("chat-files")
-          .upload(path, videoBytes, { contentType: "video/mp4", upsert: false });
-        if (uploadError) throw uploadError;
-
-        const ref = `storage:chat-files/${path}`;
-
-        if (userId !== "anonymous") {
-          await admin.from("generated_videos").insert({ user_id: userId, prompt, video_url: ref });
+        if (referenceImage) {
+          veoBody.instances[0].image = referenceImage;
         }
 
         try {
-          await sendGenerationNotification(admin, SUPABASE_URL!, SERVICE_ROLE_KEY!, userId, "video", prompt);
-        } catch (notifErr) {
-          console.error("Notification send failed (non-blocking):", notifErr);
-        }
+          const veoRes = await fetch(`${BASE_URL}/models/${veoModel}:predictLongRunning`, {
+            method: "POST",
+            headers: {
+              "x-goog-api-key": GEMINI_API_KEY!,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(veoBody),
+          });
 
-        return new Response(JSON.stringify({ video: ref }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+          if (!veoRes.ok) {
+            const errText = await veoRes.text();
+            console.error(`Veo ${veoModel} error (${veoRes.status}):`, errText);
+            continue; // Try next model
+          }
+
+          const veoData = await veoRes.json();
+          const operationName = veoData.name;
+          if (!operationName) {
+            console.error(`Veo ${veoModel}: no operation name`, JSON.stringify(veoData));
+            continue;
+          }
+
+          console.log(`[generate-video] Veo operation started: ${operationName}`);
+
+          // Poll for completion (up to 5 minutes)
+          let videoUri = "";
+          for (let i = 0; i < 60; i++) {
+            await new Promise((r) => setTimeout(r, 5000));
+            const pollRes = await fetch(`${BASE_URL}/${operationName}`, {
+              headers: { "x-goog-api-key": GEMINI_API_KEY! },
+            });
+
+            if (!pollRes.ok) continue;
+            const pollData = await pollRes.json();
+
+            if (pollData.done) {
+              const samples = pollData.response?.generateVideoResponse?.generatedSamples;
+              if (samples && samples.length > 0) {
+                videoUri = samples[0]?.video?.uri;
+              }
+              if (!videoUri) {
+                const errMsg = pollData.error?.message || "No video in response";
+                console.error(`Veo ${veoModel} completed but no video:`, errMsg);
+              }
+              break;
+            }
+          }
+
+          if (!videoUri) {
+            console.error(`Veo ${veoModel} timed out or no video`);
+            continue; // Try next model
+          }
+
+          // Download the video
+          const videoDownload = await fetch(videoUri, {
+            headers: { "x-goog-api-key": GEMINI_API_KEY! },
+            redirect: "follow",
+          });
+          if (!videoDownload.ok) {
+            console.error(`Failed to download Veo video from ${veoModel}`);
+            continue;
+          }
+
+          const videoBytes = new Uint8Array(await videoDownload.arrayBuffer());
+          const path = `${userId}/generated/vid-${Date.now()}.mp4`;
+          const { error: uploadError } = await admin.storage
+            .from("chat-files")
+            .upload(path, videoBytes, { contentType: "video/mp4", upsert: false });
+          if (uploadError) throw uploadError;
+
+          const ref = `storage:chat-files/${path}`;
+
+          if (userId !== "anonymous") {
+            await admin.from("generated_videos").insert({ user_id: userId, prompt, video_url: ref });
+          }
+
+          try {
+            await sendGenerationNotification(admin, SUPABASE_URL!, SERVICE_ROLE_KEY!, userId, "video", prompt);
+          } catch (notifErr) {
+            console.error("Notification send failed (non-blocking):", notifErr);
+          }
+
+          return new Response(JSON.stringify({ video: ref }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        } catch (e) {
+          console.error(`Veo ${veoModel} exception:`, e);
+          continue; // Try next model
+        }
       }
+
+      // If we had a reference, don't fall back to Leonardo (it can't use references well)
+      if (referenceMediaUrl) {
+        throw new Error("Video generation with reference failed. Please try again or use a different reference.");
+      }
+      
+      console.log("[generate-video] All Veo models failed, falling back to Leonardo...");
     }
 
     // Leonardo fallback / default path
