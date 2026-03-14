@@ -12,7 +12,6 @@ import {
   DEFAULT_VIDEO_MODEL_ID,
   getModelDurationOptions,
   getModelQualityOptions,
-  getVideoModelOption,
   VIDEO_MODEL_OPTIONS,
   type VideoDurationOption,
   type VideoModelId,
