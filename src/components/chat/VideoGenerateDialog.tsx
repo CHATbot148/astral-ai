@@ -92,6 +92,18 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
     return () => clearInterval(timer);
   }, [isWorking]);
 
+  useEffect(() => {
+    if (!durationOptions.includes(selectedDuration)) {
+      setSelectedDuration(durationOptions[0]);
+    }
+  }, [durationOptions, selectedDuration]);
+
+  useEffect(() => {
+    if (!qualityOptions.includes(selectedQuality)) {
+      setSelectedQuality(qualityOptions[0]);
+    }
+  }, [qualityOptions, selectedQuality]);
+
   const resetReference = () => {
     setReference(null);
     setReferencePreview(null);
