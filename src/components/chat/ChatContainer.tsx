@@ -407,7 +407,12 @@ export const ChatContainer = () => {
             appInForeground: isAppInForeground(),
           },
         });
-        if (error) throw error;
+
+        if (error) {
+          const message = await extractFunctionErrorMessage(error, 'Video generation failed.');
+          throw new Error(message);
+        }
+
         if (data?.error) throw new Error(data.error);
         if (data?.video) {
           await addMessage(capturedConvId, 'assistant', `Here's your video.`, [data.video]);
