@@ -314,19 +314,19 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
                   Duration
                 </Label>
                 <div className="flex gap-2">
-                  {DURATION_OPTIONS.map((opt) => (
+                  {durationOptions.map((opt) => (
                     <button
-                      key={opt.value}
+                      key={opt}
                       type="button"
-                      onClick={() => setSelectedDuration(opt.value)}
+                      onClick={() => setSelectedDuration(opt)}
                       disabled={isWorking}
                       className={`flex-1 px-3 py-1.5 rounded-lg border transition-all text-xs font-medium ${
-                        selectedDuration === opt.value
+                        selectedDuration === opt
                           ? 'border-xai-cyan bg-xai-cyan/10 text-foreground'
                           : 'border-border bg-secondary/50 text-muted-foreground hover:border-xai-cyan/50'
                       }`}
                     >
-                      {opt.label}
+                      {opt} seconds
                     </button>
                   ))}
                 </div>
