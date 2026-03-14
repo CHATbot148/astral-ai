@@ -250,6 +250,22 @@ export const ChatContainer = () => {
 
   const isAppInForeground = () => document.visibilityState === 'visible' && document.hasFocus();
 
+  const extractFunctionErrorMessage = async (error: unknown, fallback: string) => {
+    if (!(error instanceof Error) || !("context" in error)) return fallback;
+
+    try {
+      const context = (error as { context?: { json?: () => Promise<{ error?: string }> } }).context;
+      if (context?.json) {
+        const body = await context.json();
+        if (body?.error) return body.error;
+      }
+    } catch {
+      // ignore parsing failures
+    }
+
+    return error.message || fallback;
+  };
+
   const generateImageWithOptions = async (opts: ImageGenOptions): Promise<string | null> => {
     let referenceMediaUrl = opts.referenceMediaUrl ?? opts.referenceImageUrl;
 
@@ -391,7 +407,12 @@ export const ChatContainer = () => {
             appInForeground: isAppInForeground(),
           },
         });
-        if (error) throw error;
+
+        if (error) {
+          const message = await extractFunctionErrorMessage(error, 'Video generation failed.');
+          throw new Error(message);
+        }
+
         if (data?.error) throw new Error(data.error);
         if (data?.video) {
           await addMessage(capturedConvId, 'assistant', `Here's your video.`, [data.video]);

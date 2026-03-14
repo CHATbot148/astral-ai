@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,15 @@ import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { Loader2, Sparkles, AlertCircle, Video, Lock, Clock, Monitor, Upload, X, FileVideo } from "lucide-react";
 import { useSubscription } from "@/hooks/useSubscription";
+import {
+  DEFAULT_VIDEO_MODEL_ID,
+  getModelDurationOptions,
+  getModelQualityOptions,
+  VIDEO_MODEL_OPTIONS,
+  type VideoDurationOption,
+  type VideoModelId,
+  type VideoQualityOption,
+} from "@/lib/videoModels";
 
 export type VideoGenReference =
   | { kind: "image"; dataUrl: string }
@@ -16,8 +25,8 @@ export type VideoGenReference =
 export type VideoGenOptions = {
   prompt: string;
   modelId?: string;
-  duration?: 6 | 10;
-  quality?: "720p" | "1080p";
+  duration?: VideoDurationOption;
+  quality?: VideoQualityOption;
   reference?: VideoGenReference;
 };
 
@@ -35,31 +44,18 @@ const PROMPT_SUGGESTIONS = [
   "Rain falling on a city street at night",
 ];
 
-const VIDEO_MODELS: Array<{ value: string; label: string; hint: string }> = [
-  { value: "veo_31", label: "Veo 3.1", hint: "Best quality — Google AI Studio" },
-  { value: "veo_3", label: "Veo 3", hint: "High quality + audio" },
-  { value: "veo_31_fast", label: "Veo 3.1 Fast", hint: "Faster, cost-effective" },
-  { value: "sora_2", label: "Sora 2", hint: "Leonardo — legacy" },
-  { value: "sora_2_pro", label: "Sora 2 Pro", hint: "Leonardo — higher fidelity" },
-];
-
-const DURATION_OPTIONS: Array<{ value: 6 | 10; label: string }> = [
-  { value: 6, label: "6 seconds" },
-  { value: 10, label: "10 seconds" },
-];
-
-const QUALITY_OPTIONS: Array<{ value: "720p" | "1080p"; label: string; hint: string }> = [
-  { value: "720p", label: "720p", hint: "Faster generation" },
-  { value: "1080p", label: "1080p", hint: "Higher detail" },
-];
+const QUALITY_HINTS: Record<VideoQualityOption, string> = {
+  "720p": "Faster generation",
+  "1080p": "Higher detail",
+};
 
 export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPrompt = "" }: Props) => {
   const { canGenerateVideo, remainingVideos, tier, tierConfig } = useSubscription();
   const [prompt, setPrompt] = useState(initialPrompt);
   const [isWorking, setIsWorking] = useState(false);
-  const [selectedModel, setSelectedModel] = useState("veo_31");
-  const [selectedDuration, setSelectedDuration] = useState<6 | 10>(6);
-  const [selectedQuality, setSelectedQuality] = useState<"720p" | "1080p">("720p");
+  const [selectedModel, setSelectedModel] = useState<VideoModelId>(DEFAULT_VIDEO_MODEL_ID);
+  const [selectedDuration, setSelectedDuration] = useState<VideoDurationOption>(6);
+  const [selectedQuality, setSelectedQuality] = useState<VideoQualityOption>("720p");
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,6 +66,11 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isPaid = tier !== "free";
+  const durationOptions = useMemo(
+    () => getModelDurationOptions(selectedModel, useReference),
+    [selectedModel, useReference]
+  );
+  const qualityOptions = useMemo(() => getModelQualityOptions(selectedModel), [selectedModel]);
 
   useEffect(() => {
     if (initialPrompt) setPrompt(initialPrompt);
@@ -88,6 +89,18 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
     }, interval);
     return () => clearInterval(timer);
   }, [isWorking]);
+
+  useEffect(() => {
+    if (!durationOptions.includes(selectedDuration)) {
+      setSelectedDuration(durationOptions[0]);
+    }
+  }, [durationOptions, selectedDuration]);
+
+  useEffect(() => {
+    if (!qualityOptions.includes(selectedQuality)) {
+      setSelectedQuality(qualityOptions[0]);
+    }
+  }, [qualityOptions, selectedQuality]);
 
   const resetReference = () => {
     setReference(null);
@@ -269,7 +282,7 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
                 Video Model
               </Label>
               <div className="flex flex-wrap gap-2">
-                {VIDEO_MODELS.map((model) => (
+                {VIDEO_MODEL_OPTIONS.map((model) => (
                   <button
                     key={model.value}
                     type="button"
@@ -299,19 +312,19 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
                   Duration
                 </Label>
                 <div className="flex gap-2">
-                  {DURATION_OPTIONS.map((opt) => (
+                  {durationOptions.map((opt) => (
                     <button
-                      key={opt.value}
+                      key={opt}
                       type="button"
-                      onClick={() => setSelectedDuration(opt.value)}
+                      onClick={() => setSelectedDuration(opt)}
                       disabled={isWorking}
                       className={`flex-1 px-3 py-1.5 rounded-lg border transition-all text-xs font-medium ${
-                        selectedDuration === opt.value
+                        selectedDuration === opt
                           ? 'border-xai-cyan bg-xai-cyan/10 text-foreground'
                           : 'border-border bg-secondary/50 text-muted-foreground hover:border-xai-cyan/50'
                       }`}
                     >
-                      {opt.label}
+                      {opt} seconds
                     </button>
                   ))}
                 </div>
@@ -324,20 +337,20 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
                   Quality
                 </Label>
                 <div className="flex gap-2">
-                  {QUALITY_OPTIONS.map((opt) => (
+                  {qualityOptions.map((opt) => (
                     <button
-                      key={opt.value}
+                      key={opt}
                       type="button"
-                      onClick={() => setSelectedQuality(opt.value)}
+                      onClick={() => setSelectedQuality(opt)}
                       disabled={isWorking}
                       className={`flex-1 flex flex-col items-center px-3 py-1.5 rounded-lg border transition-all text-xs ${
-                        selectedQuality === opt.value
+                        selectedQuality === opt
                           ? 'border-xai-cyan bg-xai-cyan/10 text-foreground'
                           : 'border-border bg-secondary/50 text-muted-foreground hover:border-xai-cyan/50'
                       }`}
                     >
-                      <span className="font-medium">{opt.label}</span>
-                      <span className="text-[10px] opacity-70">{opt.hint}</span>
+                      <span className="font-medium">{opt}</span>
+                      <span className="text-[10px] opacity-70">{QUALITY_HINTS[opt]}</span>
                     </button>
                   ))}
                 </div>
