@@ -54,9 +54,9 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   const { canGenerateVideo, remainingVideos, tier, tierConfig } = useSubscription();
   const [prompt, setPrompt] = useState(initialPrompt);
   const [isWorking, setIsWorking] = useState(false);
-  const [selectedModel, setSelectedModel] = useState("veo_31");
-  const [selectedDuration, setSelectedDuration] = useState<6 | 10>(6);
-  const [selectedQuality, setSelectedQuality] = useState<"720p" | "1080p">("720p");
+  const [selectedModel, setSelectedModel] = useState<VideoModelId>(DEFAULT_VIDEO_MODEL_ID);
+  const [selectedDuration, setSelectedDuration] = useState<VideoDurationOption>(6);
+  const [selectedQuality, setSelectedQuality] = useState<VideoQualityOption>("720p");
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,6 +67,12 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isPaid = tier !== "free";
+  const selectedModelConfig = useMemo(() => getVideoModelOption(selectedModel), [selectedModel]);
+  const durationOptions = useMemo(
+    () => getModelDurationOptions(selectedModel, useReference),
+    [selectedModel, useReference]
+  );
+  const qualityOptions = useMemo(() => getModelQualityOptions(selectedModel), [selectedModel]);
 
   useEffect(() => {
     if (initialPrompt) setPrompt(initialPrompt);
