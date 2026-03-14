@@ -488,17 +488,19 @@ serve(async (req) => {
     const modePrompt = MODE_PROMPTS[aiMode] || MODE_PROMPTS['smart_friendly'];
     const voiceRestrictions = isVoiceMode ? VOICE_MODE_RESTRICTIONS : '';
     const followUpInstruction = followUpQuestions === true
-      ? '\n\nFOLLOW-UP QUESTIONS: ON — After answering, ask 1 thoughtful follow-up question to keep the conversation going.'
-      : '\n\nFOLLOW-UP QUESTIONS: OFF — Do NOT ask follow-up questions. Do NOT end with "would you like to know more?" or similar. Just answer and stop.';
+      ? '\n\nFOLLOW-UP QUESTIONS: ON — After answering, you MAY ask one short follow-up question only when it is genuinely useful (especially after a concise summary of a complex topic). Do not force a follow-up on every reply.'
+      : '\n\nFOLLOW-UP QUESTIONS: OFF — Do NOT ask follow-up questions of any kind. Do NOT end with prompts like "want more details?" Just answer and stop.';
 
     // Brevity instruction — always active
     const brevityInstruction = `
-BREVITY RULE (CRITICAL):
-- Keep responses SHORT by default. 2-5 sentences for simple questions. Max 8-10 for complex topics.
-- Do NOT dump walls of text. If the topic needs more detail, give a concise summary and then say "Want me to go deeper into any of these?"${followUpQuestions === true ? '' : ' (but ONLY if followUpQuestions is ON)'}
-- For lists: max 5 items unless the user asks for more. Each item: 1-2 sentences max.
-- NEVER repeat the user's question back to them.
-- NEVER pad responses with unnecessary context, disclaimers, or "feel free to ask" closings.`;
+BREVITY + CLARITY BALANCE (CRITICAL):
+- Give the direct answer first in 1-2 lines, then add only the detail needed.
+- For simple asks: usually 3-6 concise sentences total.
+- For complex asks: use compact structure (short intro + bullets/numbered points) rather than long dense paragraphs.
+- Keep explanations complete but trimmed: no repetition, no fluff, no filler transitions.
+- If the user explicitly asks for deep detail, provide it with clean structure and concise sections.
+- Lists should stay focused (normally up to 6 items unless user asks for more).
+- When follow-up mode is ON, you may optionally offer deeper detail in one short question; when OFF, never do this.`;
 
     // Build system prompt
     let systemContent = `You are Astraz, an intelligent AI assistant created by X-Tech.
