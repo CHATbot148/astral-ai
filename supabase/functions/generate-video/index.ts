@@ -233,7 +233,9 @@ serve(async (req) => {
     const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) throw new Error("Backend not configured");
-    if (!LEONARDO_API_KEY) throw new Error("Video generation API key not configured");
+    if (!GEMINI_API_KEY && !LEONARDO_API_KEY) {
+      throw new Error("Video generation providers are not configured");
+    }
 
     // Auth
     const authHeader = req.headers.get("Authorization") || "";
