@@ -284,7 +284,7 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
                 Video Model
               </Label>
               <div className="flex flex-wrap gap-2">
-                {VIDEO_MODELS.map((model) => (
+                {VIDEO_MODEL_OPTIONS.map((model) => (
                   <button
                     key={model.value}
                     type="button"
