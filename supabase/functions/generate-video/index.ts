@@ -551,19 +551,30 @@ serve(async (req) => {
       }
     }
 
-    const selectedModel = VIDEO_MODELS[modelId] ? modelId : DEFAULT_VIDEO_MODEL;
-    const selectedConfig = VIDEO_MODELS[selectedModel];
+    if (!LEONARDO_API_KEY) {
+      throw new Error("Leonardo API key is not configured for fallback video generation.");
+    }
 
-    // Determine resolution from quality param (paid users can pick 1080p)
-    const is1080 = quality === "1080p";
+    const leonardoModel = selectedConfig.provider === "leonardo" ? selectedModel : DEFAULT_LEONARDO_MODEL;
+    const leonardoConfig = VIDEO_MODELS[leonardoModel];
+
+    const leonardoQuality = pickSupportedQuality(
+      effectiveQuality,
+      leonardoConfig.qualities,
+      leonardoConfig.qualities[0]
+    );
+    const leonardoDuration = pickSupportedDuration(
+      effectiveDuration,
+      leonardoConfig.durations,
+      leonardoConfig.durations[0]
+    );
+
+    const is1080 = leonardoQuality === "1080p";
     const vidWidth = is1080 ? 1920 : 1280;
     const vidHeight = is1080 ? 1080 : 720;
 
-    // Duration: 6 or 10 seconds (default 6)
-    const vidDuration = duration === 10 ? 10 : 6;
-
     console.log(
-      `Generating video with Leonardo text-to-video (${selectedModel}): "${generationPrompt}" | ${vidWidth}x${vidHeight} | ${vidDuration}s`
+      `Generating video with Leonardo text-to-video (${leonardoModel}): "${generationPrompt}" | ${vidWidth}x${vidHeight} | ${leonardoDuration}s`
     );
 
     // Use Leonardo's direct text-to-video endpoint
