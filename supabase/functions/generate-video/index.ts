@@ -591,8 +591,8 @@ serve(async (req) => {
         width: vidWidth,
         isPublic: false,
         frameInterpolation: true,
-        ...(vidDuration === 10 ? { duration: 10 } : {}),
-        ...(selectedConfig?.apiModel ? { model: selectedConfig.apiModel } : {}),
+        ...(leonardoDuration === 10 ? { duration: 10 } : {}),
+        ...(leonardoConfig?.apiModel ? { model: leonardoConfig.apiModel } : {}),
       }),
     });
 
