@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,16 @@ import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { Loader2, Sparkles, AlertCircle, Video, Lock, Clock, Monitor, Upload, X, FileVideo } from "lucide-react";
 import { useSubscription } from "@/hooks/useSubscription";
+import {
+  DEFAULT_VIDEO_MODEL_ID,
+  getModelDurationOptions,
+  getModelQualityOptions,
+  getVideoModelOption,
+  VIDEO_MODEL_OPTIONS,
+  type VideoDurationOption,
+  type VideoModelId,
+  type VideoQualityOption,
+} from "@/lib/videoModels";
 
 export type VideoGenReference =
   | { kind: "image"; dataUrl: string }
@@ -16,8 +26,8 @@ export type VideoGenReference =
 export type VideoGenOptions = {
   prompt: string;
   modelId?: string;
-  duration?: 6 | 10;
-  quality?: "720p" | "1080p";
+  duration?: VideoDurationOption;
+  quality?: VideoQualityOption;
   reference?: VideoGenReference;
 };
 
@@ -35,23 +45,10 @@ const PROMPT_SUGGESTIONS = [
   "Rain falling on a city street at night",
 ];
 
-const VIDEO_MODELS: Array<{ value: string; label: string; hint: string }> = [
-  { value: "veo_31", label: "Veo 3.1", hint: "Best quality — Google AI Studio" },
-  { value: "veo_3", label: "Veo 3", hint: "High quality + audio" },
-  { value: "veo_31_fast", label: "Veo 3.1 Fast", hint: "Faster, cost-effective" },
-  { value: "sora_2", label: "Sora 2", hint: "Leonardo — legacy" },
-  { value: "sora_2_pro", label: "Sora 2 Pro", hint: "Leonardo — higher fidelity" },
-];
-
-const DURATION_OPTIONS: Array<{ value: 6 | 10; label: string }> = [
-  { value: 6, label: "6 seconds" },
-  { value: 10, label: "10 seconds" },
-];
-
-const QUALITY_OPTIONS: Array<{ value: "720p" | "1080p"; label: string; hint: string }> = [
-  { value: "720p", label: "720p", hint: "Faster generation" },
-  { value: "1080p", label: "1080p", hint: "Higher detail" },
-];
+const QUALITY_HINTS: Record<VideoQualityOption, string> = {
+  "720p": "Faster generation",
+  "1080p": "Higher detail",
+};
 
 export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPrompt = "" }: Props) => {
   const { canGenerateVideo, remainingVideos, tier, tierConfig } = useSubscription();
