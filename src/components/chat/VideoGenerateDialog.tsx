@@ -339,20 +339,20 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
                   Quality
                 </Label>
                 <div className="flex gap-2">
-                  {QUALITY_OPTIONS.map((opt) => (
+                  {qualityOptions.map((opt) => (
                     <button
-                      key={opt.value}
+                      key={opt}
                       type="button"
-                      onClick={() => setSelectedQuality(opt.value)}
+                      onClick={() => setSelectedQuality(opt)}
                       disabled={isWorking}
                       className={`flex-1 flex flex-col items-center px-3 py-1.5 rounded-lg border transition-all text-xs ${
-                        selectedQuality === opt.value
+                        selectedQuality === opt
                           ? 'border-xai-cyan bg-xai-cyan/10 text-foreground'
                           : 'border-border bg-secondary/50 text-muted-foreground hover:border-xai-cyan/50'
                       }`}
                     >
-                      <span className="font-medium">{opt.label}</span>
-                      <span className="text-[10px] opacity-70">{opt.hint}</span>
+                      <span className="font-medium">{opt}</span>
+                      <span className="text-[10px] opacity-70">{QUALITY_HINTS[opt]}</span>
                     </button>
                   ))}
                 </div>
