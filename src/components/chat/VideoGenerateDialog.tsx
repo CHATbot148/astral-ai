@@ -67,7 +67,6 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isPaid = tier !== "free";
-  const selectedModelConfig = useMemo(() => getVideoModelOption(selectedModel), [selectedModel]);
   const durationOptions = useMemo(
     () => getModelDurationOptions(selectedModel, useReference),
     [selectedModel, useReference]
