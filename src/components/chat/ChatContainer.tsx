@@ -250,6 +250,22 @@ export const ChatContainer = () => {
 
   const isAppInForeground = () => document.visibilityState === 'visible' && document.hasFocus();
 
+  const extractFunctionErrorMessage = async (error: unknown, fallback: string) => {
+    if (!(error instanceof Error) || !("context" in error)) return fallback;
+
+    try {
+      const context = (error as { context?: { json?: () => Promise<{ error?: string }> } }).context;
+      if (context?.json) {
+        const body = await context.json();
+        if (body?.error) return body.error;
+      }
+    } catch {
+      // ignore parsing failures
+    }
+
+    return error.message || fallback;
+  };
+
   const generateImageWithOptions = async (opts: ImageGenOptions): Promise<string | null> => {
     let referenceMediaUrl = opts.referenceMediaUrl ?? opts.referenceImageUrl;
 
