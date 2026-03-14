@@ -6,13 +6,78 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const VIDEO_MODELS: Record<string, { apiModel?: string }> = {
-  sora_2: { apiModel: "sora-2" },
-  sora_2_pro: { apiModel: "sora-2-pro" },
-  motion_2: {},
+type VideoQuality = "720p" | "1080p";
+type Provider = "veo" | "leonardo";
+
+type VideoModelConfig = {
+  provider: Provider;
+  apiModel: string;
+  durations: number[];
+  referenceDurations?: number[];
+  qualities: VideoQuality[];
 };
 
-const DEFAULT_VIDEO_MODEL = "sora_2";
+const VIDEO_MODELS: Record<string, VideoModelConfig> = {
+  veo_31: {
+    provider: "veo",
+    apiModel: "veo-3.1-generate-preview",
+    durations: [4, 6, 8],
+    referenceDurations: [8],
+    qualities: ["720p", "1080p"],
+  },
+  veo_3: {
+    provider: "veo",
+    apiModel: "veo-3.0-generate-preview",
+    durations: [4, 6, 8],
+    referenceDurations: [8],
+    qualities: ["720p", "1080p"],
+  },
+  veo_31_fast: {
+    provider: "veo",
+    apiModel: "veo-3.1-fast-generate-preview",
+    durations: [4, 6, 8],
+    referenceDurations: [8],
+    qualities: ["720p", "1080p"],
+  },
+  sora_2: {
+    provider: "leonardo",
+    apiModel: "sora-2",
+    durations: [6, 10],
+    qualities: ["720p", "1080p"],
+  },
+  sora_2_pro: {
+    provider: "leonardo",
+    apiModel: "sora-2-pro",
+    durations: [6, 10],
+    qualities: ["720p", "1080p"],
+  },
+  motion_2: {
+    provider: "leonardo",
+    apiModel: "",
+    durations: [6],
+    qualities: ["720p"],
+  },
+};
+
+const DEFAULT_VIDEO_MODEL = "veo_31";
+const DEFAULT_LEONARDO_MODEL = "sora_2_pro";
+
+function pickSupportedDuration(value: unknown, supported: number[], fallback: number): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numeric) && supported.includes(numeric) ? numeric : fallback;
+}
+
+function pickSupportedQuality(value: unknown, supported: VideoQuality[], fallback: VideoQuality): VideoQuality {
+  const normalized = String(value || "") as VideoQuality;
+  return supported.includes(normalized) ? normalized : fallback;
+}
+
+function clampByReference(duration: number, config: VideoModelConfig, hasReference: boolean): number {
+  if (hasReference && config.referenceDurations?.length) {
+    return pickSupportedDuration(duration, config.referenceDurations, config.referenceDurations[0]);
+  }
+  return pickSupportedDuration(duration, config.durations, config.durations[0]);
+}
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
