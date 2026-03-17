@@ -916,6 +916,16 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
         </div>
 
         {/* File Attachments / Generated Images */}
+        {fileUrls && fileUrls.length > 0 && resolvedFiles.length === 0 && (
+          <div className={cn("flex flex-wrap gap-2 my-2", isUser ? "justify-end" : "justify-start")}>
+            {fileUrls.map((_, index) => (
+              <div key={`skeleton-${index}`} className={cn(
+                "rounded-lg bg-muted animate-pulse border border-border",
+                isUser ? "w-20 h-20" : "w-64 h-48"
+              )} />
+            ))}
+          </div>
+        )}
         {resolvedFiles.length > 0 && (
           <motion.div 
             initial={{ opacity: 0, scale: 0.9 }}
@@ -929,29 +939,13 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
                 whileHover={{ scale: 1.02 }}
               >
                 {isImageLike(url) ? (
-                  <div className="relative">
-                    <button
-                      type="button"
-                      className={cn(
-                        "rounded-lg overflow-hidden border border-border bg-secondary cursor-pointer",
-                        isUser ? "w-20 h-20" : "w-64 max-w-full"
-                      )}
-                      onClick={() => setPreviewImage(url)}
-                    >
-                      <img
-                        src={url}
-                        alt={`${!isUser ? 'Generated image' : 'Attachment'} ${index + 1}`}
-                        className={cn(
-                          "w-full h-full",
-                          isUser ? "object-cover" : "object-contain max-h-72"
-                        )}
-                        onError={(e) => {
-                          const target = e.currentTarget;
-                          target.style.display = 'none';
-                          target.parentElement!.innerHTML = '<div class="p-4 text-sm text-muted-foreground">Image failed to load</div>';
-                        }}
-                      />
-                    </button>
+                  <FileImageWithLoader
+                    url={url}
+                    index={index}
+                    isUser={isUser}
+                    onPreview={setPreviewImage}
+                  />
+                ) : (
 
                     {!isUser && (
                       <div className="absolute inset-0 bg-black/50 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-2 rounded-lg">
