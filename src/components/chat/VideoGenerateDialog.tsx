@@ -304,27 +304,27 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
 
           {/* Duration & Quality - paid only */}
           {isPaid && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-3">
               {/* Duration */}
               <div className="grid gap-2">
                 <Label className="flex items-center gap-2 text-sm">
                   <Clock className="h-4 w-4" />
                   Duration
                 </Label>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   {durationOptions.map((opt) => (
                     <button
                       key={opt}
                       type="button"
                       onClick={() => setSelectedDuration(opt)}
                       disabled={isWorking}
-                      className={`flex-1 px-3 py-1.5 rounded-lg border transition-all text-xs font-medium ${
+                      className={`px-3 py-1.5 rounded-lg border transition-all text-xs font-medium ${
                         selectedDuration === opt
                           ? 'border-xai-cyan bg-xai-cyan/10 text-foreground'
                           : 'border-border bg-secondary/50 text-muted-foreground hover:border-xai-cyan/50'
                       }`}
                     >
-                      {opt} seconds
+                      {opt}s
                     </button>
                   ))}
                 </div>
@@ -336,14 +336,14 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
                   <Monitor className="h-4 w-4" />
                   Quality
                 </Label>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   {qualityOptions.map((opt) => (
                     <button
                       key={opt}
                       type="button"
                       onClick={() => setSelectedQuality(opt)}
                       disabled={isWorking}
-                      className={`flex-1 flex flex-col items-center px-3 py-1.5 rounded-lg border transition-all text-xs ${
+                      className={`flex flex-col items-center px-3 py-1.5 rounded-lg border transition-all text-xs ${
                         selectedQuality === opt
                           ? 'border-xai-cyan bg-xai-cyan/10 text-foreground'
                           : 'border-border bg-secondary/50 text-muted-foreground hover:border-xai-cyan/50'

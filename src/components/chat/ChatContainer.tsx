@@ -1078,7 +1078,7 @@ export const ChatContainer = () => {
           onSend={handleSend}
           isLoading={isLoading}
           disabled={!user}
-          onStop={isLoading ? stopGeneration : undefined}
+          onStop={(isLoading || isGeneratingImage || isGeneratingVideo) ? stopGeneration : undefined}
           editValue={editingMessageContent}
           onClearEdit={clearEditState}
           onStartCall={user ? () => setShowVoiceCall(true) : undefined}

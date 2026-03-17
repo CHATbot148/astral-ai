@@ -107,6 +107,20 @@ serve(async (req) => {
       }
     }
 
+    // Also trigger re-engagement email check (piggyback on cron)
+    try {
+      await fetch(`${SUPABASE_URL}/functions/v1/check-reengagement`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+        },
+        body: JSON.stringify({}),
+      });
+    } catch (reengErr) {
+      console.error("Re-engagement check failed (non-blocking):", reengErr);
+    }
+
     return new Response(JSON.stringify({ processed }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
