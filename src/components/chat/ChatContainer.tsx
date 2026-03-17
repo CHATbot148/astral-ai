@@ -1052,6 +1052,9 @@ export const ChatContainer = () => {
                     <motion.span className="text-xai-cyan font-medium" animate={{ opacity: [1, 0.5, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>
                       {isGeneratingVideo ? '🎬 Generating video...' : '🎨 Generating image...'}
                     </motion.span>
+                    <Button variant="outline" size="sm" onClick={stopGeneration} className="h-7 px-3 text-xs rounded-full border-destructive/50 text-destructive hover:bg-destructive/10">
+                      Cancel
+                    </Button>
                   </div>
                 )}
               </motion.div>
