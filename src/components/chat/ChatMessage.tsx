@@ -944,50 +944,23 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
                     index={index}
                     isUser={isUser}
                     onPreview={setPreviewImage}
+                    onDownload={async (downloadUrl: string) => {
+                      try {
+                        const response = await fetch(downloadUrl);
+                        const blob = await response.blob();
+                        const blobUrl = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = blobUrl;
+                        a.download = `astraz-image-${Date.now()}.png`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(blobUrl);
+                      } catch {
+                        toast({ title: 'Failed to save', variant: 'destructive' });
+                      }
+                    }}
                   />
-                ) : (
-
-                    {!isUser && (
-                      <div className="absolute inset-0 bg-black/50 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-2 rounded-lg">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className="gap-1"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPreviewImage(url);
-                          }}
-                        >
-                          View
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className="gap-1"
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            try {
-                              const response = await fetch(url);
-                              const blob = await response.blob();
-                              const blobUrl = URL.createObjectURL(blob);
-                              const a = document.createElement('a');
-                              a.href = blobUrl;
-                              a.download = `astraz-image-${Date.now()}.png`;
-                              document.body.appendChild(a);
-                              a.click();
-                              document.body.removeChild(a);
-                              URL.revokeObjectURL(blobUrl);
-                            } catch {
-                              toast({ title: 'Failed to save', variant: 'destructive' });
-                            }
-                          }}
-                        >
-                          <Download className="h-3 w-3" />
-                          Save
-                        </Button>
-                      </div>
-                    )}
-                  </div>
                 ) : (
                   <a 
                     href={url} 
