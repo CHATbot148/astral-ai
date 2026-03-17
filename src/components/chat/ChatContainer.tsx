@@ -102,6 +102,7 @@ export const ChatContainer = () => {
     conversations, currentConversation, messages,
     selectConversation, createConversation, addMessage,
     deleteMessagesFrom, deleteConversation, renameConversation, startNewChat,
+    setMessages,
   } = useConversations();
 
   useEffect(() => {
@@ -581,11 +582,25 @@ export const ChatContainer = () => {
         convId = newConv.id;
       }
 
+      // Show user message IMMEDIATELY (optimistic) before file uploads / DB save
+      const tempId = `temp-${Date.now()}`;
+      setMessages(prev => [...prev, {
+        id: tempId,
+        conversation_id: convId!,
+        role: 'user' as const,
+        content,
+        file_urls: null,
+        created_at: new Date().toISOString(),
+      }]);
+
       let fileUrls: string[] = [];
       if (files && files.length > 0) fileUrls = await uploadFiles(files);
 
-      await extractAndSaveMemory(content);
-      await addMessage(convId, 'user', content, fileUrls.length > 0 ? fileUrls : undefined);
+      // Save to DB in background; remove optimistic msg once real one lands
+      extractAndSaveMemory(content);
+      addMessage(convId, 'user', content, fileUrls.length > 0 ? fileUrls : undefined)
+        .then(() => setMessages(prev => prev.filter(m => m.id !== tempId)))
+        .catch(console.error);
 
       const userRequestedInlineGeneration = Boolean(
         detectImageGenerationRequest(content) || detectVideoGenerationRequest(content)
@@ -1037,6 +1052,9 @@ export const ChatContainer = () => {
                     <motion.span className="text-xai-cyan font-medium" animate={{ opacity: [1, 0.5, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>
                       {isGeneratingVideo ? '🎬 Generating video...' : '🎨 Generating image...'}
                     </motion.span>
+                    <Button variant="outline" size="sm" onClick={stopGeneration} className="h-7 px-3 text-xs rounded-full border-destructive/50 text-destructive hover:bg-destructive/10">
+                      Cancel
+                    </Button>
                   </div>
                 )}
               </motion.div>
@@ -1060,7 +1078,7 @@ export const ChatContainer = () => {
           onSend={handleSend}
           isLoading={isLoading}
           disabled={!user}
-          onStop={isLoading ? stopGeneration : undefined}
+          onStop={(isLoading || isGeneratingImage || isGeneratingVideo) ? stopGeneration : undefined}
           editValue={editingMessageContent}
           onClearEdit={clearEditState}
           onStartCall={user ? () => setShowVoiceCall(true) : undefined}

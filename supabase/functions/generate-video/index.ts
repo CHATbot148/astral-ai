@@ -387,12 +387,15 @@ serve(async (req) => {
 
       for (const veoModel of modelsToTry) {
         const promptWithReference = referencePromptAugment ? `${prompt}${referencePromptAugment}` : prompt;
-        const baseParameters = {
+        // Note: omit resolution for reference requests — some Veo models reject it
+        const baseParameters: Record<string, unknown> = {
           aspectRatio: "16:9",
           durationSeconds: veoDuration,
           personGeneration: "allow_all",
-          resolution: effectiveQuality,
         };
+        if (!referenceImage) {
+          baseParameters.resolution = effectiveQuality;
+        }
 
         const requestVariants: Array<{ label: string; body: any }> = referenceImage
           ? [
@@ -403,25 +406,13 @@ serve(async (req) => {
                   parameters: baseParameters,
                 },
               },
-              {
-                label: "referenceImages",
-                body: {
-                  instances: [
-                    {
-                      prompt: promptWithReference,
-                      referenceImages: [{ referenceType: "asset", image: referenceImage }],
-                    },
-                  ],
-                  parameters: { ...baseParameters, resizeMode: "fit" },
-                },
-              },
             ]
           : [
               {
                 label: "text",
                 body: {
                   instances: [{ prompt: promptWithReference }],
-                  parameters: baseParameters,
+                  parameters: { ...baseParameters, resolution: effectiveQuality },
                 },
               },
             ];

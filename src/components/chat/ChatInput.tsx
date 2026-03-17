@@ -499,7 +499,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
 
         {/* Send/Stop/Call Button */}
         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-shrink-0">
-          {isLoading && onStop ? (
+          {onStop ? (
             <Button variant="destructive" size="icon" onClick={onStop} className="h-10 w-10 rounded-full" aria-label="Stop generating">
               <Square className="h-4 w-4" />
             </Button>

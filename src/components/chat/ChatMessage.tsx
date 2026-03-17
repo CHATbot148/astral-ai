@@ -437,6 +437,40 @@ const AnimatedLines = ({ text, style, formatText }: { text: string; style: strin
   );
 };
 
+const FileImageWithLoader = ({ url, index, isUser, onPreview, onDownload }: { url: string; index: number; isUser: boolean; onPreview: (url: string) => void; onDownload?: (url: string) => void }) => {
+  const [loaded, setLoaded] = useState(false);
+  return (
+    <div className="relative">
+      {!loaded && (
+        <div className={cn("rounded-lg bg-muted animate-pulse border border-border", isUser ? "w-20 h-20" : "w-64 h-48")} />
+      )}
+      <button
+        type="button"
+        className={cn(
+          "rounded-lg overflow-hidden border border-border bg-secondary cursor-pointer",
+          isUser ? "w-20 h-20" : "w-64 max-w-full",
+          !loaded && "absolute inset-0 opacity-0"
+        )}
+        onClick={() => onPreview(url)}
+      >
+        <img
+          src={url}
+          alt={`${!isUser ? 'Generated image' : 'Attachment'} ${index + 1}`}
+          className={cn("w-full h-full", isUser ? "object-cover" : "object-contain max-h-72")}
+          onLoad={() => setLoaded(true)}
+          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+        />
+      </button>
+      {!isUser && loaded && (
+        <div className="absolute inset-0 bg-black/50 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-2 rounded-lg">
+          <Button size="sm" variant="secondary" className="gap-1" onClick={(e) => { e.stopPropagation(); onPreview(url); }}>View</Button>
+          {onDownload && <Button size="sm" variant="secondary" className="gap-1" onClick={(e) => { e.stopPropagation(); onDownload(url); }}><Download className="h-3 w-3" />Save</Button>}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUrls, userAvatar, userName, onEdit, canEdit = true, onNotificationAction, enableAutoListImages = false }: ChatMessageProps) => {
   const [copied, setCopied] = useState(false);
   const [reaction, setReaction] = useState<Reaction>(null);
@@ -916,6 +950,16 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
         </div>
 
         {/* File Attachments / Generated Images */}
+        {fileUrls && fileUrls.length > 0 && resolvedFiles.length === 0 && (
+          <div className={cn("flex flex-wrap gap-2 my-2", isUser ? "justify-end" : "justify-start")}>
+            {fileUrls.map((_, index) => (
+              <div key={`skeleton-${index}`} className={cn(
+                "rounded-lg bg-muted animate-pulse border border-border",
+                isUser ? "w-20 h-20" : "w-64 h-48"
+              )} />
+            ))}
+          </div>
+        )}
         {resolvedFiles.length > 0 && (
           <motion.div 
             initial={{ opacity: 0, scale: 0.9 }}
@@ -929,71 +973,28 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
                 whileHover={{ scale: 1.02 }}
               >
                 {isImageLike(url) ? (
-                  <div className="relative">
-                    <button
-                      type="button"
-                      className={cn(
-                        "rounded-lg overflow-hidden border border-border bg-secondary cursor-pointer",
-                        isUser ? "w-20 h-20" : "w-64 max-w-full"
-                      )}
-                      onClick={() => setPreviewImage(url)}
-                    >
-                      <img
-                        src={url}
-                        alt={`${!isUser ? 'Generated image' : 'Attachment'} ${index + 1}`}
-                        className={cn(
-                          "w-full h-full",
-                          isUser ? "object-cover" : "object-contain max-h-72"
-                        )}
-                        onError={(e) => {
-                          const target = e.currentTarget;
-                          target.style.display = 'none';
-                          target.parentElement!.innerHTML = '<div class="p-4 text-sm text-muted-foreground">Image failed to load</div>';
-                        }}
-                      />
-                    </button>
-
-                    {!isUser && (
-                      <div className="absolute inset-0 bg-black/50 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-2 rounded-lg">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className="gap-1"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPreviewImage(url);
-                          }}
-                        >
-                          View
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className="gap-1"
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            try {
-                              const response = await fetch(url);
-                              const blob = await response.blob();
-                              const blobUrl = URL.createObjectURL(blob);
-                              const a = document.createElement('a');
-                              a.href = blobUrl;
-                              a.download = `astraz-image-${Date.now()}.png`;
-                              document.body.appendChild(a);
-                              a.click();
-                              document.body.removeChild(a);
-                              URL.revokeObjectURL(blobUrl);
-                            } catch {
-                              toast({ title: 'Failed to save', variant: 'destructive' });
-                            }
-                          }}
-                        >
-                          <Download className="h-3 w-3" />
-                          Save
-                        </Button>
-                      </div>
-                    )}
-                  </div>
+                  <FileImageWithLoader
+                    url={url}
+                    index={index}
+                    isUser={isUser}
+                    onPreview={setPreviewImage}
+                    onDownload={async (downloadUrl: string) => {
+                      try {
+                        const response = await fetch(downloadUrl);
+                        const blob = await response.blob();
+                        const blobUrl = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = blobUrl;
+                        a.download = `astraz-image-${Date.now()}.png`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(blobUrl);
+                      } catch {
+                        toast({ title: 'Failed to save', variant: 'destructive' });
+                      }
+                    }}
+                  />
                 ) : (
                   <a 
                     href={url} 
