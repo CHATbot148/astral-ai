@@ -437,6 +437,40 @@ const AnimatedLines = ({ text, style, formatText }: { text: string; style: strin
   );
 };
 
+const FileImageWithLoader = ({ url, index, isUser, onPreview, onDownload }: { url: string; index: number; isUser: boolean; onPreview: (url: string) => void; onDownload?: (url: string) => void }) => {
+  const [loaded, setLoaded] = useState(false);
+  return (
+    <div className="relative">
+      {!loaded && (
+        <div className={cn("rounded-lg bg-muted animate-pulse border border-border", isUser ? "w-20 h-20" : "w-64 h-48")} />
+      )}
+      <button
+        type="button"
+        className={cn(
+          "rounded-lg overflow-hidden border border-border bg-secondary cursor-pointer",
+          isUser ? "w-20 h-20" : "w-64 max-w-full",
+          !loaded && "absolute inset-0 opacity-0"
+        )}
+        onClick={() => onPreview(url)}
+      >
+        <img
+          src={url}
+          alt={`${!isUser ? 'Generated image' : 'Attachment'} ${index + 1}`}
+          className={cn("w-full h-full", isUser ? "object-cover" : "object-contain max-h-72")}
+          onLoad={() => setLoaded(true)}
+          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+        />
+      </button>
+      {!isUser && loaded && (
+        <div className="absolute inset-0 bg-black/50 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-2 rounded-lg">
+          <Button size="sm" variant="secondary" className="gap-1" onClick={(e) => { e.stopPropagation(); onPreview(url); }}>View</Button>
+          {onDownload && <Button size="sm" variant="secondary" className="gap-1" onClick={(e) => { e.stopPropagation(); onDownload(url); }}><Download className="h-3 w-3" />Save</Button>}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUrls, userAvatar, userName, onEdit, canEdit = true, onNotificationAction, enableAutoListImages = false }: ChatMessageProps) => {
   const [copied, setCopied] = useState(false);
   const [reaction, setReaction] = useState<Reaction>(null);
