@@ -102,6 +102,7 @@ export const ChatContainer = () => {
     conversations, currentConversation, messages,
     selectConversation, createConversation, addMessage,
     deleteMessagesFrom, deleteConversation, renameConversation, startNewChat,
+    setMessages,
   } = useConversations();
 
   useEffect(() => {
