@@ -999,6 +999,39 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
                       }
                     }}
                   />
+                ) : isVideoLike(url) ? (
+                  <div className="relative rounded-lg overflow-hidden border border-border max-w-[280px]">
+                    <video
+                      src={url}
+                      controls
+                      preload="metadata"
+                      playsInline
+                      className="w-full rounded-lg"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="absolute top-1 right-1 h-7 w-7 p-0 bg-background/60 backdrop-blur-sm hover:bg-background/80 opacity-0 group-hover/img:opacity-100 transition-opacity"
+                      onClick={async () => {
+                        try {
+                          const response = await fetch(url);
+                          const blob = await response.blob();
+                          const blobUrl = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = blobUrl;
+                          a.download = `astraz-video-${Date.now()}.mp4`;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          URL.revokeObjectURL(blobUrl);
+                        } catch {
+                          toast({ title: 'Failed to save', variant: 'destructive' });
+                        }
+                      }}
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 ) : (
                   <a 
                     href={url} 
