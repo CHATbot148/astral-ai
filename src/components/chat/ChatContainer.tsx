@@ -422,7 +422,9 @@ export const ChatContainer = () => {
           await addMessage(capturedConvId, 'assistant', `I couldn't generate that video. Please try again.`);
         }
       } catch (error) {
-        await addMessage(capturedConvId, 'assistant', `I couldn't generate that video. ${error instanceof Error ? error.message : 'Please try again.'}`);
+        const message = error instanceof Error ? error.message : 'Please try again.';
+        toast({ title: 'Video generation failed', description: message, variant: 'destructive' });
+        await addMessage(capturedConvId, 'assistant', `I couldn't generate that video. ${message}`);
       } finally {
         setIsGeneratingVideo(false);
         setTypingLabel(undefined);
