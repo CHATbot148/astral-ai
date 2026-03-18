@@ -387,7 +387,6 @@ serve(async (req) => {
 
       for (const veoModel of modelsToTry) {
         const promptWithReference = referencePromptAugment ? `${prompt}${referencePromptAugment}` : prompt;
-        // Note: omit resolution for reference requests — some Veo models reject it
         const baseParameters: Record<string, unknown> = {
           aspectRatio: "16:9",
           durationSeconds: veoDuration,
@@ -397,29 +396,27 @@ serve(async (req) => {
           baseParameters.resolution = effectiveQuality;
         }
 
-        const requestVariants: Array<{ label: string; body: any }> = referenceImage
-          ? [
-              {
-                label: "image",
-                body: {
-                  instances: [{ prompt: promptWithReference, image: referenceImage }],
-                  parameters: baseParameters,
-                },
-              },
-            ]
-          : [
-              {
-                label: "text",
-                body: {
-                  instances: [{ prompt: promptWithReference }],
-                  parameters: { ...baseParameters, resolution: effectiveQuality },
-                },
-              },
-            ];
+        // Build the correct request body based on whether we have a reference image
+        // For reference images, use the `referenceImages` array format per Google Vertex AI docs
+        const requestBody: any = referenceImage
+          ? {
+              instances: [{
+                prompt: promptWithReference,
+                referenceImages: [{
+                  referenceType: "asset",
+                  image: referenceImage,
+                }],
+              }],
+              parameters: baseParameters,
+            }
+          : {
+              instances: [{ prompt: promptWithReference }],
+              parameters: { ...baseParameters, resolution: effectiveQuality },
+            };
 
-        for (const variant of requestVariants) {
-          console.log(`[generate-video] Trying Veo model: ${veoModel} (${variant.label})`);
-          try {
+        console.log(`[generate-video] Trying Veo model: ${veoModel} (${referenceImage ? "reference" : "text"})`);
+        console.log(`[generate-video] Request body keys:`, JSON.stringify(Object.keys(requestBody)));
+        try {
             const veoRes = await fetch(`${BASE_URL}/models/${veoModel}:predictLongRunning`, {
               method: "POST",
               headers: {
