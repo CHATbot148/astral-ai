@@ -885,7 +885,11 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
   const isImageLike = (url: string) => {
     if (url.startsWith('data:image/')) return true;
     if (url.startsWith('storage:')) return url.match(/\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$/i);
-    return url.match(/\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$/i) || (url.includes('supabase') && url.includes('storage'));
+    return url.match(/\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$/i) || (url.includes('supabase') && url.includes('storage') && !url.match(/\.(mp4|webm|mov|m4v)(\?.*)?$/i));
+  };
+
+  const isVideoLike = (url: string) => {
+    return url.match(/\.(mp4|webm|mov|m4v)(\?.*)?$/i) != null;
   };
 
   useEffect(() => {
