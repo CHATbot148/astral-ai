@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 type VideoQuality = "720p" | "1080p";
@@ -387,7 +387,6 @@ serve(async (req) => {
 
       for (const veoModel of modelsToTry) {
         const promptWithReference = referencePromptAugment ? `${prompt}${referencePromptAugment}` : prompt;
-        // Note: omit resolution for reference requests — some Veo models reject it
         const baseParameters: Record<string, unknown> = {
           aspectRatio: "16:9",
           durationSeconds: veoDuration,
@@ -397,48 +396,46 @@ serve(async (req) => {
           baseParameters.resolution = effectiveQuality;
         }
 
-        const requestVariants: Array<{ label: string; body: any }> = referenceImage
-          ? [
-              {
-                label: "image",
-                body: {
-                  instances: [{ prompt: promptWithReference, image: referenceImage }],
-                  parameters: baseParameters,
-                },
-              },
-            ]
-          : [
-              {
-                label: "text",
-                body: {
-                  instances: [{ prompt: promptWithReference }],
-                  parameters: { ...baseParameters, resolution: effectiveQuality },
-                },
-              },
-            ];
+        // Build the correct request body based on whether we have a reference image
+        // For reference images, use the `referenceImages` array format per Google Vertex AI docs
+        const requestBody: any = referenceImage
+          ? {
+              instances: [{
+                prompt: promptWithReference,
+                referenceImages: [{
+                  referenceType: "asset",
+                  image: referenceImage,
+                }],
+              }],
+              parameters: baseParameters,
+            }
+          : {
+              instances: [{ prompt: promptWithReference }],
+              parameters: { ...baseParameters, resolution: effectiveQuality },
+            };
 
-        for (const variant of requestVariants) {
-          console.log(`[generate-video] Trying Veo model: ${veoModel} (${variant.label})`);
-          try {
+        console.log(`[generate-video] Trying Veo model: ${veoModel} (${referenceImage ? "reference" : "text"})`);
+        console.log(`[generate-video] Request body keys:`, JSON.stringify(Object.keys(requestBody)));
+        try {
             const veoRes = await fetch(`${BASE_URL}/models/${veoModel}:predictLongRunning`, {
               method: "POST",
               headers: {
                 "x-goog-api-key": GEMINI_API_KEY!,
                 "Content-Type": "application/json",
               },
-              body: JSON.stringify(variant.body),
+              body: JSON.stringify(requestBody),
             });
 
             if (!veoRes.ok) {
               const errText = await veoRes.text();
-              console.error(`Veo ${veoModel} (${variant.label}) error (${veoRes.status}):`, errText);
+              console.error(`Veo ${veoModel} error (${veoRes.status}):`, errText);
               continue;
             }
 
             const veoData = await veoRes.json();
             const operationName = veoData.name;
             if (!operationName) {
-              console.error(`Veo ${veoModel} (${variant.label}): missing operation name`, JSON.stringify(veoData));
+              console.error(`Veo ${veoModel}: missing operation name`, JSON.stringify(veoData));
               continue;
             }
 
@@ -456,7 +453,7 @@ serve(async (req) => {
 
               if (pollData.done) {
                 if (pollData.error?.message) {
-                  console.error(`Veo ${veoModel} (${variant.label}) operation failed:`, pollData.error.message);
+                  console.error(`Veo ${veoModel} operation failed:`, pollData.error.message);
                   break;
                 }
 
@@ -465,14 +462,14 @@ serve(async (req) => {
                   videoUri = samples[0]?.video?.uri;
                 }
                 if (!videoUri) {
-                  console.error(`Veo ${veoModel} (${variant.label}) completed but no video URI returned`);
+                  console.error(`Veo ${veoModel} completed but no video URI returned`, JSON.stringify(pollData.response));
                 }
                 break;
               }
             }
 
             if (!videoUri) {
-              console.error(`Veo ${veoModel} (${variant.label}) timed out or returned no video`);
+              console.error(`Veo ${veoModel} timed out or returned no video`);
               continue;
             }
 
@@ -481,7 +478,7 @@ serve(async (req) => {
               redirect: "follow",
             });
             if (!videoDownload.ok) {
-              console.error(`Failed to download Veo video from ${veoModel} (${variant.label})`);
+              console.error(`Failed to download Veo video from ${veoModel}`);
               continue;
             }
 
@@ -508,10 +505,9 @@ serve(async (req) => {
               headers: { ...corsHeaders, "Content-Type": "application/json" },
             });
           } catch (e) {
-            console.error(`Veo ${veoModel} (${variant.label}) exception:`, e);
+            console.error(`Veo ${veoModel} exception:`, e);
             continue;
           }
-        }
       }
 
       if (hasReferenceMedia) {

@@ -25,7 +25,8 @@ export function isDataImageUrl(value: string) {
 
 /**
  * Resolves a storage reference or URL to an accessible URL.
- * We default to a signed URL (works for private buckets). If that fails, we fall back to public URL.
+ * Since chat-files bucket is public, use public URL directly for speed.
+ * Falls back to signed URL for private buckets.
  */
 export async function resolveFileUrl(
   value: string,
@@ -38,11 +39,14 @@ export async function resolveFileUrl(
   const { bucket, path } = parseStorageRef(value);
   if (!bucket || !path) return value;
 
-  const expiresIn = Math.max(60, Math.min(opts?.expiresIn ?? 60 * 60, 60 * 60 * 24 * 7));
+  // Try public URL first (faster, no auth needed for public buckets)
+  const pub = supabase.storage.from(bucket).getPublicUrl(path);
+  if (pub?.data?.publicUrl) return pub.data.publicUrl;
 
+  // Fallback to signed URL for private buckets
+  const expiresIn = Math.max(60, Math.min(opts?.expiresIn ?? 60 * 60, 60 * 60 * 24 * 7));
   const signed = await supabase.storage.from(bucket).createSignedUrl(path, expiresIn);
   if (!signed.error && signed.data?.signedUrl) return signed.data.signedUrl;
 
-  const pub = supabase.storage.from(bucket).getPublicUrl(path);
-  return pub?.data?.publicUrl ?? value;
+  return value;
 }
