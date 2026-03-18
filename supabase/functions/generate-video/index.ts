@@ -423,19 +423,19 @@ serve(async (req) => {
                 "x-goog-api-key": GEMINI_API_KEY!,
                 "Content-Type": "application/json",
               },
-              body: JSON.stringify(variant.body),
+              body: JSON.stringify(requestBody),
             });
 
             if (!veoRes.ok) {
               const errText = await veoRes.text();
-              console.error(`Veo ${veoModel} (${variant.label}) error (${veoRes.status}):`, errText);
+              console.error(`Veo ${veoModel} error (${veoRes.status}):`, errText);
               continue;
             }
 
             const veoData = await veoRes.json();
             const operationName = veoData.name;
             if (!operationName) {
-              console.error(`Veo ${veoModel} (${variant.label}): missing operation name`, JSON.stringify(veoData));
+              console.error(`Veo ${veoModel}: missing operation name`, JSON.stringify(veoData));
               continue;
             }
 
@@ -453,7 +453,7 @@ serve(async (req) => {
 
               if (pollData.done) {
                 if (pollData.error?.message) {
-                  console.error(`Veo ${veoModel} (${variant.label}) operation failed:`, pollData.error.message);
+                  console.error(`Veo ${veoModel} operation failed:`, pollData.error.message);
                   break;
                 }
 
@@ -462,14 +462,14 @@ serve(async (req) => {
                   videoUri = samples[0]?.video?.uri;
                 }
                 if (!videoUri) {
-                  console.error(`Veo ${veoModel} (${variant.label}) completed but no video URI returned`);
+                  console.error(`Veo ${veoModel} completed but no video URI returned`, JSON.stringify(pollData.response));
                 }
                 break;
               }
             }
 
             if (!videoUri) {
-              console.error(`Veo ${veoModel} (${variant.label}) timed out or returned no video`);
+              console.error(`Veo ${veoModel} timed out or returned no video`);
               continue;
             }
 
@@ -478,7 +478,7 @@ serve(async (req) => {
               redirect: "follow",
             });
             if (!videoDownload.ok) {
-              console.error(`Failed to download Veo video from ${veoModel} (${variant.label})`);
+              console.error(`Failed to download Veo video from ${veoModel}`);
               continue;
             }
 
@@ -505,10 +505,9 @@ serve(async (req) => {
               headers: { ...corsHeaders, "Content-Type": "application/json" },
             });
           } catch (e) {
-            console.error(`Veo ${veoModel} (${variant.label}) exception:`, e);
+            console.error(`Veo ${veoModel} exception:`, e);
             continue;
           }
-        }
       }
 
       if (hasReferenceMedia) {
