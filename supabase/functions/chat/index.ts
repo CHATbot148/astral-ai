@@ -594,47 +594,13 @@ IMPORTANT RESPONSE GUIDELINES:
       systemContent += `\n\nMANDATORY: You MUST append this exact block at the end of your answer (do not skip it):\n[Sources]\n${forcedSources}`;
     }
 
-    // Immediately return the generation tag without hitting the AI - skip LLM entirely for clear requests
+    // When generation intent detected, let the AI handle conversationally (ask for details/permission)
     if (shouldGenerateImage) {
-      const tagResponse = `[GENERATE_IMAGE:${imagePrompt}]`;
-      if (noStream) {
-        return new Response(JSON.stringify({ content: tagResponse }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      // Return as a stream with just the tag
-      const encoder = new TextEncoder();
-      const stream = new ReadableStream({
-        start(controller) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: tagResponse } }] })}\n\n`));
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-          controller.close();
-        },
-      });
-      return new Response(stream, {
-        headers: { ...corsHeaders, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
-      });
+      systemContent += `\n\n[GENERATION CONTEXT] The user wants to generate an image. Detected prompt: "${imagePrompt}". Follow the MEDIA GENERATION HANDLING instructions above. If the prompt is clear and detailed, describe what you'll create and ask for permission. If vague, ask clarifying questions first. Do NOT output [GENERATE_IMAGE:...] until the user explicitly approves.`;
     }
 
     if (shouldGenerateVideo) {
-      const tagResponse = `[GENERATE_VIDEO:${videoPrompt}]`;
-      if (noStream) {
-        return new Response(JSON.stringify({ content: tagResponse }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      // Return as a stream with just the tag
-      const encoder = new TextEncoder();
-      const stream = new ReadableStream({
-        start(controller) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: tagResponse } }] })}\n\n`));
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-          controller.close();
-        },
-      });
-      return new Response(stream, {
-        headers: { ...corsHeaders, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
-      });
+      systemContent += `\n\n[GENERATION CONTEXT] The user wants to generate a video. Detected prompt: "${videoPrompt}". Follow the MEDIA GENERATION HANDLING instructions above. If the prompt is clear and detailed, describe what you'll create and ask for permission. If vague, ask clarifying questions first. Do NOT output [GENERATE_VIDEO:...] until the user explicitly approves.`;
     }
 
     if (fileContext) {
