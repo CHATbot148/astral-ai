@@ -390,10 +390,7 @@ export const ChatContainer = () => {
             }
           }
           referenceMediaUrl = refUrl;
-        } else if (opts.reference?.kind === 'video') {
-          const uploaded = await uploadFiles([opts.reference.file]);
-          referenceMediaUrl = uploaded[0];
-        }
+        // Image-only references now
 
         const { data, error } = await supabase.functions.invoke('generate-video', {
           body: {
