@@ -539,8 +539,23 @@ INLINE GENERATION SAFETY (CRITICAL):
 - Informational requests (lists, explanations, comparisons, recommendations, "show me examples") must stay informational.
 - If a [Visual Image Pool] is present, use [IMG:url|source] for web media only — do NOT output [GENERATE_IMAGE] or [GENERATE_VIDEO] for that.
 - Do NOT proactively ask to generate media while answering normal questions.
-- Only include ONE generation tag per response, and only when generation is explicitly requested by the user in that message.
+- Only include ONE generation tag per response, and only when generation is explicitly requested AND approved by the user.
 - If generation is not explicitly requested, never include generation tags.
+
+MEDIA GENERATION HANDLING (CRITICAL):
+When a user wants to generate an image or video:
+1. If their request is CLEAR and detailed (e.g., "generate an image of a red sports car on a mountain road at sunset"):
+   - Briefly describe what you will create
+   - Ask for permission: "Shall I go ahead and generate this?"
+2. If the request is VAGUE or missing key details (e.g., "generate me an image", "make a video"):
+   - Ask 1-2 short clarifying questions about subject, style, or scene
+   - Once you have enough detail, describe what you will create and ask for permission
+3. When the user APPROVES (says yes, go ahead, sure, do it, generate it, start, etc.):
+   - Output exactly ONE tag: [GENERATE_IMAGE:detailed prompt] or [GENERATE_VIDEO:detailed prompt]
+   - The prompt inside the tag should be detailed and descriptive for best results
+4. When the user DECLINES or wants to change something: adjust accordingly, do NOT generate
+5. NEVER output a generation tag without explicit user approval in that message
+6. If the conversation context shows a pending generation that the user is now approving, output the tag immediately
 
 IMPORTANT RESPONSE GUIDELINES:
 1. Do NOT force section labels like "Quick answer", "Details", or "Next step" unless the user explicitly asks for that structure.
@@ -579,47 +594,13 @@ IMPORTANT RESPONSE GUIDELINES:
       systemContent += `\n\nMANDATORY: You MUST append this exact block at the end of your answer (do not skip it):\n[Sources]\n${forcedSources}`;
     }
 
-    // Immediately return the generation tag without hitting the AI - skip LLM entirely for clear requests
+    // When generation intent detected, let the AI handle conversationally (ask for details/permission)
     if (shouldGenerateImage) {
-      const tagResponse = `[GENERATE_IMAGE:${imagePrompt}]`;
-      if (noStream) {
-        return new Response(JSON.stringify({ content: tagResponse }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      // Return as a stream with just the tag
-      const encoder = new TextEncoder();
-      const stream = new ReadableStream({
-        start(controller) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: tagResponse } }] })}\n\n`));
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-          controller.close();
-        },
-      });
-      return new Response(stream, {
-        headers: { ...corsHeaders, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
-      });
+      systemContent += `\n\n[GENERATION CONTEXT] The user wants to generate an image. Detected prompt: "${imagePrompt}". Follow the MEDIA GENERATION HANDLING instructions above. If the prompt is clear and detailed, describe what you'll create and ask for permission. If vague, ask clarifying questions first. Do NOT output [GENERATE_IMAGE:...] until the user explicitly approves.`;
     }
 
     if (shouldGenerateVideo) {
-      const tagResponse = `[GENERATE_VIDEO:${videoPrompt}]`;
-      if (noStream) {
-        return new Response(JSON.stringify({ content: tagResponse }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      // Return as a stream with just the tag
-      const encoder = new TextEncoder();
-      const stream = new ReadableStream({
-        start(controller) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: tagResponse } }] })}\n\n`));
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-          controller.close();
-        },
-      });
-      return new Response(stream, {
-        headers: { ...corsHeaders, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
-      });
+      systemContent += `\n\n[GENERATION CONTEXT] The user wants to generate a video. Detected prompt: "${videoPrompt}". Follow the MEDIA GENERATION HANDLING instructions above. If the prompt is clear and detailed, describe what you'll create and ask for permission. If vague, ask clarifying questions first. Do NOT output [GENERATE_VIDEO:...] until the user explicitly approves.`;
     }
 
     if (fileContext) {

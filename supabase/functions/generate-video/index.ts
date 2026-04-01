@@ -3,80 +3,50 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 type VideoQuality = "720p" | "1080p";
-type Provider = "veo" | "leonardo";
 
-type VideoModelConfig = {
-  provider: Provider;
+type ModelConfig = {
+  apiVersion: "v1" | "v2";
   apiModel: string;
   durations: number[];
-  referenceDurations?: number[];
   qualities: VideoQuality[];
 };
 
-const VIDEO_MODELS: Record<string, VideoModelConfig> = {
-  veo_31: {
-    provider: "veo",
-    apiModel: "veo-3.1-generate-preview",
-    durations: [4, 6, 8],
-    referenceDurations: [8],
-    qualities: ["720p", "1080p"],
-  },
-  veo_3: {
-    provider: "veo",
-    apiModel: "veo-3.0-generate-preview",
-    durations: [4, 6, 8],
-    referenceDurations: [8],
+const VIDEO_MODELS: Record<string, ModelConfig> = {
+  kling_3: {
+    apiVersion: "v2",
+    apiModel: "kling-3.0",
+    durations: [5, 10],
     qualities: ["720p", "1080p"],
   },
   veo_31_fast: {
-    provider: "veo",
-    apiModel: "veo-3.1-fast-generate-preview",
-    durations: [4, 6, 8],
-    referenceDurations: [8],
+    apiVersion: "v1",
+    apiModel: "VEO3_1FAST",
+    durations: [6, 8],
     qualities: ["720p", "1080p"],
   },
-  sora_2: {
-    provider: "leonardo",
-    apiModel: "sora-2",
+  hailuo_23: {
+    apiVersion: "v1",
+    apiModel: "HAILUO_2_3",
     durations: [6, 10],
     qualities: ["720p", "1080p"],
-  },
-  sora_2_pro: {
-    provider: "leonardo",
-    apiModel: "sora-2-pro",
-    durations: [6, 10],
-    qualities: ["720p", "1080p"],
-  },
-  motion_2: {
-    provider: "leonardo",
-    apiModel: "",
-    durations: [6],
-    qualities: ["720p"],
   },
 };
 
-const DEFAULT_VIDEO_MODEL = "veo_31";
-const DEFAULT_LEONARDO_MODEL = "sora_2_pro";
+const DEFAULT_MODEL = "kling_3";
 
-function pickSupportedDuration(value: unknown, supported: number[], fallback: number): number {
-  const numeric = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(numeric) && supported.includes(numeric) ? numeric : fallback;
+function pickDuration(val: unknown, supported: number[]): number {
+  const n = typeof val === "number" ? val : Number(val);
+  return Number.isFinite(n) && supported.includes(n) ? n : supported[0];
 }
 
-function pickSupportedQuality(value: unknown, supported: VideoQuality[], fallback: VideoQuality): VideoQuality {
-  const normalized = String(value || "") as VideoQuality;
-  return supported.includes(normalized) ? normalized : fallback;
-}
-
-function clampByReference(duration: number, config: VideoModelConfig, hasReference: boolean): number {
-  if (hasReference && config.referenceDurations?.length) {
-    return pickSupportedDuration(duration, config.referenceDurations, config.referenceDurations[0]);
-  }
-  return pickSupportedDuration(duration, config.durations, config.durations[0]);
+function pickQuality(val: unknown, supported: VideoQuality[]): VideoQuality {
+  const s = String(val || "") as VideoQuality;
+  return supported.includes(s) ? s : supported[0];
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -88,601 +58,187 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-async function resolveStorageRefToSignedUrl(
+async function resolveStorageRef(
   admin: ReturnType<typeof createClient>,
-  storageRef: string
+  ref: string
 ): Promise<string> {
-  // storage:bucket/path
-  const raw = storageRef.slice("storage:".length);
-  const slashIdx = raw.indexOf("/");
-  const bucket = raw.slice(0, slashIdx);
-  const path = raw.slice(slashIdx + 1);
-  const { data } = await admin.storage.from(bucket).createSignedUrl(path, 60 * 60);
-  return data?.signedUrl || storageRef;
+  const raw = ref.slice("storage:".length);
+  const slash = raw.indexOf("/");
+  const bucket = raw.slice(0, slash);
+  const path = raw.slice(slash + 1);
+  const { data } = await admin.storage.from(bucket).createSignedUrl(path, 3600);
+  return data?.signedUrl || ref;
 }
 
-async function geminiUploadResumable(
+// Describe reference image via Gemini for prompt augmentation
+async function describeReference(
   geminiKey: string,
-  bytes: ArrayBuffer,
-  contentType: string
-): Promise<{ fileUri: string; mimeType: string; fileName: string }> {
-  const startRes = await fetch(
-    `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${geminiKey}`,
-    {
-      method: "POST",
-      headers: {
-        "X-Goog-Upload-Protocol": "resumable",
-        "X-Goog-Upload-Command": "start",
-        "X-Goog-Upload-Header-Content-Length": String(bytes.byteLength),
-        "X-Goog-Upload-Header-Content-Type": contentType,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ file: { display_name: "reference-media" } }),
-    }
-  );
-
-  const uploadUrl = startRes.headers.get("x-goog-upload-url");
-  if (!uploadUrl) {
-    const t = await startRes.text().catch(() => "");
-    throw new Error(`Gemini Files API start failed (${startRes.status}): ${t}`);
-  }
-
-  const uploadRes = await fetch(uploadUrl, {
-    method: "POST",
-    headers: {
-      "Content-Length": String(bytes.byteLength),
-      "X-Goog-Upload-Offset": "0",
-      "X-Goog-Upload-Command": "upload, finalize",
-    },
-    body: bytes,
-  });
-
-  const info = await uploadRes.json();
-  const fileUri = info?.file?.uri;
-  const fileName = info?.file?.name;
-  if (!fileUri || !fileName) {
-    throw new Error("Gemini Files API upload failed: missing file URI");
-  }
-
-  // Wait for processing
-  let state = info?.file?.state;
-  let attempts = 0;
-  while (state === "PROCESSING" && attempts < 30) {
-    await new Promise((r) => setTimeout(r, 2000));
-    const checkRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${geminiKey}`
-    );
-    const checkData = await checkRes.json();
-    state = checkData.state;
-    attempts++;
-  }
-
-  if (state !== "ACTIVE") {
-    throw new Error(`Reference media processing failed (${state || "unknown"})`);
-  }
-
-  return { fileUri, mimeType: contentType, fileName };
-}
-
-async function describeReferenceWithGemini(
-  geminiKey: string,
-  mediaBytes: ArrayBuffer,
+  imageBytes: ArrayBuffer,
   contentType: string
 ): Promise<string> {
-  const instruction =
-    "Describe the reference media for video generation. " +
-    "Return a concise description of: subject(s), setting, style, colors, lighting, camera angle, and mood. " +
-    "If there is a logo/text, describe it faithfully. Do not add extra guesses.";
-
-  // Inline only for non-gif images (small enough in typical cases)
-  const isInlineImage = contentType.startsWith("image/") && contentType !== "image/gif";
-
-  let parts: any[];
-  if (isInlineImage) {
-    const base64 = bytesToBase64(new Uint8Array(mediaBytes));
-    parts = [{ inlineData: { mimeType: contentType, data: base64 } }, { text: instruction }];
-  } else {
-    // Video/GIF via Files API
-    const supported =
-      contentType === "video/mp4" ||
-      contentType === "video/webm" ||
-      contentType === "image/gif" ||
-      contentType.startsWith("video/");
-
-    if (!supported) {
-      throw new Error(`Unsupported reference media type: ${contentType}`);
-    }
-
-    const uploaded = await geminiUploadResumable(geminiKey, mediaBytes, contentType);
-    parts = [{ fileData: { mimeType: uploaded.mimeType, fileUri: uploaded.fileUri } }, { text: instruction }];
-  }
-
+  const base64 = bytesToBase64(new Uint8Array(imageBytes));
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ role: "user", parts }],
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { inlineData: { mimeType: contentType, data: base64 } },
+              {
+                text: "Describe this image for video generation. Return a concise description of: subject(s), setting, style, colors, lighting, camera angle, and mood. Do not add guesses.",
+              },
+            ],
+          },
+        ],
         generationConfig: { maxOutputTokens: 384, temperature: 0.2 },
       }),
     }
   );
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Gemini reference analysis failed (${res.status}): ${t}`);
+  }
+  const data = await res.json();
+  return String(data?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();
+}
+
+// ===== v2 generation (Kling 3.0) =====
+async function generateV2(
+  apiKey: string,
+  model: string,
+  prompt: string,
+  duration: number,
+  quality: VideoQuality,
+  width: number,
+  height: number
+): Promise<string> {
+  const mode = quality === "1080p" ? "RESOLUTION_1080" : "RESOLUTION_720";
+
+  console.log(`[v2] POST /api/rest/v2/generations model=${model} duration=${duration} mode=${mode}`);
+  const res = await fetch("https://cloud.leonardo.ai/api/rest/v2/generations", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      prompt,
+      duration,
+      mode,
+      width,
+      height,
+      public: false,
+    }),
+  });
 
   if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Gemini reference analysis failed (${res.status}): ${errText}`);
+    const t = await res.text();
+    throw new Error(`Leonardo v2 generation failed (${res.status}): ${t}`);
   }
 
   const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  return String(text || "").trim();
+  const genId = data.generationId || data.generation?.id;
+  if (!genId) throw new Error("No generationId from Leonardo v2: " + JSON.stringify(data));
+
+  console.log(`[v2] generation started: ${genId}`);
+
+  // Poll v2
+  for (let i = 0; i < 60; i++) {
+    await new Promise((r) => setTimeout(r, 5000));
+    const poll = await fetch(`https://cloud.leonardo.ai/api/rest/v2/generations/${genId}`, {
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+    });
+    if (!poll.ok) continue;
+    const pd = await poll.json();
+    const gen = pd.generation || pd;
+
+    if (gen.status === "COMPLETE") {
+      const videoAsset = gen.assets?.find((a: any) => a.url?.includes(".mp4") || a.type === "VIDEO");
+      const url = videoAsset?.url || gen.assets?.[0]?.url;
+      if (url) return url;
+
+      // Fallback: check generated_images pattern
+      const img = gen.generated_images?.find((i: any) => i.motionMP4URL || i.url?.endsWith(".mp4"));
+      if (img?.motionMP4URL) return img.motionMP4URL;
+      if (img?.url) return img.url;
+
+      throw new Error("v2 generation completed but no video URL found");
+    }
+    if (gen.status === "FAILED") throw new Error("Video generation failed on Leonardo");
+  }
+  throw new Error("Video generation timed out");
 }
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+// ===== v1 text-to-video generation (Veo 3.1 Fast, Hailuo 2.3) =====
+async function generateV1TextToVideo(
+  apiKey: string,
+  model: string,
+  prompt: string,
+  duration: number,
+  width: number,
+  height: number
+): Promise<string> {
+  console.log(`[v1-t2v] POST model=${model} duration=${duration} ${width}x${height}`);
+  const res = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations-text-to-video", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      prompt,
+      model,
+      height,
+      width,
+      isPublic: false,
+      frameInterpolation: true,
+      ...(duration ? { duration } : {}),
+    }),
+  });
 
-  try {
-    const { prompt, modelId, duration, quality, appInForeground, referenceMediaUrl } = await req.json();
-    if (!prompt) throw new Error("Prompt is required");
-
-    const LEONARDO_API_KEY = Deno.env.get("LEONARDO_API_KEY_NEW") || Deno.env.get("LEONARDO_API_KEY");
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
-    const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) throw new Error("Backend not configured");
-    if (!GEMINI_API_KEY && !LEONARDO_API_KEY) {
-      throw new Error("Video generation providers are not configured");
-    }
-
-    // Auth
-    const authHeader = req.headers.get("Authorization") || "";
-    const jwt = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
-    let userId = "anonymous";
-    let userEmail = "";
-    if (jwt) {
-      const uc = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        global: { headers: { Authorization: `Bearer ${jwt}` } },
-        auth: { persistSession: false },
-      });
-      const { data } = await uc.auth.getUser();
-      if (data?.user?.id) userId = data.user.id;
-      if (data?.user?.email) userEmail = data.user.email;
-    }
-
-    const CEO_EMAIL = "khaleelktn@gmail.com";
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
-
-    if (userId === "anonymous") {
-      return new Response(
-        JSON.stringify({
-          error: "Please sign in and subscribe to generate videos.",
-        }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Subscription tier check + daily video limits
-    const { data: sub } = await admin
-      .from("subscriptions")
-      .select("tier, status, expires_at")
-      .eq("user_id", userId)
-      .eq("status", "active")
-      .maybeSingle();
-
-    const tier = sub && sub.status === "active" && (!sub.expires_at || new Date(sub.expires_at) > new Date())
-      ? sub.tier
-      : "free";
-
-    if (tier === "free") {
-      return new Response(
-        JSON.stringify({
-          error: "Video generation requires a paid plan. Please upgrade.",
-          limit_reached: true,
-        }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const tierLimits: Record<string, number> = {
-      free: 0,
-      basic: 2,
-      pro: 8,
-      ultimate: 999999,
-    };
-    const dailyLimit = userEmail === CEO_EMAIL ? 20 : (tierLimits[tier] || 0);
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const { count } = await admin
-      .from("generated_videos")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .gte("created_at", today.toISOString());
-
-    if ((count || 0) >= dailyLimit) {
-      return new Response(
-        JSON.stringify({
-          error: `Daily video limit reached (${dailyLimit}/day). Upgrade for more.`,
-          limit_reached: true,
-        }),
-        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Normalize model capabilities from the selected provider/model
-    let generationPrompt = String(prompt);
-    const selectedModel = VIDEO_MODELS[modelId] ? String(modelId) : DEFAULT_VIDEO_MODEL;
-    const selectedConfig = VIDEO_MODELS[selectedModel];
-    const hasReferenceMedia = Boolean(referenceMediaUrl);
-
-    const effectiveDuration = clampByReference(duration, selectedConfig, hasReferenceMedia);
-    const effectiveQuality = pickSupportedQuality(
-      quality,
-      selectedConfig.qualities,
-      selectedConfig.qualities[0]
-    );
-
-    const selectedVeoModelId = selectedConfig.provider === "veo" ? selectedModel : DEFAULT_VIDEO_MODEL;
-    const selectedVeoApiModel = selectedVeoModelId === "veo_3"
-      ? "veo-3.0-generate-001"
-      : VIDEO_MODELS[selectedVeoModelId].apiModel;
-    let useGeminiVeo = hasReferenceMedia || selectedConfig.provider === "veo";
-
-    if (useGeminiVeo && !GEMINI_API_KEY) {
-      if (selectedConfig.provider === "veo" || hasReferenceMedia) {
-        throw new Error("Veo video generation is not configured right now.");
-      }
-      console.warn("[generate-video] Gemini unavailable, falling back to Leonardo.");
-      useGeminiVeo = false;
-    }
-
-    if (useGeminiVeo) {
-      console.log(
-        `[generate-video] Using Gemini Veo (reference: ${hasReferenceMedia}, model: ${selectedVeoModelId}, apiModel: ${selectedVeoApiModel}, duration: ${effectiveDuration}, quality: ${effectiveQuality})`
-      );
-
-      const primaryModel = selectedVeoApiModel;
-      const fallbackModels = selectedConfig.provider === "veo"
-        ? []
-        : [VIDEO_MODELS[DEFAULT_VIDEO_MODEL].apiModel, VIDEO_MODELS.veo_31_fast.apiModel]
-            .filter((apiModel, index, arr) => apiModel !== primaryModel && arr.indexOf(apiModel) === index);
-      const veoErrors: string[] = [];
-
-      // Prepare reference data once
-      let referenceImage: { bytesBase64Encoded: string; mimeType: string } | null = null;
-      let referencePromptAugment = "";
-
-      if (referenceMediaUrl) {
-        let refUrl = String(referenceMediaUrl);
-        if (refUrl.startsWith("storage:")) {
-          refUrl = await resolveStorageRefToSignedUrl(admin, refUrl);
-        }
-
-        const refRes = await fetch(refUrl);
-        if (!refRes.ok) throw new Error(`Failed to download reference media (${refRes.status})`);
-        const refBytes = await refRes.arrayBuffer();
-        const refContentType = refRes.headers.get("content-type") || "image/png";
-
-        if (refContentType.startsWith("image/")) {
-          referenceImage = {
-            bytesBase64Encoded: bytesToBase64(new Uint8Array(refBytes)),
-            mimeType: refContentType,
-          };
-          console.log(`[generate-video] Prepared image reference (${refContentType}, ${refBytes.byteLength} bytes)`);
-        } else {
-          try {
-            const desc = await describeReferenceWithGemini(GEMINI_API_KEY!, refBytes, refContentType);
-            if (desc) referencePromptAugment = `\n\nReference description: ${desc}`;
-          } catch (e) {
-            console.error("Video reference analysis failed:", e);
-          }
-        }
-      }
-
-      const modelsToTry = [primaryModel, ...fallbackModels];
-      const BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
-      const veoDuration = hasReferenceMedia
-        ? 8
-        : pickSupportedDuration(effectiveDuration, [4, 6, 8], 8);
-
-      for (const veoModel of modelsToTry) {
-        const promptWithReference = referencePromptAugment ? `${prompt}${referencePromptAugment}` : prompt;
-        const baseParameters: Record<string, unknown> = {
-          aspectRatio: "16:9",
-          durationSeconds: veoDuration,
-        };
-        if (!referenceImage) {
-          baseParameters.resolution = effectiveQuality;
-        }
-
-        const requestBody: Record<string, unknown> = referenceImage
-          ? {
-              instances: [{
-                prompt: promptWithReference,
-                referenceImages: [{
-                  referenceType: "asset",
-                  image: referenceImage,
-                }],
-              }],
-              parameters: baseParameters,
-            }
-          : {
-              instances: [{ prompt: promptWithReference }],
-              parameters: { ...baseParameters, resolution: effectiveQuality },
-            };
-
-        console.log(`[generate-video] Trying Veo model: ${veoModel} (${referenceImage ? "reference" : "text"})`);
-        try {
-          const veoRes = await fetch(`${BASE_URL}/models/${veoModel}:predictLongRunning`, {
-            method: "POST",
-            headers: {
-              "x-goog-api-key": GEMINI_API_KEY!,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(requestBody),
-          });
-
-          if (!veoRes.ok) {
-            const errText = await veoRes.text();
-            let errMessage = `Veo ${veoModel} failed (${veoRes.status}).`;
-            try {
-              const parsed = JSON.parse(errText);
-              if (parsed?.error?.message) errMessage = parsed.error.message;
-            } catch {
-              if (errText) errMessage = errText;
-            }
-            veoErrors.push(errMessage);
-            console.error(`Veo ${veoModel} error (${veoRes.status}):`, errText);
-            continue;
-          }
-
-          const veoData = await veoRes.json();
-          const operationName = veoData.name;
-          if (!operationName) {
-            const errMessage = `Veo ${veoModel} did not return an operation id.`;
-            veoErrors.push(errMessage);
-            console.error(`Veo ${veoModel}: missing operation name`, JSON.stringify(veoData));
-            continue;
-          }
-
-          console.log(`[generate-video] Veo operation started: ${operationName}`);
-
-          let videoUri = "";
-          for (let i = 0; i < 60; i++) {
-            await new Promise((r) => setTimeout(r, 5000));
-            const pollRes = await fetch(`${BASE_URL}/${operationName}`, {
-              headers: { "x-goog-api-key": GEMINI_API_KEY! },
-            });
-
-            if (!pollRes.ok) continue;
-            const pollData = await pollRes.json();
-
-            if (pollData.done) {
-              if (pollData.error?.message) {
-                veoErrors.push(pollData.error.message);
-                console.error(`Veo ${veoModel} operation failed:`, pollData.error.message);
-                break;
-              }
-
-              const samples = pollData.response?.generateVideoResponse?.generatedSamples;
-              if (samples && samples.length > 0) {
-                videoUri = samples[0]?.video?.uri;
-              }
-              if (!videoUri) {
-                const errMessage = `Veo ${veoModel} completed but returned no downloadable video.`;
-                veoErrors.push(errMessage);
-                console.error(errMessage, JSON.stringify(pollData.response));
-              }
-              break;
-            }
-          }
-
-          if (!videoUri) {
-            if (veoErrors.length === 0) veoErrors.push(`Veo ${veoModel} timed out.`);
-            continue;
-          }
-
-          const videoDownload = await fetch(videoUri, {
-            headers: { "x-goog-api-key": GEMINI_API_KEY! },
-            redirect: "follow",
-          });
-          if (!videoDownload.ok) {
-            const errMessage = `Veo generated a video but download failed (${videoDownload.status}).`;
-            veoErrors.push(errMessage);
-            console.error(`Failed to download Veo video from ${veoModel}`);
-            continue;
-          }
-
-          const videoBytes = new Uint8Array(await videoDownload.arrayBuffer());
-          const path = `${userId}/generated/vid-${Date.now()}.mp4`;
-          const { error: uploadError } = await admin.storage
-            .from("chat-files")
-            .upload(path, videoBytes, { contentType: "video/mp4", upsert: false });
-          if (uploadError) throw uploadError;
-
-          const ref = `storage:chat-files/${path}`;
-
-          if (userId !== "anonymous") {
-            await admin.from("generated_videos").insert({ user_id: userId, prompt, video_url: ref });
-          }
-
-          try {
-            await sendGenerationNotification(admin, SUPABASE_URL!, SERVICE_ROLE_KEY!, userId, "video", prompt);
-          } catch (notifErr) {
-            console.error("Notification send failed (non-blocking):", notifErr);
-          }
-
-          return new Response(JSON.stringify({ video: ref }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        } catch (e) {
-          const errMessage = e instanceof Error ? e.message : "Unknown Veo exception";
-          veoErrors.push(errMessage);
-          console.error(`Veo ${veoModel} exception:`, e);
-          continue;
-        }
-      }
-
-      const finalVeoError = veoErrors[veoErrors.length - 1] || "Veo video generation failed.";
-      if (selectedConfig.provider === "veo" || hasReferenceMedia) {
-        throw new Error(finalVeoError);
-      }
-
-      console.log("[generate-video] All Veo models failed, falling back to Leonardo...", JSON.stringify(veoErrors));
-    }
-
-    // Leonardo fallback / default path
-    generationPrompt = String(prompt);
-    if (referenceMediaUrl && GEMINI_API_KEY) {
-      // If we got here, Veo failed but we still have reference - describe it for Leonardo
-      let refUrl = String(referenceMediaUrl);
-      if (refUrl.startsWith("storage:")) {
-        refUrl = await resolveStorageRefToSignedUrl(admin, refUrl);
-      }
-      try {
-        const refRes = await fetch(refUrl);
-        if (refRes.ok) {
-          const bytes = await refRes.arrayBuffer();
-          const contentType = refRes.headers.get("content-type") || "application/octet-stream";
-          const desc = await describeReferenceWithGemini(GEMINI_API_KEY, bytes, contentType);
-          if (desc) generationPrompt = `${prompt}\n\nReference description: ${desc}`;
-        }
-      } catch (e) {
-        console.error("Reference fallback analysis failed:", e);
-      }
-    }
-
-    if (!LEONARDO_API_KEY) {
-      throw new Error("Leonardo API key is not configured for fallback video generation.");
-    }
-
-    const leonardoModel = selectedConfig.provider === "leonardo" ? selectedModel : DEFAULT_LEONARDO_MODEL;
-    const leonardoConfig = VIDEO_MODELS[leonardoModel];
-
-    const leonardoQuality = pickSupportedQuality(
-      effectiveQuality,
-      leonardoConfig.qualities,
-      leonardoConfig.qualities[0]
-    );
-    const leonardoDuration = pickSupportedDuration(
-      effectiveDuration,
-      leonardoConfig.durations,
-      leonardoConfig.durations[0]
-    );
-
-    const is1080 = leonardoQuality === "1080p";
-    const vidWidth = is1080 ? 1920 : 1280;
-    const vidHeight = is1080 ? 1080 : 720;
-
-    console.log(
-      `Generating video with Leonardo text-to-video (${leonardoModel}): "${generationPrompt}" | ${vidWidth}x${vidHeight} | ${leonardoDuration}s`
-    );
-
-    // Use Leonardo's direct text-to-video endpoint
-    const createRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations-text-to-video", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LEONARDO_API_KEY}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        prompt: generationPrompt,
-        height: vidHeight,
-        width: vidWidth,
-        isPublic: false,
-        frameInterpolation: true,
-        ...(leonardoDuration === 10 ? { duration: 10 } : {}),
-        ...(leonardoConfig?.apiModel ? { model: leonardoConfig.apiModel } : {}),
-      }),
-    });
-
-    if (!createRes.ok) {
-      const errText = await createRes.text();
-      console.error("Leonardo text-to-video error:", createRes.status, errText);
-      console.log("Falling back to image → motion SVD approach...");
-      return await imageToMotionFallback(
-        generationPrompt,
-        LEONARDO_API_KEY,
-        SUPABASE_URL,
-        SERVICE_ROLE_KEY!,
-        userId,
-        prompt
-      );
-    }
-
-    const createData = await createRes.json();
-    const generationId =
-      createData.motionVideoGenerationJob?.generationId ||
-      createData.textToVideoGenerationJob?.generationId ||
-      createData.generationId;
-
-    if (!generationId) {
-      console.error("No generationId from text-to-video:", JSON.stringify(createData));
-      return await imageToMotionFallback(
-        generationPrompt,
-        LEONARDO_API_KEY,
-        SUPABASE_URL,
-        SERVICE_ROLE_KEY!,
-        userId,
-        prompt
-      );
-    }
-
-    console.log(`Text-to-video generation started, ID: ${generationId}`);
-
-    // Poll for completion (up to 150 seconds)
-    let videoUrl = "";
-    for (let i = 0; i < 50; i++) {
-      await new Promise((r) => setTimeout(r, 3000));
-      const pollRes = await fetch(`https://cloud.leonardo.ai/api/rest/v1/generations/${generationId}`, {
-        headers: { Authorization: `Bearer ${LEONARDO_API_KEY}`, Accept: "application/json" },
-      });
-
-      if (!pollRes.ok) continue;
-      const pollData = await pollRes.json();
-      const gen = pollData.generations_by_pk;
-
-      if (gen?.status === "COMPLETE") {
-        const videoItem = gen.generated_images?.find((img: any) => img.motionMP4URL || img.url?.endsWith(".mp4"));
-        if (videoItem?.motionMP4URL) {
-          videoUrl = videoItem.motionMP4URL;
-          break;
-        }
-        if (videoItem?.url) {
-          videoUrl = videoItem.url;
-          break;
-        }
-      }
-      if (gen?.status === "FAILED") throw new Error("Video generation failed. Please try again.");
-    }
-
-    if (!videoUrl) throw new Error("Video generation timed out. Please try again.");
-
-    const ref = await uploadVideo(admin, userId, prompt, videoUrl);
-
-    // Always send generation completion notification (push + email based on user prefs)
-    try {
-      await sendGenerationNotification(admin, SUPABASE_URL!, SERVICE_ROLE_KEY!, userId, "video", prompt);
-    } catch (notifErr) {
-      console.error("Notification send failed (non-blocking):", notifErr);
-    }
-
-    return new Response(JSON.stringify({ video: ref }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  } catch (e) {
-    console.error("generate-video error:", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Leonardo v1 text-to-video failed (${res.status}): ${t}`);
   }
-});
+
+  const data = await res.json();
+  const genId =
+    data.textToVideoGenerationJob?.generationId ||
+    data.motionVideoGenerationJob?.generationId ||
+    data.generationId;
+  if (!genId) throw new Error("No generationId from v1 t2v: " + JSON.stringify(data));
+
+  console.log(`[v1-t2v] generation started: ${genId}`);
+
+  // Poll v1
+  for (let i = 0; i < 60; i++) {
+    await new Promise((r) => setTimeout(r, 3000));
+    const poll = await fetch(`https://cloud.leonardo.ai/api/rest/v1/generations/${genId}`, {
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+    });
+    if (!poll.ok) continue;
+    const pd = await poll.json();
+    const gen = pd.generations_by_pk;
+
+    if (gen?.status === "COMPLETE") {
+      const vid = gen.generated_images?.find(
+        (i: any) => i.motionMP4URL || i.url?.endsWith(".mp4")
+      );
+      if (vid?.motionMP4URL) return vid.motionMP4URL;
+      if (vid?.url) return vid.url;
+      throw new Error("v1 generation completed but no video URL found");
+    }
+    if (gen?.status === "FAILED") throw new Error("Video generation failed on Leonardo");
+  }
+  throw new Error("Video generation timed out");
+}
 
 async function uploadVideo(
   admin: ReturnType<typeof createClient>,
@@ -690,143 +246,26 @@ async function uploadVideo(
   prompt: string,
   videoUrl: string
 ): Promise<string> {
-  const videoRes = await fetch(videoUrl);
-  if (!videoRes.ok) throw new Error("Failed to download generated video");
-
-  const videoBytes = new Uint8Array(await videoRes.arrayBuffer());
+  const res = await fetch(videoUrl);
+  if (!res.ok) throw new Error("Failed to download generated video");
+  const bytes = new Uint8Array(await res.arrayBuffer());
   const path = `${userId}/generated/vid-${Date.now()}.mp4`;
-  const { error: uploadError } = await admin.storage
+  const { error } = await admin.storage
     .from("chat-files")
-    .upload(path, videoBytes, { contentType: "video/mp4", upsert: false });
-
-  if (uploadError) throw uploadError;
-
+    .upload(path, bytes, { contentType: "video/mp4", upsert: false });
+  if (error) throw error;
   const ref = `storage:chat-files/${path}`;
-  console.log("Video generated and uploaded:", ref);
-
   if (userId !== "anonymous") {
-    await admin.from("generated_videos").insert({
-      user_id: userId,
-      prompt,
-      video_url: ref,
-    });
+    await admin.from("generated_videos").insert({ user_id: userId, prompt, video_url: ref });
   }
-
   return ref;
 }
 
-async function imageToMotionFallback(
-  generationPrompt: string,
-  apiKey: string,
-  supabaseUrl: string,
-  serviceRoleKey: string,
-  userId: string,
-  userPromptForDb: string
-) {
-  console.log("Using image → motion SVD fallback");
-
-  const imgRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      prompt: generationPrompt,
-      modelId: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3",
-      width: 832,
-      height: 480,
-      num_images: 1,
-      alchemy: true,
-    }),
-  });
-
-  if (!imgRes.ok) {
-    const errText = await imgRes.text();
-    throw new Error(`Base image generation failed (${imgRes.status}): ${errText}`);
-  }
-
-  const imgData = await imgRes.json();
-  const genId = imgData.sdGenerationJob?.generationId;
-  if (!genId) throw new Error("No generation ID for base image");
-
-  let imageId = "";
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 3000));
-    const pollRes = await fetch(`https://cloud.leonardo.ai/api/rest/v1/generations/${genId}`, {
-      headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
-    });
-    if (!pollRes.ok) continue;
-    const pollData = await pollRes.json();
-    const gen = pollData.generations_by_pk;
-    if (gen?.status === "COMPLETE" && gen.generated_images?.[0]) {
-      imageId = gen.generated_images[0].id;
-      break;
-    }
-    if (gen?.status === "FAILED") throw new Error("Base image generation failed");
-  }
-
-  if (!imageId) throw new Error("Base image generation timed out");
-
-  const motionRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations-motion-svd", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      imageId,
-      isPublic: false,
-      motionStrength: 5,
-    }),
-  });
-
-  if (!motionRes.ok) {
-    const errText = await motionRes.text();
-    throw new Error(`Motion SVD failed (${motionRes.status}): ${errText}`);
-  }
-
-  const motionData = await motionRes.json();
-  const motionGenId = motionData.motionSvdGenerationJob?.generationId;
-  if (!motionGenId) throw new Error("No motion generation ID");
-
-  let videoUrl = "";
-  for (let i = 0; i < 40; i++) {
-    await new Promise((r) => setTimeout(r, 3000));
-    const pollRes = await fetch(`https://cloud.leonardo.ai/api/rest/v1/generations/${motionGenId}`, {
-      headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
-    });
-    if (!pollRes.ok) continue;
-    const pollData = await pollRes.json();
-    const gen = pollData.generations_by_pk;
-    if (gen?.status === "COMPLETE") {
-      const video = gen.generated_images?.find((img: any) => img.motionMP4URL);
-      if (video?.motionMP4URL) {
-        videoUrl = video.motionMP4URL;
-        break;
-      }
-    }
-    if (gen?.status === "FAILED") throw new Error("Video generation failed");
-  }
-
-  if (!videoUrl) throw new Error("Video generation timed out");
-
-  const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
-  const ref = await uploadVideo(admin, userId, userPromptForDb, videoUrl);
-
-  return new Response(JSON.stringify({ video: ref }), {
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
-async function sendGenerationNotification(
+async function sendNotification(
   admin: ReturnType<typeof createClient>,
   supabaseUrl: string,
   serviceRoleKey: string,
   userId: string,
-  type: "image" | "video",
   prompt: string
 ) {
   const { data: profileData } = await admin
@@ -834,33 +273,25 @@ async function sendGenerationNotification(
     .select("notification_preference, notifications_enabled")
     .eq("user_id", userId)
     .single();
-
   if (!profileData?.notifications_enabled) return;
 
   const pref = profileData.notification_preference || "push_and_email";
-  const shouldPush = pref === "push_and_email" || pref === "push_only";
-  const shouldEmail = pref === "push_and_email" || pref === "email_only";
+  const title = "🎬 Video Ready!";
+  const body = `Your video "${prompt.slice(0, 60)}" has been generated.`;
 
-  const title = type === "image" ? "🎨 Image Ready!" : "🎬 Video Ready!";
-  const body = `Your ${type} "${prompt.slice(0, 60)}" has been generated.`;
-
-  if (shouldPush) {
+  if (pref === "push_and_email" || pref === "push_only") {
     try {
-      const pushRes = await fetch(`${supabaseUrl}/functions/v1/send-push`, {
+      await fetch(`${supabaseUrl}/functions/v1/send-push`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${serviceRoleKey}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceRoleKey}` },
         body: JSON.stringify({ userId, title, body, url: "/" }),
       });
-      if (!pushRes.ok) console.error("Push failed:", pushRes.status);
     } catch (e) {
       console.error("Push error:", e);
     }
   }
 
-  if (shouldEmail) {
+  if (pref === "push_and_email" || pref === "email_only") {
     const BREVO_API_KEY = Deno.env.get("BREVO_API_KEY");
     if (BREVO_API_KEY) {
       try {
@@ -894,3 +325,165 @@ async function sendGenerationNotification(
     }
   }
 }
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  try {
+    const { prompt, modelId, duration, quality, referenceMediaUrl } = await req.json();
+    if (!prompt) throw new Error("Prompt is required");
+
+    const LEONARDO_API_KEY = Deno.env.get("LEONARDO_API_KEY_NEW") || Deno.env.get("LEONARDO_API_KEY");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+    const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY)
+      throw new Error("Backend not configured");
+    if (!LEONARDO_API_KEY) throw new Error("Leonardo API key is not configured");
+
+    // Auth
+    const authHeader = req.headers.get("Authorization") || "";
+    const jwt = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    let userId = "anonymous";
+    let userEmail = "";
+    if (jwt) {
+      const uc = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        global: { headers: { Authorization: `Bearer ${jwt}` } },
+        auth: { persistSession: false },
+      });
+      const { data } = await uc.auth.getUser();
+      if (data?.user?.id) userId = data.user.id;
+      if (data?.user?.email) userEmail = data.user.email;
+    }
+
+    const CEO_EMAIL = "khaleelktn@gmail.com";
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+
+    if (userId === "anonymous") {
+      return new Response(
+        JSON.stringify({ error: "Please sign in and subscribe to generate videos." }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Subscription check
+    const { data: sub } = await admin
+      .from("subscriptions")
+      .select("tier, status, expires_at")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .maybeSingle();
+
+    const tier =
+      sub && sub.status === "active" && (!sub.expires_at || new Date(sub.expires_at) > new Date())
+        ? sub.tier
+        : "free";
+
+    if (tier === "free") {
+      return new Response(
+        JSON.stringify({ error: "Video generation requires a paid plan.", limit_reached: true }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const tierLimits: Record<string, number> = { free: 0, basic: 2, pro: 8, ultimate: 999999 };
+    const dailyLimit = userEmail === CEO_EMAIL ? 20 : tierLimits[tier] || 0;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const { count } = await admin
+      .from("generated_videos")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .gte("created_at", today.toISOString());
+
+    if ((count || 0) >= dailyLimit) {
+      return new Response(
+        JSON.stringify({
+          error: `Daily video limit reached (${dailyLimit}/day). Upgrade for more.`,
+          limit_reached: true,
+        }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Resolve model
+    const selectedModel = VIDEO_MODELS[modelId] ? String(modelId) : DEFAULT_MODEL;
+    const config = VIDEO_MODELS[selectedModel];
+    const effectiveDuration = pickDuration(duration, config.durations);
+    const effectiveQuality = pickQuality(quality, config.qualities);
+    const is1080 = effectiveQuality === "1080p";
+    const vidWidth = is1080 ? 1920 : 1280;
+    const vidHeight = is1080 ? 1080 : 720;
+
+    // Handle reference media (describe via Gemini and augment prompt)
+    let generationPrompt = String(prompt);
+    if (referenceMediaUrl && GEMINI_API_KEY) {
+      try {
+        let refUrl = String(referenceMediaUrl);
+        if (refUrl.startsWith("storage:")) {
+          refUrl = await resolveStorageRef(admin, refUrl);
+        }
+        const refRes = await fetch(refUrl);
+        if (refRes.ok) {
+          const bytes = await refRes.arrayBuffer();
+          const contentType = refRes.headers.get("content-type") || "image/png";
+          if (contentType.startsWith("image/")) {
+            const desc = await describeReference(GEMINI_API_KEY, bytes, contentType);
+            if (desc) generationPrompt = `${prompt}\n\nReference description: ${desc}`;
+            console.log(`[generate-video] Reference described (${contentType})`);
+          }
+        }
+      } catch (e) {
+        console.error("Reference analysis failed (non-blocking):", e);
+      }
+    }
+
+    console.log(
+      `[generate-video] model=${selectedModel} (${config.apiModel}) api=${config.apiVersion} duration=${effectiveDuration} quality=${effectiveQuality}`
+    );
+
+    let videoUrl: string;
+
+    if (config.apiVersion === "v2") {
+      videoUrl = await generateV2(
+        LEONARDO_API_KEY,
+        config.apiModel,
+        generationPrompt,
+        effectiveDuration,
+        effectiveQuality,
+        vidWidth,
+        vidHeight
+      );
+    } else {
+      videoUrl = await generateV1TextToVideo(
+        LEONARDO_API_KEY,
+        config.apiModel,
+        generationPrompt,
+        effectiveDuration,
+        vidWidth,
+        vidHeight
+      );
+    }
+
+    const ref = await uploadVideo(admin, userId, prompt, videoUrl);
+
+    try {
+      await sendNotification(admin, SUPABASE_URL, SERVICE_ROLE_KEY, userId, prompt);
+    } catch (e) {
+      console.error("Notification failed (non-blocking):", e);
+    }
+
+    return new Response(JSON.stringify({ video: ref }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (e) {
+    console.error("generate-video error:", e);
+    return new Response(
+      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+});

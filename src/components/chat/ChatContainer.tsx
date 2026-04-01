@@ -274,10 +274,7 @@ export const ChatContainer = () => {
       referenceMediaUrl = opts.reference.dataUrl;
     }
 
-    if (!referenceMediaUrl && opts.reference?.kind === 'video') {
-      const uploaded = await uploadFiles([opts.reference.file]);
-      referenceMediaUrl = uploaded[0];
-    }
+    // Image-only references now
 
     // Upload base64 reference media to storage first to avoid payload size issues
     if (referenceMediaUrl && referenceMediaUrl.startsWith('data:') && user) {
@@ -371,7 +368,6 @@ export const ChatContainer = () => {
         let referenceMediaUrl: string | undefined;
 
         if (opts.reference?.kind === 'image') {
-          // Upload base64 to storage to avoid payload size limits
           let refUrl = opts.reference.dataUrl;
           if (refUrl.startsWith('data:') && user) {
             try {
@@ -393,9 +389,6 @@ export const ChatContainer = () => {
             }
           }
           referenceMediaUrl = refUrl;
-        } else if (opts.reference?.kind === 'video') {
-          const uploaded = await uploadFiles([opts.reference.file]);
-          referenceMediaUrl = uploaded[0];
         }
 
         const { data, error } = await supabase.functions.invoke('generate-video', {
@@ -893,7 +886,7 @@ export const ChatContainer = () => {
             try {
               const referenceMediaUrl = imageUrls[0] ?? videoFileUrls[0];
               const { data, error } = await supabase.functions.invoke('generate-video', {
-                body: { prompt: vidPrompt, modelId: 'sora_2', referenceMediaUrl, appInForeground: isAppInForeground() },
+                body: { prompt: vidPrompt, modelId: 'kling_3', referenceMediaUrl, appInForeground: isAppInForeground() },
               });
               if (error) throw error;
               if (data?.error) throw new Error(data.error);

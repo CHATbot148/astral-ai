@@ -1,18 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { Switch } from "@/components/ui/switch";
-import { Loader2, Sparkles, RotateCcw, Image as ImageIcon, Wand2, AlertCircle, Upload, X, FileVideo } from "lucide-react";
+import { Loader2, Sparkles, RotateCcw, Wand2, AlertCircle, Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSubscription } from "@/hooks/useSubscription";
 
-export type ImageGenReference =
-  | { kind: "image"; dataUrl: string }
-  | { kind: "video"; file: File };
+export type ImageGenReference = { kind: "image"; dataUrl: string };
 
 export type ImageGenOptions = {
   prompt: string;
@@ -21,7 +17,6 @@ export type ImageGenOptions = {
   quality: "fast" | "balanced" | "high";
   reference?: ImageGenReference;
   referenceMediaUrl?: string;
-  // Backward-compatible fallback for legacy callers
   referenceImageUrl?: string;
   modelId?: string;
 };
@@ -33,39 +28,38 @@ interface Props {
   initialPrompt?: string;
 }
 
-const STYLE_PRESETS: Array<{ value: ImageGenOptions["style"]; label: string; hint: string; icon: string }> = [
-  { value: "none", label: "None", hint: "Raw prompt", icon: "✨" },
-  { value: "photoreal", label: "Photo", hint: "Realistic", icon: "📷" },
-  { value: "cinematic", label: "Cinema", hint: "Dramatic", icon: "🎬" },
-  { value: "anime", label: "Anime", hint: "Illustrated", icon: "🎨" },
-  { value: "sketch", label: "Sketch", hint: "Pencil/ink", icon: "✏️" },
+const STYLES: Array<{ value: ImageGenOptions["style"]; label: string; icon: string }> = [
+  { value: "none", label: "None", icon: "✨" },
+  { value: "photoreal", label: "Photo", icon: "📷" },
+  { value: "cinematic", label: "Cinema", icon: "🎬" },
+  { value: "anime", label: "Anime", icon: "🎨" },
+  { value: "sketch", label: "Sketch", icon: "✏️" },
 ];
 
-const ASPECT_PRESETS: Array<{ value: ImageGenOptions["aspectRatio"]; label: string; icon: string }> = [
-  { value: "1:1", label: "Square", icon: "◻️" },
-  { value: "16:9", label: "Wide", icon: "▬" },
-  { value: "9:16", label: "Tall", icon: "▮" },
-  { value: "3:2", label: "Photo", icon: "🖼️" },
-  { value: "4:3", label: "Classic", icon: "📺" },
+const ASPECTS: Array<{ value: ImageGenOptions["aspectRatio"]; label: string }> = [
+  { value: "1:1", label: "1:1" },
+  { value: "16:9", label: "16:9" },
+  { value: "9:16", label: "9:16" },
+  { value: "3:2", label: "3:2" },
+  { value: "4:3", label: "4:3" },
 ];
 
 const IMAGE_MODELS: Array<{ value: string; label: string; hint: string }> = [
-  { value: "nano_banana_2", label: "Nano Banana 2", hint: "Fast + sharp details" },
-  { value: "seedream_4_5", label: "Seedream 4.5", hint: "Text-heavy designs" },
+  { value: "nano_banana_2", label: "Nano Banana 2", hint: "Fast + sharp" },
+  { value: "seedream_4_5", label: "Seedream 4.5", hint: "Text designs" },
   { value: "lucid_origin", label: "Lucid Origin", hint: "Prompt adherence" },
-  { value: "flux_2_pro", label: "FLUX.2 Pro", hint: "High-fidelity output" },
-  { value: "phoenix", label: "Phoenix", hint: "Legacy fallback" },
+  { value: "flux_2_pro", label: "FLUX.2 Pro", hint: "High fidelity" },
+  { value: "phoenix", label: "Phoenix", hint: "Legacy" },
 ];
 
-// Removed quality presets as Gemini handles this automatically
-
-const PROMPT_SUGGESTIONS = [
+const SUGGESTIONS = [
   "A futuristic city at sunset with flying cars",
   "A cozy cabin in snowy mountains",
   "An astronaut walking on Mars",
-  "A magical forest with glowing mushrooms",
-  "A cyberpunk street market at night",
 ];
+
+const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
+const fadeUp = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.3 } } };
 
 export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPrompt = "" }: Props) => {
   const { canGenerateImage, remainingImages, tier, tierConfig } = useSubscription();
@@ -78,68 +72,31 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [last, setLast] = useState<ImageGenOptions | null>(null);
-  
-  // Reference media state
-  const [useReferenceMedia, setUseReferenceMedia] = useState(false);
   const [reference, setReference] = useState<ImageGenReference | null>(null);
-  const [referencePreview, setReferencePreview] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [refPreview, setRefPreview] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  // Reset prompt when initialPrompt changes
+  useEffect(() => { if (initialPrompt) setPrompt(initialPrompt); }, [initialPrompt]);
+
   useEffect(() => {
-    if (initialPrompt) {
-      setPrompt(initialPrompt);
-    }
-  }, [initialPrompt]);
-
-  // Handle file selection for reference media
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.type.startsWith("image/")) {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const dataUrl = ev.target?.result as string;
-        setReference({ kind: "image", dataUrl });
-        setReferencePreview(dataUrl);
-      };
-      reader.readAsDataURL(file);
-      return;
-    }
-
-    if (file.type === "video/mp4" || file.type === "video/webm" || file.type.startsWith("video/")) {
-      setReference({ kind: "video", file });
-      setReferencePreview(null);
-      return;
-    }
-
-    setError("Unsupported reference type. Please upload an image or mp4/webm video.");
-  };
-
-  const removeReference = () => {
-    setReference(null);
-    setReferencePreview(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
-  // Progress simulation during generation (fixed ~15s for Gemini)
-  useEffect(() => {
-    if (!isWorking) {
-      setProgress(0);
-      return;
-    }
-
-    const duration = 15000; // ~15s typical for Gemini flash image
-    const interval = 100;
-    const increment = (100 / duration) * interval * 0.9; // Cap at 90%
-
-    const timer = setInterval(() => {
-      setProgress((prev) => Math.min(prev + increment, 90));
-    }, interval);
-
-    return () => clearInterval(timer);
+    if (!isWorking) { setProgress(0); return; }
+    const t = setInterval(() => setProgress((p) => Math.min(p + 0.6, 90)), 100);
+    return () => clearInterval(t);
   }, [isWorking]);
+
+  const clearRef = () => { setReference(null); setRefPreview(null); if (fileRef.current) fileRef.current.value = ""; };
+
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f || !f.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const url = ev.target?.result as string;
+      setReference({ kind: "image", dataUrl: url });
+      setRefPreview(url);
+    };
+    reader.readAsDataURL(f);
+  };
 
   const run = async (override?: Partial<ImageGenOptions>) => {
     const opts: ImageGenOptions = {
@@ -147,315 +104,202 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
       style: override?.style ?? style,
       aspectRatio: override?.aspectRatio ?? aspectRatio,
       quality: "balanced",
-      reference: useReferenceMedia && reference ? reference : undefined,
+      reference: reference || undefined,
       modelId: canSelectModel ? selectedModel : "nano_banana_2",
     };
-
     if (!opts.prompt) return;
-
     setLast(opts);
-
     try {
       await onGenerate(opts);
-      // Close immediately — generation runs in background
       onOpenChange(false);
       setPrompt("");
-      removeReference();
-      setUseReferenceMedia(false);
+      clearRef();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Generation failed");
     }
   };
 
-  const useSuggestion = (suggestion: string) => {
-    setPrompt(suggestion);
-  };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <div className="p-2 rounded-lg bg-gradient-to-br from-xai-cyan/20 to-xai-purple/20">
-              <Wand2 className="h-5 w-5 text-xai-cyan" />
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto p-0 gap-0 border-border/50 bg-card/95 backdrop-blur-xl">
+        {/* Header */}
+        <div className="relative px-5 pt-5 pb-4">
+          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-xai-purple via-xai-cyan to-xai-purple rounded-t-lg" />
+          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-gradient-to-br from-xai-purple/20 to-xai-cyan/20 ring-1 ring-xai-purple/20">
+              <Wand2 className="h-5 w-5 text-xai-purple" />
             </div>
-            Generate Image
-          </DialogTitle>
-        </DialogHeader>
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">Generate Image</h2>
+              <p className="text-xs text-muted-foreground">AI-powered image creation</p>
+            </div>
+          </motion.div>
+        </div>
 
-        <div className="grid gap-4">
-          {/* Prompt Input */}
-          <div className="grid gap-2">
-            <Label className="flex items-center gap-2">
-              <ImageIcon className="h-4 w-4" />
-              Describe your image
-            </Label>
+        <motion.div variants={stagger} initial="hidden" animate="show" className="px-5 pb-5 space-y-4">
+          {/* Prompt */}
+          <motion.div variants={fadeUp}>
             <Textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="A beautiful sunset over mountains with a lake reflection..."
-              className="min-h-[80px] resize-none"
+              placeholder="Describe your image…"
+              className="min-h-[72px] resize-none bg-secondary/50 border-border/50 focus:ring-1 focus:ring-xai-purple/40 transition-all"
               disabled={isWorking}
             />
-            
-            {/* Suggestions */}
-            <div className="flex flex-wrap gap-1.5">
-              {PROMPT_SUGGESTIONS.slice(0, 3).map((suggestion) => (
-                <button
-                  key={suggestion}
-                  type="button"
-                  onClick={() => useSuggestion(suggestion)}
-                  disabled={isWorking}
-                  className="text-xs px-2 py-1 rounded-full bg-secondary hover:bg-secondary/80 text-muted-foreground transition-colors disabled:opacity-50"
-                >
-                  {suggestion.slice(0, 30)}...
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {SUGGESTIONS.map((s) => (
+                <button key={s} onClick={() => setPrompt(s)} disabled={isWorking}
+                  className="text-[11px] px-2.5 py-1 rounded-full bg-secondary/80 hover:bg-secondary text-muted-foreground transition-colors">
+                  {s.length > 28 ? s.slice(0, 28) + "…" : s}
                 </button>
               ))}
             </div>
-          </div>
+          </motion.div>
 
-          {/* Style Selection */}
-          <div className="grid gap-2">
-            <Label>Style</Label>
-            <div className="flex flex-wrap gap-2">
-              {STYLE_PRESETS.map((s) => (
-                <button
-                  key={s.value}
-                  type="button"
-                  onClick={() => setStyle(s.value)}
-                  disabled={isWorking}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-2 rounded-lg border transition-all text-sm",
-                    style === s.value
-                      ? "border-xai-cyan bg-xai-cyan/10 text-foreground"
-                      : "border-border bg-secondary/50 text-muted-foreground hover:border-xai-cyan/50"
-                  )}
-                >
-                  <span>{s.icon}</span>
-                  <span>{s.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Aspect Ratio */}
-          <div className="grid gap-2">
-            <Label>Aspect Ratio</Label>
-            <div className="flex flex-wrap gap-2">
-              {ASPECT_PRESETS.map((a) => (
-                <button
-                  key={a.value}
-                  type="button"
-                  onClick={() => setAspectRatio(a.value)}
-                  disabled={isWorking}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-2 rounded-lg border transition-all text-sm",
-                    aspectRatio === a.value
-                      ? "border-xai-cyan bg-xai-cyan/10 text-foreground"
-                      : "border-border bg-secondary/50 text-muted-foreground hover:border-xai-cyan/50"
-                  )}
-                >
-                  <span>{a.icon}</span>
-                  <span>{a.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Model Selection (Pro/Ultimate only) */}
-          {canSelectModel && (
-            <div className="grid gap-2">
-              <Label className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4" />
-                AI Model
-              </Label>
-              <div className="flex flex-wrap gap-2">
-                {IMAGE_MODELS.map((m) => (
-                  <button
-                    key={m.value}
-                    type="button"
-                    onClick={() => setSelectedModel(m.value)}
-                    disabled={isWorking}
+          {/* Style + Aspect in a grid */}
+          <motion.div variants={fadeUp} className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Style</p>
+              <div className="flex flex-wrap gap-1.5">
+                {STYLES.map((s) => (
+                  <button key={s.value} onClick={() => setStyle(s.value)} disabled={isWorking}
                     className={cn(
-                      "flex flex-col px-3 py-1.5 rounded-lg border transition-all text-xs",
-                      selectedModel === m.value
-                        ? "border-xai-cyan bg-xai-cyan/10 text-foreground"
-                        : "border-border bg-secondary/50 text-muted-foreground hover:border-xai-cyan/50"
-                    )}
-                  >
-                    <span className="font-medium">{m.label}</span>
-                    <span className="text-[10px] opacity-70">{m.hint}</span>
+                      "flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs transition-all",
+                      style === s.value
+                        ? "border-xai-purple bg-xai-purple/10 text-foreground"
+                        : "border-border/50 bg-secondary/30 text-muted-foreground hover:border-xai-purple/40"
+                    )}>
+                    <span className="text-sm">{s.icon}</span>
+                    <span>{s.label}</span>
                   </button>
                 ))}
               </div>
             </div>
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Ratio</p>
+              <div className="flex flex-wrap gap-1.5">
+                {ASPECTS.map((a) => (
+                  <button key={a.value} onClick={() => setAspectRatio(a.value)} disabled={isWorking}
+                    className={cn(
+                      "px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all",
+                      aspectRatio === a.value
+                        ? "border-xai-purple bg-xai-purple/10 text-foreground"
+                        : "border-border/50 bg-secondary/30 text-muted-foreground hover:border-xai-purple/40"
+                    )}>
+                    {a.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Model (Pro/Ultimate) */}
+          {canSelectModel && (
+            <motion.div variants={fadeUp} className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5" /> AI Model
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {IMAGE_MODELS.map((m) => (
+                  <button key={m.value} onClick={() => setSelectedModel(m.value)} disabled={isWorking}
+                    className={cn(
+                      "flex flex-col px-3 py-2 rounded-xl border transition-all text-left",
+                      selectedModel === m.value
+                        ? "border-xai-purple bg-xai-purple/10 shadow-[0_0_12px_-4px_hsl(var(--xai-purple)/0.3)]"
+                        : "border-border/50 bg-secondary/30 hover:border-xai-purple/40"
+                    )}>
+                    <span className="text-xs font-medium text-foreground">{m.label}</span>
+                    <span className="text-[10px] text-muted-foreground">{m.hint}</span>
+                  </button>
+                ))}
+              </div>
+            </motion.div>
           )}
 
-          {/* Reference media toggle */}
-          <div className="grid gap-3">
-            <div className="flex items-center justify-between">
-              <Label className="flex items-center gap-2">
-                <Upload className="h-4 w-4" />
-                Use Reference (image/video)
-              </Label>
-              <Switch
-                checked={useReferenceMedia}
-                onCheckedChange={setUseReferenceMedia}
-                disabled={isWorking}
-              />
-            </div>
-            
-            <AnimatePresence>
-              {useReferenceMedia && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="space-y-2"
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*,video/mp4,video/webm"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                  />
-                  
-                  {reference?.kind === "image" && referencePreview ? (
-                    <div className="relative inline-block">
-                      <img 
-                        src={referencePreview} 
-                        alt="Reference" 
-                        className="h-24 w-24 object-cover rounded-lg border border-border"
-                      />
-                      <button
-                        type="button"
-                        onClick={removeReference}
-                        className="absolute -top-2 -right-2 p-1 rounded-full bg-destructive text-destructive-foreground shadow-md"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ) : reference?.kind === "video" ? (
-                    <div className="relative inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-secondary/50">
-                      <FileVideo className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground max-w-[260px] truncate">{reference.file.name}</span>
-                      <button
-                        type="button"
-                        onClick={removeReference}
-                        className="ml-2 p-1 rounded-full bg-destructive text-destructive-foreground shadow-md"
-                        aria-label="Remove reference"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={isWorking}
-                      className="w-full gap-2"
-                    >
-                      <Upload className="h-4 w-4" />
-                      Upload Reference Media
-                    </Button>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    Add an image or video reference so generation follows the same style/content.
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+          {/* Reference */}
+          <motion.div variants={fadeUp}>
+            <input ref={fileRef} type="file" accept="image/*" onChange={onFile} className="hidden" />
+            {reference && refPreview ? (
+              <div className="relative inline-block">
+                <img src={refPreview} alt="Ref" className="h-20 w-20 object-cover rounded-xl border border-border/50" />
+                <button onClick={clearRef} className="absolute -top-1.5 -right-1.5 p-1 rounded-full bg-destructive text-destructive-foreground shadow">
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => fileRef.current?.click()} disabled={isWorking}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-border/60 text-xs text-muted-foreground hover:border-xai-purple/40 hover:text-foreground transition-all">
+                <Upload className="h-3.5 w-3.5" /> Add reference image (optional)
+              </button>
+            )}
+          </motion.div>
 
-          {/* Progress Bar */}
+          {/* Progress */}
           <AnimatePresence>
             {isWorking && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="space-y-2"
-              >
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Generating...</span>
-                  <span className="text-xai-cyan">{Math.round(progress)}%</span>
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="space-y-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Generating…</span>
+                  <span className="text-xai-purple font-medium">{Math.round(progress)}%</span>
                 </div>
-                <Progress value={progress} className="h-2" />
-                <p className="text-xs text-muted-foreground text-center">
-                  Creating your masterpiece with AI magic ✨
-                </p>
+                <Progress value={progress} className="h-1.5" />
+                <p className="text-[11px] text-muted-foreground text-center">Creating your masterpiece ✨</p>
               </motion.div>
             )}
           </AnimatePresence>
 
-          {/* Error Display */}
+          {/* Error */}
           <AnimatePresence>
             {error && !isWorking && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/30"
-              >
-                <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
-                <p className="text-sm text-destructive">{error}</p>
+              <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                className="flex items-start gap-2 p-3 rounded-xl bg-destructive/10 border border-destructive/20">
+                <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                <p className="text-xs text-destructive">{error}</p>
               </motion.div>
             )}
           </AnimatePresence>
 
-          {/* Actions */}
-          <div className="flex items-center justify-between gap-2 pt-2">
-            <AnimatePresence>
-              {last && !isWorking && (
-                <motion.div
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -10 }}
-                >
-                  <Button
-                    variant="secondary"
-                    onClick={() => run(last)}
-                    className="gap-2"
-                  >
-                    <RotateCcw className="h-4 w-4" />
-                    Retry
-                  </Button>
-                </motion.div>
+          {/* Limits */}
+          {!canGenerateImage && (
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-destructive/10 border border-destructive/20">
+              <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
+              <p className="text-xs text-destructive">
+                Daily image limit reached ({tierConfig.limits.imagesPerDay}/{tier} plan).
+              </p>
+            </div>
+          )}
+
+          {/* Footer */}
+          <motion.div variants={fadeUp} className="flex items-center justify-between pt-1">
+            <div className="flex items-center gap-2">
+              <AnimatePresence>
+                {last && !isWorking && (
+                  <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}>
+                    <Button variant="secondary" size="sm" onClick={() => run(last)} className="gap-1.5 rounded-xl text-xs">
+                      <RotateCcw className="h-3.5 w-3.5" /> Retry
+                    </Button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              {canGenerateImage && (
+                <p className="text-[11px] text-muted-foreground">
+                  {remainingImages} image{remainingImages !== 1 ? "s" : ""} left
+                </p>
               )}
-            </AnimatePresence>
-
-            {/* Limit info */}
-            {!canGenerateImage && (
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/30">
-                <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
-                <p className="text-sm text-destructive">Daily image limit reached ({tierConfig.limits.imagesPerDay}/{tier} plan). Upgrade for more.</p>
-              </div>
-            )}
-            {canGenerateImage && (
-              <p className="text-xs text-muted-foreground">{remainingImages} image{remainingImages !== 1 ? 's' : ''} remaining today</p>
-            )}
-
-            <Button
-              variant="xai"
-              onClick={() => run()}
-              disabled={isWorking || !prompt.trim() || !canGenerateImage}
-              className="gap-2 ml-auto min-w-[140px]"
-            >
+            </div>
+            <Button onClick={() => run()} disabled={isWorking || !prompt.trim() || !canGenerateImage}
+              className={cn(
+                "gap-2 min-w-[130px] rounded-xl font-medium",
+                "bg-gradient-to-r from-xai-purple to-xai-cyan text-white hover:opacity-90 transition-opacity"
+              )}>
               {isWorking ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Generating...
-                </>
+                <><Loader2 className="h-4 w-4 animate-spin" /> Generating…</>
               ) : (
-                <>
-                  <Sparkles className="h-4 w-4" />
-                  Generate
-                </>
+                <><Wand2 className="h-4 w-4" /> Generate</>
               )}
             </Button>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       </DialogContent>
     </Dialog>
   );
