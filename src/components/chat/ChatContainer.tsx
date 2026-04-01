@@ -368,7 +368,6 @@ export const ChatContainer = () => {
         let referenceMediaUrl: string | undefined;
 
         if (opts.reference?.kind === 'image') {
-          // Upload base64 to storage to avoid payload size limits
           let refUrl = opts.reference.dataUrl;
           if (refUrl.startsWith('data:') && user) {
             try {
@@ -390,7 +389,7 @@ export const ChatContainer = () => {
             }
           }
           referenceMediaUrl = refUrl;
-        // Image-only references now
+        }
 
         const { data, error } = await supabase.functions.invoke('generate-video', {
           body: {
