@@ -274,10 +274,7 @@ export const ChatContainer = () => {
       referenceMediaUrl = opts.reference.dataUrl;
     }
 
-    if (!referenceMediaUrl && opts.reference?.kind === 'video') {
-      const uploaded = await uploadFiles([opts.reference.file]);
-      referenceMediaUrl = uploaded[0];
-    }
+    // Image-only references now
 
     // Upload base64 reference media to storage first to avoid payload size issues
     if (referenceMediaUrl && referenceMediaUrl.startsWith('data:') && user) {
