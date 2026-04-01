@@ -1,12 +1,10 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { Switch } from "@/components/ui/switch";
-import { Loader2, Sparkles, AlertCircle, Video, Lock, Clock, Monitor, Upload, X, FileVideo } from "lucide-react";
+import { Loader2, Sparkles, AlertCircle, Video, Lock, Upload, X, Film } from "lucide-react";
 import { useSubscription } from "@/hooks/useSubscription";
 import {
   DEFAULT_VIDEO_MODEL_ID,
@@ -17,10 +15,9 @@ import {
   type VideoModelId,
   type VideoQualityOption,
 } from "@/lib/videoModels";
+import { cn } from "@/lib/utils";
 
-export type VideoGenReference =
-  | { kind: "image"; dataUrl: string }
-  | { kind: "video"; file: File };
+export type VideoGenReference = { kind: "image"; dataUrl: string };
 
 export type VideoGenOptions = {
   prompt: string;
@@ -37,16 +34,21 @@ interface Props {
   initialPrompt?: string;
 }
 
-const PROMPT_SUGGESTIONS = [
-  "A dog running on the beach at sunset",
-  "Timelapse of clouds moving over mountains",
-  "A spaceship flying through an asteroid field",
-  "Rain falling on a city street at night",
+const SUGGESTIONS = [
+  "A dog running on a beach at golden hour",
+  "Timelapse of a flower blooming",
+  "A spaceship flying through nebula",
+  "Rain on a neon-lit Tokyo street",
 ];
 
-const QUALITY_HINTS: Record<VideoQualityOption, string> = {
-  "720p": "Faster generation",
-  "1080p": "Higher detail",
+const stagger = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.04 } },
+};
+
+const fadeUp = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
 };
 
 export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPrompt = "" }: Props) => {
@@ -54,102 +56,65 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   const [prompt, setPrompt] = useState(initialPrompt);
   const [isWorking, setIsWorking] = useState(false);
   const [selectedModel, setSelectedModel] = useState<VideoModelId>(DEFAULT_VIDEO_MODEL_ID);
-  const [selectedDuration, setSelectedDuration] = useState<VideoDurationOption>(6);
+  const [selectedDuration, setSelectedDuration] = useState<VideoDurationOption>(
+    getModelDurationOptions(DEFAULT_VIDEO_MODEL_ID)[0]
+  );
   const [selectedQuality, setSelectedQuality] = useState<VideoQualityOption>("720p");
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
-
-  // Reference media
-  const [useReference, setUseReference] = useState(false);
   const [reference, setReference] = useState<VideoGenReference | null>(null);
-  const [referencePreview, setReferencePreview] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [refPreview, setRefPreview] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const isPaid = tier !== "free";
-  const durationOptions = useMemo(
-    () => getModelDurationOptions(selectedModel, useReference),
-    [selectedModel, useReference]
-  );
-  const qualityOptions = useMemo(() => getModelQualityOptions(selectedModel), [selectedModel]);
+  const durations = useMemo(() => getModelDurationOptions(selectedModel), [selectedModel]);
+  const qualities = useMemo(() => getModelQualityOptions(selectedModel), [selectedModel]);
+
+  useEffect(() => { if (initialPrompt) setPrompt(initialPrompt); }, [initialPrompt]);
 
   useEffect(() => {
-    if (initialPrompt) setPrompt(initialPrompt);
-  }, [initialPrompt]);
-
-  useEffect(() => {
-    if (!isWorking) {
-      setProgress(0);
-      return;
-    }
-    const duration = 60000;
-    const interval = 200;
-    const increment = (100 / duration) * interval * 0.9;
-    const timer = setInterval(() => {
-      setProgress((prev) => Math.min(prev + increment, 90));
-    }, interval);
-    return () => clearInterval(timer);
+    if (!isWorking) { setProgress(0); return; }
+    const t = setInterval(() => setProgress((p) => Math.min(p + 0.15, 90)), 200);
+    return () => clearInterval(t);
   }, [isWorking]);
 
   useEffect(() => {
-    if (!durationOptions.includes(selectedDuration)) {
-      setSelectedDuration(durationOptions[0]);
-    }
-  }, [durationOptions, selectedDuration]);
+    if (!durations.includes(selectedDuration)) setSelectedDuration(durations[0]);
+  }, [durations, selectedDuration]);
 
   useEffect(() => {
-    if (!qualityOptions.includes(selectedQuality)) {
-      setSelectedQuality(qualityOptions[0]);
-    }
-  }, [qualityOptions, selectedQuality]);
+    if (!qualities.includes(selectedQuality)) setSelectedQuality(qualities[0]);
+  }, [qualities, selectedQuality]);
 
-  const resetReference = () => {
-    setReference(null);
-    setReferencePreview(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
+  const clearRef = () => { setReference(null); setRefPreview(null); if (fileRef.current) fileRef.current.value = ""; };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.type.startsWith("image/")) {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const dataUrl = ev.target?.result as string;
-        setReference({ kind: "image", dataUrl });
-        setReferencePreview(dataUrl);
-      };
-      reader.readAsDataURL(file);
-      return;
-    }
-
-    if (file.type === "video/mp4" || file.type === "video/webm" || file.type.startsWith("video/")) {
-      setReference({ kind: "video", file });
-      setReferencePreview(null);
-      return;
-    }
-
-    setError("Unsupported reference type. Please upload an image or an mp4/webm video.");
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!f.type.startsWith("image/")) { setError("Only image references are supported"); return; }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const url = ev.target?.result as string;
+      setReference({ kind: "image", dataUrl: url });
+      setRefPreview(url);
+    };
+    reader.readAsDataURL(f);
   };
 
   const run = async () => {
     if (!prompt.trim()) return;
-
     try {
       setIsWorking(true);
       setError(null);
-
       await onGenerate({
         prompt: prompt.trim(),
         modelId: selectedModel,
         ...(isPaid ? { duration: selectedDuration, quality: selectedQuality } : {}),
-        ...(useReference && reference ? { reference } : {}),
+        ...(reference ? { reference } : {}),
       });
-
       onOpenChange(false);
       setPrompt("");
-      setUseReference(false);
-      resetReference();
+      clearRef();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Video generation failed");
     } finally {
@@ -159,228 +124,130 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <div className="p-2 rounded-lg bg-gradient-to-br from-xai-cyan/20 to-xai-purple/20">
-              <Video className="h-5 w-5 text-xai-cyan" />
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto p-0 gap-0 border-border/50 bg-card/95 backdrop-blur-xl">
+        {/* Header */}
+        <div className="relative px-5 pt-5 pb-4">
+          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-xai-cyan via-xai-purple to-xai-cyan rounded-t-lg" />
+          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-gradient-to-br from-xai-cyan/20 to-xai-purple/20 ring-1 ring-xai-cyan/20">
+              <Film className="h-5 w-5 text-xai-cyan" />
             </div>
-            Generate Video
-          </DialogTitle>
-        </DialogHeader>
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">Generate Video</h2>
+              <p className="text-xs text-muted-foreground">Powered by Leonardo AI</p>
+            </div>
+          </motion.div>
+        </div>
 
-        <div className="grid gap-4">
+        <motion.div variants={stagger} initial="hidden" animate="show" className="px-5 pb-5 space-y-4">
           {/* Prompt */}
-          <div className="grid gap-2">
-            <Label className="flex items-center gap-2">
-              <Video className="h-4 w-4" />
-              Describe your video
-            </Label>
+          <motion.div variants={fadeUp}>
             <Textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="A beautiful timelapse of a sunset over the ocean..."
-              className="min-h-[80px] resize-none"
+              placeholder="Describe your video scene..."
+              className="min-h-[72px] resize-none bg-secondary/50 border-border/50 focus:ring-1 focus:ring-xai-cyan/40 transition-all"
               disabled={isWorking}
             />
-            <div className="flex flex-wrap gap-1.5">
-              {PROMPT_SUGGESTIONS.slice(0, 3).map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setPrompt(s)}
-                  disabled={isWorking}
-                  className="text-xs px-2 py-1 rounded-full bg-secondary hover:bg-secondary/80 text-muted-foreground transition-colors disabled:opacity-50"
-                >
-                  {s.slice(0, 30)}...
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {SUGGESTIONS.slice(0, 3).map((s) => (
+                <button key={s} onClick={() => setPrompt(s)} disabled={isWorking}
+                  className="text-[11px] px-2.5 py-1 rounded-full bg-secondary/80 hover:bg-secondary text-muted-foreground transition-colors">
+                  {s.length > 28 ? s.slice(0, 28) + "…" : s}
                 </button>
               ))}
             </div>
-          </div>
+          </motion.div>
 
-          {/* Reference media */}
-          <div className="grid gap-3">
-            <div className="flex items-center justify-between">
-              <Label className="flex items-center gap-2">
-                <Upload className="h-4 w-4" />
-                Use Reference (image/video)
-              </Label>
-              <Switch checked={useReference} onCheckedChange={setUseReference} disabled={isWorking} />
-            </div>
-
-            <AnimatePresence>
-              {useReference && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="space-y-2"
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*,video/mp4,video/webm"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                  />
-
-                  {reference?.kind === "image" && referencePreview ? (
-                    <div className="relative inline-block">
-                      <img
-                        src={referencePreview}
-                        alt="Reference"
-                        className="h-24 w-24 object-cover rounded-lg border border-border"
-                      />
-                      <button
-                        type="button"
-                        onClick={resetReference}
-                        className="absolute -top-2 -right-2 p-1 rounded-full bg-destructive text-destructive-foreground shadow-md"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ) : reference?.kind === "video" ? (
-                    <div className="relative inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-secondary/50">
-                      <FileVideo className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground max-w-[280px] truncate">
-                        {reference.file.name}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={resetReference}
-                        className="ml-2 p-1 rounded-full bg-destructive text-destructive-foreground shadow-md"
-                        aria-label="Remove reference"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={isWorking}
-                      className="w-full gap-2"
-                    >
-                      <Upload className="h-4 w-4" />
-                      Upload Reference
-                    </Button>
-                  )}
-
-                  <p className="text-xs text-muted-foreground">
-                    Images are used as visual guidance; video references are analyzed only if supported.
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Model selector - paid only */}
+          {/* Model */}
           {canGenerateVideo && (
-            <div className="grid gap-2">
-              <Label className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4" />
-                Video Model
-              </Label>
-              <div className="flex flex-wrap gap-2">
-                {VIDEO_MODEL_OPTIONS.map((model) => (
-                  <button
-                    key={model.value}
-                    type="button"
-                    onClick={() => setSelectedModel(model.value)}
-                    disabled={isWorking}
-                    className={`flex flex-col px-3 py-1.5 rounded-lg border transition-all text-xs ${
-                      selectedModel === model.value
-                        ? 'border-xai-cyan bg-xai-cyan/10 text-foreground'
-                        : 'border-border bg-secondary/50 text-muted-foreground hover:border-xai-cyan/50'
-                    }`}
-                  >
-                    <span className="font-medium">{model.label}</span>
-                    <span className="text-[10px] opacity-70">{model.hint}</span>
+            <motion.div variants={fadeUp} className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5" /> Model
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {VIDEO_MODEL_OPTIONS.map((m) => (
+                  <button key={m.value} onClick={() => setSelectedModel(m.value)} disabled={isWorking}
+                    className={cn(
+                      "flex flex-col items-start px-3 py-2.5 rounded-xl border transition-all text-left",
+                      selectedModel === m.value
+                        ? "border-xai-cyan bg-xai-cyan/10 shadow-[0_0_12px_-4px_hsl(var(--xai-cyan)/0.3)]"
+                        : "border-border/50 bg-secondary/30 hover:border-xai-cyan/40"
+                    )}>
+                    <span className="text-xs font-medium text-foreground">{m.label}</span>
+                    <span className="text-[10px] text-muted-foreground leading-tight mt-0.5">{m.hint}</span>
                   </button>
                 ))}
               </div>
-            </div>
+            </motion.div>
           )}
 
-          {/* Duration & Quality - paid only */}
+          {/* Duration + Quality row */}
           {isPaid && (
-            <div className="flex flex-col gap-3">
-              {/* Duration */}
-              <div className="grid gap-2">
-                <Label className="flex items-center gap-2 text-sm">
-                  <Clock className="h-4 w-4" />
-                  Duration
-                </Label>
-                <div className="flex flex-wrap gap-2">
-                  {durationOptions.map((opt) => (
-                    <button
-                      key={opt}
-                      type="button"
-                      onClick={() => setSelectedDuration(opt)}
-                      disabled={isWorking}
-                      className={`px-3 py-1.5 rounded-lg border transition-all text-xs font-medium ${
-                        selectedDuration === opt
-                          ? 'border-xai-cyan bg-xai-cyan/10 text-foreground'
-                          : 'border-border bg-secondary/50 text-muted-foreground hover:border-xai-cyan/50'
-                      }`}
-                    >
-                      {opt}s
+            <motion.div variants={fadeUp} className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">Duration</p>
+                <div className="flex gap-1.5">
+                  {durations.map((d) => (
+                    <button key={d} onClick={() => setSelectedDuration(d)} disabled={isWorking}
+                      className={cn(
+                        "flex-1 py-1.5 rounded-lg border text-xs font-medium transition-all",
+                        selectedDuration === d
+                          ? "border-xai-cyan bg-xai-cyan/10 text-foreground"
+                          : "border-border/50 bg-secondary/30 text-muted-foreground hover:border-xai-cyan/40"
+                      )}>
+                      {d}s
                     </button>
                   ))}
                 </div>
               </div>
-
-              {/* Quality */}
-              <div className="grid gap-2">
-                <Label className="flex items-center gap-2 text-sm">
-                  <Monitor className="h-4 w-4" />
-                  Quality
-                </Label>
-                <div className="flex flex-wrap gap-2">
-                  {qualityOptions.map((opt) => (
-                    <button
-                      key={opt}
-                      type="button"
-                      onClick={() => setSelectedQuality(opt)}
-                      disabled={isWorking}
-                      className={`flex flex-col items-center px-3 py-1.5 rounded-lg border transition-all text-xs ${
-                        selectedQuality === opt
-                          ? 'border-xai-cyan bg-xai-cyan/10 text-foreground'
-                          : 'border-border bg-secondary/50 text-muted-foreground hover:border-xai-cyan/50'
-                      }`}
-                    >
-                      <span className="font-medium">{opt}</span>
-                      <span className="text-[10px] opacity-70">{QUALITY_HINTS[opt]}</span>
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">Quality</p>
+                <div className="flex gap-1.5">
+                  {qualities.map((q) => (
+                    <button key={q} onClick={() => setSelectedQuality(q)} disabled={isWorking}
+                      className={cn(
+                        "flex-1 py-1.5 rounded-lg border text-xs font-medium transition-all",
+                        selectedQuality === q
+                          ? "border-xai-cyan bg-xai-cyan/10 text-foreground"
+                          : "border-border/50 bg-secondary/30 text-muted-foreground hover:border-xai-cyan/40"
+                      )}>
+                      {q}
                     </button>
                   ))}
                 </div>
               </div>
-            </div>
+            </motion.div>
           )}
 
-          {/* Not paid - locked hint */}
-          {!isPaid && canGenerateVideo && (
-            <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/50 border border-border">
-              <Lock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <p className="text-xs text-muted-foreground">Duration & quality options available on paid plans</p>
-            </div>
-          )}
+          {/* Reference */}
+          <motion.div variants={fadeUp}>
+            <input ref={fileRef} type="file" accept="image/*" onChange={onFile} className="hidden" />
+            {reference && refPreview ? (
+              <div className="relative inline-block">
+                <img src={refPreview} alt="Ref" className="h-20 w-20 object-cover rounded-xl border border-border/50" />
+                <button onClick={clearRef} className="absolute -top-1.5 -right-1.5 p-1 rounded-full bg-destructive text-destructive-foreground shadow">
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => fileRef.current?.click()} disabled={isWorking}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-border/60 text-xs text-muted-foreground hover:border-xai-cyan/40 hover:text-foreground transition-all">
+                <Upload className="h-3.5 w-3.5" /> Add reference image (optional)
+              </button>
+            )}
+          </motion.div>
 
           {/* Progress */}
           <AnimatePresence>
             {isWorking && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="space-y-2"
-              >
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Generating video...</span>
-                  <span className="text-xai-cyan">{Math.round(progress)}%</span>
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="space-y-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Generating…</span>
+                  <span className="text-xai-cyan font-medium">{Math.round(progress)}%</span>
                 </div>
-                <Progress value={progress} className="h-2" />
-                <p className="text-xs text-muted-foreground text-center">This may take up to a minute 🎬</p>
+                <Progress value={progress} className="h-1.5" />
+                <p className="text-[11px] text-muted-foreground text-center">This may take up to a minute 🎬</p>
               </motion.div>
             )}
           </AnimatePresence>
@@ -388,56 +255,44 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
           {/* Error */}
           <AnimatePresence>
             {error && !isWorking && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/30"
-              >
-                <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
-                <p className="text-sm text-destructive">{error}</p>
+              <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                className="flex items-start gap-2 p-3 rounded-xl bg-destructive/10 border border-destructive/20">
+                <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                <p className="text-xs text-destructive">{error}</p>
               </motion.div>
             )}
           </AnimatePresence>
 
-          {/* Limit info */}
+          {/* Limits */}
           {!canGenerateVideo && (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/30">
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-destructive/10 border border-destructive/20">
               <Lock className="h-4 w-4 text-destructive shrink-0" />
-              <p className="text-sm text-destructive">
-                {tier === "free"
-                  ? "Video generation requires a paid plan. Please upgrade."
-                  : `Daily video limit reached (${tierConfig.limits.videosPerDay}/day). Upgrade for more.`}
+              <p className="text-xs text-destructive">
+                {tier === "free" ? "Video generation requires a paid plan." : `Daily limit reached (${tierConfig.limits.videosPerDay}/day).`}
               </p>
             </div>
           )}
-          {canGenerateVideo && (
-            <p className="text-xs text-muted-foreground">
-              {remainingVideos} video{remainingVideos !== 1 ? "s" : ""} remaining today
-            </p>
-          )}
 
-          <div className="flex justify-end pt-2">
-            <Button
-              variant="xai"
-              onClick={run}
-              disabled={isWorking || !prompt.trim() || !canGenerateVideo}
-              className="gap-2 min-w-[140px]"
-            >
+          {/* Footer */}
+          <motion.div variants={fadeUp} className="flex items-center justify-between pt-1">
+            {canGenerateVideo && (
+              <p className="text-[11px] text-muted-foreground">
+                {remainingVideos} video{remainingVideos !== 1 ? "s" : ""} left today
+              </p>
+            )}
+            <Button onClick={run} disabled={isWorking || !prompt.trim() || !canGenerateVideo}
+              className={cn(
+                "ml-auto gap-2 min-w-[130px] rounded-xl font-medium",
+                "bg-gradient-to-r from-xai-cyan to-xai-purple text-white hover:opacity-90 transition-opacity"
+              )}>
               {isWorking ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Generating...
-                </>
+                <><Loader2 className="h-4 w-4 animate-spin" /> Generating…</>
               ) : (
-                <>
-                  <Sparkles className="h-4 w-4" />
-                  Generate
-                </>
+                <><Video className="h-4 w-4" /> Generate</>
               )}
             </Button>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       </DialogContent>
     </Dialog>
   );
