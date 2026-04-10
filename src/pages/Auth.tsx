@@ -293,9 +293,7 @@ const Auth = () => {
             transition={{ delay: 0.1, type: 'spring' }}
             className="flex items-center gap-3 mb-8"
           >
-            <div className="w-12 h-12 rounded-full overflow-hidden xai-glow">
-              <img src={astrazLogo} alt="Astraz" className="w-full h-full object-cover" />
-            </div>
+            <img src={astrazLogo} alt="Astraz" className="w-10 h-10 object-contain drop-shadow-[0_0_16px_hsl(270_80%_60%/0.3)]" />
             <span className="text-2xl font-display font-bold xai-gradient-text">Astraz</span>
           </motion.div>
 
@@ -705,9 +703,7 @@ const Auth = () => {
             className="relative cursor-pointer focus:outline-none"
             aria-label="Toggle theme"
           >
-            <div className="w-48 md:w-56 lg:w-64 h-48 md:h-56 lg:h-64 rounded-full overflow-hidden xai-glow">
-              <img src={astrazLogo} alt="Astraz" className="w-full h-full object-cover" />
-            </div>
+            <img src={astrazLogo} alt="Astraz" className="w-44 md:w-52 lg:w-60 h-44 md:h-52 lg:h-60 object-contain drop-shadow-[0_0_40px_hsl(270_80%_60%/0.35)]" />
             <motion.div
               className="absolute -inset-8 rounded-full bg-gradient-to-br from-xai-cyan/20 to-xai-purple/20 blur-3xl -z-10"
               animate={{ scale: [1, 1.1, 1], opacity: [0.4, 0.6, 0.4] }}

@@ -10,18 +10,13 @@ export const TypingIndicator = ({ label, mode = 'typing' }: TypingIndicatorProps
   const isSearch = mode === 'search';
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -10 }}
-      className="w-full px-4 py-4"
-    >
+    <div className="w-full px-4 py-3 chat-message-enter">
       {isSearch ? (
-        <div className="flex items-center gap-2 min-w-0 w-full">
+        <div className="flex items-center gap-2.5 min-w-0 w-full">
           <motion.div
-            animate={{ rotate: [0, 10, -10, 0], scale: [1, 1.06, 1] }}
+            animate={{ rotate: [0, 10, -10, 0] }}
             transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
-            className="text-primary flex-shrink-0"
+            className="text-accent flex-shrink-0"
           >
             <Globe className="h-4 w-4" />
           </motion.div>
@@ -30,30 +25,23 @@ export const TypingIndicator = ({ label, mode = 'typing' }: TypingIndicatorProps
           </div>
         </div>
       ) : (
-        <div className="flex items-center gap-2 min-w-0">
-          <motion.div
-            className="relative h-5 w-5 flex-shrink-0"
-            aria-hidden="true"
-            animate={{ rotate: 360 }}
-            transition={{ duration: 2.2, repeat: Infinity, ease: 'linear' }}
-          >
-            <div className="absolute inset-0 rounded-full border border-primary/35" />
-            <motion.div
-              className="absolute inset-[3px] rounded-full bg-primary/80"
-              animate={{ scale: [0.7, 1, 0.7], opacity: [0.55, 1, 0.55] }}
-              transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
-            />
-          </motion.div>
-          <motion.div
-            className="text-sm text-muted-foreground flex items-center gap-1.5"
-            animate={{ opacity: [0.65, 1, 0.65] }}
-            transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
-          >
-            <Sparkles className="h-3.5 w-3.5 text-primary/80" />
-            <span>{label || 'Astraz is thinking…'}</span>
-          </motion.div>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex gap-1">
+            {[0, 1, 2].map((i) => (
+              <motion.div
+                key={i}
+                className="w-1.5 h-1.5 rounded-full bg-primary"
+                animate={{ scale: [0.8, 1.2, 0.8], opacity: [0.4, 1, 0.4] }}
+                transition={{ duration: 1, repeat: Infinity, delay: i * 0.15, ease: 'easeInOut' }}
+              />
+            ))}
+          </div>
+          <span className="text-sm text-muted-foreground flex items-center gap-1.5">
+            <Sparkles className="h-3.5 w-3.5 text-primary/70" />
+            {label || 'Astraz is thinking…'}
+          </span>
         </div>
       )}
-    </motion.div>
+    </div>
   );
 };

@@ -6,104 +6,101 @@
 
 @layer base {
   :root {
-    /* Light theme - Clean and bright */
-    --background: 0 0% 98%;
-    --foreground: 220 20% 10%;
+    --background: 0 0% 99%;
+    --foreground: 240 10% 10%;
 
     --card: 0 0% 100%;
-    --card-foreground: 220 20% 10%;
+    --card-foreground: 240 10% 10%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 20% 10%;
+    --popover-foreground: 240 10% 10%;
 
-    --primary: 185 100% 40%;
+    --primary: 260 80% 58%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 15% 94%;
-    --secondary-foreground: 220 20% 10%;
+    --secondary: 240 8% 95%;
+    --secondary-foreground: 240 10% 10%;
 
-    --muted: 220 15% 96%;
-    --muted-foreground: 220 10% 45%;
+    --muted: 240 8% 96%;
+    --muted-foreground: 240 5% 46%;
 
-    --accent: 270 80% 60%;
+    --accent: 190 90% 48%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 15% 90%;
-    --input: 220 15% 94%;
-    --ring: 185 100% 40%;
+    --border: 240 8% 91%;
+    --input: 240 8% 93%;
+    --ring: 260 80% 58%;
 
     --radius: 0.75rem;
 
-    /* Custom X-AI tokens - Light */
-    --xai-cyan: 185 100% 40%;
-    --xai-cyan-glow: 185 100% 50%;
-    --xai-purple: 270 80% 55%;
-    --xai-purple-glow: 270 80% 65%;
-    --xai-gradient: linear-gradient(135deg, hsl(185 100% 40%), hsl(270 80% 55%));
-    --xai-glass: 0 0% 100% / 0.95;
-    --xai-glass-border: 220 15% 85% / 0.6;
+    /* Astraz brand tokens */
+    --xai-cyan: 190 90% 48%;
+    --xai-cyan-glow: 190 90% 58%;
+    --xai-purple: 270 80% 58%;
+    --xai-purple-glow: 270 80% 68%;
+    --xai-gradient: linear-gradient(135deg, hsl(270 80% 58%), hsl(190 90% 48%));
+    --xai-glass: 0 0% 100% / 0.92;
+    --xai-glass-border: 240 8% 88% / 0.6;
 
     --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 220 20% 20%;
-    --sidebar-primary: 185 100% 40%;
+    --sidebar-foreground: 240 10% 20%;
+    --sidebar-primary: 260 80% 58%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 15% 96%;
-    --sidebar-accent-foreground: 220 20% 10%;
-    --sidebar-border: 220 15% 92%;
-    --sidebar-ring: 185 100% 40%;
+    --sidebar-accent: 240 8% 96%;
+    --sidebar-accent-foreground: 240 10% 10%;
+    --sidebar-border: 240 8% 93%;
+    --sidebar-ring: 260 80% 58%;
   }
 
   .dark {
-    /* Deep blue dark theme - X-AI signature look */
-    --background: 222 47% 6%;
-    --foreground: 210 40% 98%;
+    --background: 240 20% 4%;
+    --foreground: 0 0% 95%;
 
-    --card: 222 47% 9%;
-    --card-foreground: 210 40% 98%;
+    --card: 240 18% 7%;
+    --card-foreground: 0 0% 95%;
 
-    --popover: 222 47% 9%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 240 18% 7%;
+    --popover-foreground: 0 0% 95%;
 
-    --primary: 185 100% 50%;
-    --primary-foreground: 222 47% 6%;
+    --primary: 270 85% 65%;
+    --primary-foreground: 240 20% 4%;
 
-    --secondary: 217 33% 14%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 240 14% 12%;
+    --secondary-foreground: 0 0% 95%;
 
-    --muted: 217 33% 12%;
-    --muted-foreground: 215 20% 55%;
+    --muted: 240 14% 10%;
+    --muted-foreground: 240 5% 55%;
 
-    --accent: 270 100% 65%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 190 95% 55%;
+    --accent-foreground: 0 0% 95%;
 
     --destructive: 0 84% 60%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 0 0% 95%;
 
-    --border: 217 33% 17%;
-    --input: 217 33% 12%;
-    --ring: 185 100% 50%;
+    --border: 240 14% 15%;
+    --input: 240 14% 12%;
+    --ring: 270 85% 65%;
 
-    /* Custom X-AI tokens - Dark Blue */
-    --xai-cyan: 185 100% 50%;
-    --xai-cyan-glow: 185 100% 60%;
-    --xai-purple: 270 100% 65%;
-    --xai-purple-glow: 270 100% 75%;
-    --xai-gradient: linear-gradient(135deg, hsl(185 100% 50%), hsl(270 100% 65%));
-    --xai-glass: 222 47% 9% / 0.9;
-    --xai-glass-border: 217 33% 22% / 0.5;
+    /* Astraz brand tokens - Dark */
+    --xai-cyan: 190 95% 55%;
+    --xai-cyan-glow: 190 95% 65%;
+    --xai-purple: 270 85% 65%;
+    --xai-purple-glow: 270 85% 75%;
+    --xai-gradient: linear-gradient(135deg, hsl(270 85% 65%), hsl(190 95% 55%));
+    --xai-glass: 240 18% 7% / 0.88;
+    --xai-glass-border: 240 14% 20% / 0.5;
 
-    /* Sidebar - deeper blue shade */
-    --sidebar-background: 222 47% 5%;
-    --sidebar-foreground: 215 20% 75%;
-    --sidebar-primary: 185 100% 50%;
-    --sidebar-primary-foreground: 222 47% 6%;
-    --sidebar-accent: 217 33% 11%;
-    --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 217 33% 14%;
-    --sidebar-ring: 185 100% 50%;
+    --sidebar-background: 240 20% 3.5%;
+    --sidebar-foreground: 240 5% 72%;
+    --sidebar-primary: 270 85% 65%;
+    --sidebar-primary-foreground: 240 20% 4%;
+    --sidebar-accent: 240 14% 10%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 240 14% 12%;
+    --sidebar-ring: 270 85% 65%;
   }
 }
 
@@ -131,9 +128,8 @@
 @layer components {
   .xai-glow {
     box-shadow: 
-      0 0 20px hsl(var(--xai-cyan) / 0.3),
-      0 0 40px hsl(var(--xai-cyan) / 0.2),
-      0 0 60px hsl(var(--xai-cyan) / 0.1);
+      0 0 20px hsl(var(--xai-purple) / 0.25),
+      0 0 40px hsl(var(--xai-cyan) / 0.15);
   }
 
   .xai-glow-purple {
@@ -156,7 +152,6 @@
   }
 
   .xai-gradient-border {
-    /* iOS-friendly gradient border (no mask-composite) */
     background: var(--xai-gradient);
     padding: 1px;
     border-radius: var(--radius);
@@ -172,14 +167,8 @@
   }
 
   @keyframes xai-pulse {
-    0%, 100% {
-      opacity: 1;
-      transform: scale(1);
-    }
-    50% {
-      opacity: 0.8;
-      transform: scale(1.02);
-    }
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.85; transform: scale(1.02); }
   }
 
   .xai-float {
@@ -187,12 +176,8 @@
   }
 
   @keyframes xai-float {
-    0%, 100% {
-      transform: translateY(0px);
-    }
-    50% {
-      transform: translateY(-10px);
-    }
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-8px); }
   }
 
   .xai-shimmer {
@@ -207,22 +192,18 @@
   }
 
   @keyframes shimmer {
-    0% {
-      background-position: 200% 0;
-    }
-    100% {
-      background-position: -200% 0;
-    }
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
   }
 
-  /* Scrollbar styling */
+  /* Smooth scrollbar */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
   }
 
   ::-webkit-scrollbar-track {
-    background: hsl(var(--background));
+    background: transparent;
   }
 
   ::-webkit-scrollbar-thumb {
@@ -231,11 +212,21 @@
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground) / 0.5);
+    background: hsl(var(--muted-foreground) / 0.4);
+  }
+
+  /* Performance: use will-change sparingly */
+  .chat-message-enter {
+    animation: msg-enter 0.25s ease-out forwards;
+  }
+
+  @keyframes msg-enter {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
   }
 }
 
-/* Aurora background effect */
+/* Subtle mesh gradient background */
 .aurora-bg {
   position: fixed;
   inset: 0;
@@ -248,74 +239,64 @@
 .dark .aurora-bg::after {
   content: '';
   position: absolute;
-  width: 150%;
-  height: 150%;
+  width: 120%;
+  height: 120%;
   border-radius: 50%;
-  filter: blur(100px);
-  opacity: 0.08;
-  animation: aurora 20s ease-in-out infinite;
+  filter: blur(120px);
+  opacity: 0.06;
+  animation: aurora 25s ease-in-out infinite;
 }
 
 .dark .aurora-bg::before {
-  background: radial-gradient(circle, hsl(185 100% 50%) 0%, transparent 70%);
-  top: -50%;
-  left: -25%;
+  background: radial-gradient(circle, hsl(270 85% 60%) 0%, transparent 60%);
+  top: -40%;
+  left: -20%;
   animation-delay: 0s;
 }
 
 .dark .aurora-bg::after {
-  background: radial-gradient(circle, hsl(270 100% 65%) 0%, transparent 70%);
-  bottom: -50%;
-  right: -25%;
-  animation-delay: -10s;
+  background: radial-gradient(circle, hsl(190 95% 50%) 0%, transparent 60%);
+  bottom: -40%;
+  right: -20%;
+  animation-delay: -12s;
 }
 
-/* Light theme aurora - very subtle */
 :root:not(.dark) .aurora-bg::before,
 :root:not(.dark) .aurora-bg::after {
   content: '';
   position: absolute;
-  width: 150%;
-  height: 150%;
+  width: 120%;
+  height: 120%;
   border-radius: 50%;
   filter: blur(150px);
-  opacity: 0.05;
+  opacity: 0.04;
   animation: aurora 30s ease-in-out infinite;
 }
 
 :root:not(.dark) .aurora-bg::before {
-  background: radial-gradient(circle, hsl(185 100% 45%) 0%, transparent 70%);
-  top: -50%;
-  left: -25%;
+  background: radial-gradient(circle, hsl(270 80% 55%) 0%, transparent 60%);
+  top: -40%;
+  left: -20%;
 }
 
 :root:not(.dark) .aurora-bg::after {
-  background: radial-gradient(circle, hsl(270 80% 60%) 0%, transparent 70%);
-  bottom: -50%;
-  right: -25%;
+  background: radial-gradient(circle, hsl(190 90% 50%) 0%, transparent 60%);
+  bottom: -40%;
+  right: -20%;
 }
 
 @keyframes aurora {
-  0%, 100% {
-    transform: translate(0, 0) rotate(0deg);
-  }
-  25% {
-    transform: translate(5%, 5%) rotate(5deg);
-  }
-  50% {
-    transform: translate(-5%, 10%) rotate(-5deg);
-  }
-  75% {
-    transform: translate(10%, -5%) rotate(3deg);
-  }
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  33% { transform: translate(3%, 3%) rotate(3deg); }
+  66% { transform: translate(-3%, 5%) rotate(-3deg); }
 }
 
-/* Auth page background pattern */
+/* Auth page background */
 .auth-bg-pattern {
   position: fixed;
   inset: 0;
   background-image: 
-    radial-gradient(circle at 20% 50%, hsl(var(--xai-cyan) / 0.1) 0%, transparent 50%),
-    radial-gradient(circle at 80% 50%, hsl(var(--xai-purple) / 0.1) 0%, transparent 50%);
+    radial-gradient(circle at 25% 40%, hsl(var(--xai-purple) / 0.12) 0%, transparent 50%),
+    radial-gradient(circle at 75% 60%, hsl(var(--xai-cyan) / 0.1) 0%, transparent 50%);
   z-index: -1;
 }
