@@ -12,9 +12,8 @@ export const SplashScreen = ({ onComplete }: SplashScreenProps) => {
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsVisible(false);
-      setTimeout(onComplete, 500);
-    }, 2000);
-
+      setTimeout(onComplete, 400);
+    }, 1800);
     return () => clearTimeout(timer);
   }, [onComplete]);
 
@@ -24,74 +23,52 @@ export const SplashScreen = ({ onComplete }: SplashScreenProps) => {
         <motion.div
           initial={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.5 }}
+          transition={{ duration: 0.4 }}
           className="fixed inset-0 z-[100] flex items-center justify-center bg-background"
         >
           <div className="flex flex-col items-center gap-6">
             <motion.div
-              initial={{ scale: 0, rotate: -180 }}
-              animate={{ scale: 1, rotate: 0 }}
-              transition={{ type: 'spring', stiffness: 200, damping: 20, delay: 0.2 }}
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 180, damping: 18, delay: 0.15 }}
               className="relative"
             >
-              <motion.div
-                animate={{ 
-                  boxShadow: [
-                    '0 0 20px rgba(0, 212, 255, 0.3)',
-                    '0 0 40px rgba(0, 212, 255, 0.5)',
-                    '0 0 20px rgba(0, 212, 255, 0.3)',
-                  ]
-                }}
-                transition={{ duration: 2, repeat: Infinity }}
-                className="w-24 h-24 rounded-full overflow-hidden"
-              >
-                <img src={astrazLogo} alt="Astraz" className="w-full h-full object-cover" />
-              </motion.div>
-              
-              {[1, 2, 3].map((i) => (
+              <img
+                src={astrazLogo}
+                alt="Astraz"
+                className="w-20 h-20 object-contain drop-shadow-[0_0_24px_hsl(270_80%_60%/0.4)]"
+              />
+              {[1, 2].map((i) => (
                 <motion.div
                   key={i}
-                  initial={{ scale: 1, opacity: 0.5 }}
-                  animate={{ scale: 2.5, opacity: 0 }}
-                  transition={{ duration: 2, repeat: Infinity, delay: i * 0.4, ease: 'easeOut' }}
-                  className="absolute inset-0 rounded-full border-2 border-xai-cyan"
+                  initial={{ scale: 0.8, opacity: 0.4 }}
+                  animate={{ scale: 2.2, opacity: 0 }}
+                  transition={{ duration: 1.8, repeat: Infinity, delay: i * 0.5, ease: 'easeOut' }}
+                  className="absolute inset-0 rounded-full border border-primary/30"
                 />
               ))}
             </motion.div>
 
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5 }}
+              transition={{ delay: 0.4 }}
               className="text-center"
             >
-              <motion.h1 
-                className="text-4xl font-display font-bold xai-gradient-text"
-                animate={{ backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'] }}
-                transition={{ duration: 3, repeat: Infinity }}
-              >
-                Astraz
-              </motion.h1>
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.8 }}
-                className="text-muted-foreground mt-2"
-              >
-                Your Intelligent AI Assistant
-              </motion.p>
+              <h1 className="text-3xl font-display font-bold xai-gradient-text">Astraz</h1>
+              <p className="text-sm text-muted-foreground mt-1.5">Your Intelligent AI Assistant</p>
             </motion.div>
 
             <motion.div
               initial={{ width: 0 }}
-              animate={{ width: '200px' }}
-              transition={{ duration: 1.5, delay: 0.3 }}
-              className="h-1 bg-gradient-to-r from-xai-cyan to-xai-purple rounded-full overflow-hidden"
+              animate={{ width: '160px' }}
+              transition={{ duration: 1.2, delay: 0.3, ease: 'easeInOut' }}
+              className="h-0.5 bg-gradient-to-r from-xai-purple to-xai-cyan rounded-full overflow-hidden"
             >
               <motion.div
                 animate={{ x: ['-100%', '100%'] }}
-                transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                className="h-full w-1/2 bg-white/30"
+                transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+                className="h-full w-1/3 bg-white/40"
               />
             </motion.div>
           </div>

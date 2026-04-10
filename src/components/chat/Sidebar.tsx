@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, memo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, MessageSquare, Trash2, Pencil, Search, Check, X, PanelLeftClose } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -27,7 +27,7 @@ interface SidebarProps {
   onProfileUpdate: () => void;
 }
 
-export const Sidebar = ({
+export const Sidebar = memo(({
   conversations, currentConversation, onSelectConversation,
   onNewChat, onDeleteConversation, onRenameConversation,
   isOpen, onClose, profile, onProfileUpdate,
@@ -45,21 +45,21 @@ export const Sidebar = ({
     const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
     if (diffDays === 0) return 'Today';
     if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays} days ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
     return date.toLocaleDateString();
   };
 
-  const truncateTitle = (title: string) => title.length > 15 ? title.slice(0, 15) + '...' : title;
+  const truncateTitle = (title: string) => title.length > 15 ? title.slice(0, 15) + '…' : title;
 
   const filteredConversations = conversations.filter(conv =>
     conv.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const startEditing = (conv: Conversation, e: React.MouseEvent) => {
+  const startEditing = useCallback((conv: Conversation, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingId(conv.id);
     setEditTitle(conv.title.slice(0, 15));
-  };
+  }, []);
 
   const saveEdit = () => {
     if (editingId && editTitle.trim()) onRenameConversation(editingId, editTitle.trim().slice(0, 15));
@@ -74,32 +74,31 @@ export const Sidebar = ({
     setConfirmDeleteId(convId);
   };
 
-  const handleSelectConversation = (conv: Conversation) => {
+  const handleSelectConversation = useCallback((conv: Conversation) => {
     if (!editingId) {
       onSelectConversation(conv);
       if (window.innerWidth < 1024) onClose();
     }
-  };
+  }, [editingId, onSelectConversation, onClose]);
 
-  const handleNewChat = () => {
+  const handleNewChat = useCallback(() => {
     onNewChat();
     if (window.innerWidth < 1024) onClose();
-  };
+  }, [onNewChat, onClose]);
 
   return (
     <>
-      {/* Mobile overlay */}
       <AnimatePresence>
         {isOpen && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 lg:hidden" onClick={onClose} />
+            className="fixed inset-0 bg-background/60 backdrop-blur-sm z-40 lg:hidden" onClick={onClose} />
         )}
       </AnimatePresence>
 
       <motion.aside
         initial={false}
         animate={{ x: isOpen ? 0 : -280 }}
-        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+        transition={{ type: 'spring', damping: 28, stiffness: 320 }}
         className={cn(
           "fixed lg:relative z-50 w-[280px] h-full flex flex-col",
           "bg-sidebar border-r border-sidebar-border",
@@ -108,20 +107,18 @@ export const Sidebar = ({
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-sidebar-border">
-          <motion.div className="flex items-center gap-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <div className="w-8 h-8 rounded-full overflow-hidden xai-glow">
-              <img src={astrazLogo} alt="Astraz" className="w-full h-full object-cover" />
-            </div>
+          <div className="flex items-center gap-2.5">
+            <img src={astrazLogo} alt="Astraz" className="w-7 h-7 object-contain" />
             <span className="font-display font-semibold text-lg xai-gradient-text">Astraz</span>
-          </motion.div>
-          <Button variant="ghost" size="icon" onClick={onClose} className="lg:hidden" aria-label="Close sidebar">
-            <PanelLeftClose className="h-5 w-5" />
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose} className="lg:hidden h-8 w-8" aria-label="Close sidebar">
+            <PanelLeftClose className="h-4 w-4" />
           </Button>
         </div>
 
-        {/* New Chat Button */}
+        {/* New Chat */}
         <div className="p-3">
-          <Button variant="xai" className="w-full justify-start gap-2" onClick={handleNewChat}>
+          <Button variant="xai" className="w-full justify-start gap-2 rounded-xl" onClick={handleNewChat}>
             <Plus className="h-4 w-4" />
             New Chat
           </Button>
@@ -130,81 +127,79 @@ export const Sidebar = ({
         {/* Search */}
         <div className="px-3 pb-3">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search conversations..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 bg-secondary/50" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input placeholder="Search…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 h-9 bg-secondary/50 rounded-xl text-sm" />
           </div>
         </div>
 
-        {/* Conversations List */}
+        {/* Conversations */}
         <ScrollArea className="flex-1 px-3">
-          <div className="space-y-1 pb-4">
-            <AnimatePresence mode="popLayout">
-              {filteredConversations.map((conv, index) => (
-                <motion.div key={conv.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ delay: index * 0.02 }} layout>
-                  <div
-                    onClick={() => handleSelectConversation(conv)}
-                    className={cn(
-                      "w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-left transition-all duration-200 group/item cursor-pointer",
-                      currentConversation?.id === conv.id
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                        : "text-sidebar-foreground hover:bg-sidebar-accent/50"
-                    )}
-                  >
-                    <MessageSquare className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                    <div className="flex-1 min-w-0 overflow-hidden">
-                      {editingId === conv.id ? (
-                        <div className="flex items-center gap-1">
-                          <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value.slice(0, 15))}
-                            onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit(); }}
-                            className="h-6 text-sm px-1" maxLength={15} autoFocus onClick={(e) => e.stopPropagation()} />
-                          <Button variant="ghost" size="icon" className="h-6 w-6 flex-shrink-0" onClick={(e) => { e.stopPropagation(); saveEdit(); }}>
-                            <Check className="h-3 w-3 text-xai-cyan" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 flex-shrink-0" onClick={(e) => { e.stopPropagation(); cancelEdit(); }}>
-                            <X className="h-3 w-3 text-muted-foreground" />
-                          </Button>
-                        </div>
-                      ) : (
-                        <>
-                          <p className="text-sm font-medium truncate">{truncateTitle(conv.title)}</p>
-                          <p className="text-xs text-muted-foreground">{formatDate(conv.updated_at)}</p>
-                        </>
-                      )}
+          <div className="space-y-0.5 pb-4">
+            {filteredConversations.map((conv) => (
+              <div
+                key={conv.id}
+                onClick={() => handleSelectConversation(conv)}
+                className={cn(
+                  "w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-left transition-all duration-150 group/item cursor-pointer",
+                  currentConversation?.id === conv.id
+                    ? "bg-primary/8 text-foreground border border-primary/15"
+                    : "text-sidebar-foreground hover:bg-sidebar-accent/60 border border-transparent"
+                )}
+              >
+                <MessageSquare className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                <div className="flex-1 min-w-0 overflow-hidden">
+                  {editingId === conv.id ? (
+                    <div className="flex items-center gap-1">
+                      <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value.slice(0, 15))}
+                        onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit(); }}
+                        className="h-6 text-sm px-1" maxLength={15} autoFocus onClick={(e) => e.stopPropagation()} />
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); saveEdit(); }}>
+                        <Check className="h-3 w-3 text-primary" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); cancelEdit(); }}>
+                        <X className="h-3 w-3 text-muted-foreground" />
+                      </Button>
                     </div>
-                    {!editingId && (
-                      <div className="flex items-center gap-0.5 flex-shrink-0 opacity-60 group-hover/item:opacity-100 transition-opacity">
-                        <button onClick={(e) => startEditing(conv, e)} className="p-1.5 rounded hover:bg-secondary/80 transition-colors" title="Rename chat">
-                          <Pencil className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
-                        </button>
-                        <button onClick={(e) => handleDelete(conv.id, e)} className="p-1.5 rounded hover:bg-destructive/20 transition-colors" title="Delete chat">
-                          <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-                        </button>
-                      </div>
-                    )}
+                  ) : (
+                    <>
+                      <p className="text-sm font-medium truncate">{truncateTitle(conv.title)}</p>
+                      <p className="text-[11px] text-muted-foreground">{formatDate(conv.updated_at)}</p>
+                    </>
+                  )}
+                </div>
+                {!editingId && (
+                  <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity">
+                    <button onClick={(e) => startEditing(conv, e)} className="p-1 rounded-lg hover:bg-secondary/80 transition-colors" title="Rename">
+                      <Pencil className="h-3 w-3 text-muted-foreground" />
+                    </button>
+                    <button onClick={(e) => handleDelete(conv.id, e)} className="p-1 rounded-lg hover:bg-destructive/15 transition-colors" title="Delete">
+                      <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                    </button>
                   </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
+                )}
+              </div>
+            ))}
 
             {filteredConversations.length === 0 && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-8 text-muted-foreground">
-                <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">{searchQuery ? 'No matches found' : 'No conversations yet'}</p>
-                <p className="text-xs">{searchQuery ? 'Try a different search' : 'Start a new chat to begin'}</p>
-              </motion.div>
+              <div className="text-center py-8 text-muted-foreground">
+                <MessageSquare className="h-7 w-7 mx-auto mb-2 opacity-40" />
+                <p className="text-sm">{searchQuery ? 'No matches' : 'No conversations yet'}</p>
+                <p className="text-xs mt-0.5">{searchQuery ? 'Try different terms' : 'Start a new chat'}</p>
+              </div>
             )}
           </div>
         </ScrollArea>
 
-        {/* User Section */}
+        {/* User */}
         <div className="p-3 border-t border-sidebar-border">
-          <motion.button onClick={() => setProfileOpen(true)} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-            className="w-full flex items-center gap-3 p-2 rounded-lg bg-sidebar-accent/50 hover:bg-sidebar-accent transition-colors">
-            <div className="w-8 h-8 rounded-full overflow-hidden bg-gradient-to-br from-xai-cyan to-xai-purple flex items-center justify-center">
+          <button onClick={() => setProfileOpen(true)}
+            className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-sidebar-accent/40 hover:bg-sidebar-accent/70 transition-colors">
+            <div className="w-8 h-8 rounded-full overflow-hidden bg-gradient-to-br from-xai-purple to-xai-cyan flex items-center justify-center">
               {profile?.avatar_url ? (
                 <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
               ) : (
-                <span className="text-xs font-semibold text-primary-foreground">
+                <span className="text-xs font-semibold text-white">
                   {profile?.full_name?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'U'}
                 </span>
               )}
@@ -212,7 +207,7 @@ export const Sidebar = ({
             <div className="flex-1 min-w-0 text-left">
               <p className="text-sm font-medium truncate">{profile?.full_name || user?.email}</p>
             </div>
-          </motion.button>
+          </button>
         </div>
       </motion.aside>
 
@@ -221,7 +216,7 @@ export const Sidebar = ({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete chat?</AlertDialogTitle>
-            <AlertDialogDescription>This will permanently delete this conversation and its messages.</AlertDialogDescription>
+            <AlertDialogDescription>This will permanently delete this conversation.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -236,4 +231,6 @@ export const Sidebar = ({
       <ProfilePopup isOpen={profileOpen} onClose={() => setProfileOpen(false)} profile={profile} onProfileUpdate={onProfileUpdate} />
     </>
   );
-};
+});
+
+Sidebar.displayName = 'Sidebar';
