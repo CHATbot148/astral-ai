@@ -1284,6 +1284,6 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
           </motion.div>
         )}
       </div>
-    </motion.div>
+    </div>
   );
 };
