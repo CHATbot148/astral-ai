@@ -293,7 +293,7 @@ const Auth = () => {
             transition={{ delay: 0.1, type: 'spring' }}
             className="flex items-center gap-3 mb-8"
           >
-            <img src={astrazLogo} alt="Astraz" className="w-10 h-10 object-contain drop-shadow-[0_0_16px_hsl(270_80%_60%/0.3)]" />
+            <img src={astrazLogo} alt="Astraz" className="w-12 h-12 object-contain drop-shadow-[0_0_16px_hsl(270_80%_60%/0.3)]" />
             <span className="text-2xl font-display font-bold xai-gradient-text">Astraz</span>
           </motion.div>
 
