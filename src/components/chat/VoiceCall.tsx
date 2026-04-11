@@ -31,6 +31,11 @@ const VOICE_OPTIONS = [
   { id: "apollo", name: "Apollo", gender: "masculine" },
 ];
 
+const SYSTEM = `You are a concise AI voice assistant called Astraz. Max 3 sentences per reply. No markdown, no lists. Speak naturally as in a phone call.`;
+const SILENCE_TIMEOUT_MS = 1800;
+
+type CallStatus = "idle" | "connecting" | "listening" | "speaking";
+
 export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const { toast } = useToast();
   const [callStart] = useState(() => Date.now());
@@ -43,26 +48,33 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     const saved = Number(localStorage.getItem("xai-voice-silence-cutoff-ms"));
     return Number.isFinite(saved) ? Math.min(5500, Math.max(800, saved)) : 2300;
   });
-  const [status, setStatus] = useState<"idle" | "connecting" | "listening" | "speaking">("idle");
+  const [status, setStatus] = useState<CallStatus>("idle");
   const [isConnected, setIsConnected] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const streamRef = useRef<MediaStream | null>(null);
-  const currentAudioRef = useRef<AudioBufferSourceNode | null>(null);
-  const isActiveRef = useRef(true);
-  const selectedVoiceRef = useRef(selectedVoice);
+  // Refs
+  const recognitionRef = useRef<any>(null);
+  const synthRef = useRef<SpeechSynthesis | null>(null);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const historyRef = useRef<{ role: string; content: string }[]>([]);
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const speechBufferRef = useRef("");
+  const isActiveRef = useRef(false);
+  const bargedInRef = useRef(false);
   const isMutedRef = useRef(isMuted);
+  const selectedVoiceRef = useRef(selectedVoice);
   const silenceCutoffRef = useRef(silenceCutoff);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const conversationHistoryRef = useRef<Array<{ role: string; content: string }>>([]);
+  const statusRef = useRef<CallStatus>("idle");
+
+  // Mic level tracking
+  const streamRef = useRef<MediaStream | null>(null);
   const micAnalyserRef = useRef<AnalyserNode | null>(null);
   const micAnimFrameRef = useRef<number>(0);
-  const processingRunRef = useRef(0);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   useEffect(() => { selectedVoiceRef.current = selectedVoice; }, [selectedVoice]);
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
+  useEffect(() => { statusRef.current = status; }, [status]);
   useEffect(() => {
     silenceCutoffRef.current = silenceCutoff;
     localStorage.setItem("xai-voice-silence-cutoff-ms", String(silenceCutoff));
@@ -79,43 +91,47 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  const getOrCreateAudioContext = useCallback(() => {
-    let ctx = audioContextRef.current;
-    if (!ctx || ctx.state === "closed") {
-      ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      audioContextRef.current = ctx;
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  const clearSilenceTimer = () => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
     }
-    return ctx;
-  }, []);
+  };
 
-  const stopCurrentAudio = useCallback(() => {
-    if (currentAudioRef.current) {
-      try { currentAudioRef.current.stop(); } catch {}
-      currentAudioRef.current = null;
+  const stopSpeaking = useCallback(() => {
+    if (synthRef.current) {
+      synthRef.current.cancel();
     }
+    utteranceRef.current = null;
     setAudioLevel(0);
   }, []);
 
-  // --- Mic level tracking ---
+  // Mic level tracking
   const startMicLevelTracking = useCallback(() => {
     if (!streamRef.current) return;
-    const ctx = getOrCreateAudioContext();
-    const source = ctx.createMediaStreamSource(streamRef.current);
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 256;
-    source.connect(analyser);
-    micAnalyserRef.current = analyser;
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    try {
+      const ctx = audioContextRef.current || new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioContextRef.current = ctx;
+      const source = ctx.createMediaStreamSource(streamRef.current);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      micAnalyserRef.current = analyser;
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-    const update = () => {
-      if (!isActiveRef.current) return;
-      analyser.getByteFrequencyData(dataArray);
-      const avg = dataArray.reduce((s, v) => s + v, 0) / dataArray.length;
-      setAudioLevel(avg / 255);
+      const update = () => {
+        if (!isActiveRef.current) return;
+        analyser.getByteFrequencyData(dataArray);
+        const avg = dataArray.reduce((s, v) => s + v, 0) / dataArray.length;
+        if (statusRef.current === "listening") {
+          setAudioLevel(avg / 255);
+        }
+        micAnimFrameRef.current = requestAnimationFrame(update);
+      };
       micAnimFrameRef.current = requestAnimationFrame(update);
-    };
-    micAnimFrameRef.current = requestAnimationFrame(update);
-  }, [getOrCreateAudioContext]);
+    } catch {}
+  }, []);
 
   const stopMicLevelTracking = useCallback(() => {
     if (micAnimFrameRef.current) {
@@ -125,216 +141,118 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     setAudioLevel(0);
   }, []);
 
-  // --- Auth headers helper ---
-  const getHeaders = useCallback(async () => {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const accessToken = sessionData.session?.access_token;
-    return {
-      "Content-Type": "application/json",
-      apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-      Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-    };
-  }, []);
+  // ── Stream response via edge function, speak each sentence via browser TTS ──
+  const streamAndSpeak = useCallback(async (userText: string) => {
+    if (!isActiveRef.current) return;
 
-  // --- TTS for a single sentence ---
-  const fetchTTS = useCallback(async (text: string, headers: Record<string, string>): Promise<ArrayBuffer | null> => {
-    try {
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/text-to-speech`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ text, voiceId: selectedVoiceRef.current }),
-      });
-      if (!res.ok) return null;
-      const ct = res.headers.get("content-type") || "";
-      if (!ct.includes("audio")) return null;
-      return await res.arrayBuffer();
-    } catch {
-      return null;
-    }
-  }, []);
+    historyRef.current.push({ role: "user", content: userText });
+    setStatus("speaking");
+    bargedInRef.current = false;
+    stopMicLevelTracking();
 
-  // --- Play an audio buffer with output level tracking ---
-  const playAudioBuffer = useCallback((arrayBuffer: ArrayBuffer): Promise<void> => {
-    return new Promise(async (resolve) => {
-      if (!isActiveRef.current) { resolve(); return; }
-      try {
-        const ctx = getOrCreateAudioContext();
-        if (ctx.state === "suspended") await ctx.resume();
+    let fullReply = "";
+    let sentenceBuffer = "";
+    const sentenceEnd = /[.!?…]+[\s"')\]]*(?=\s|$)/;
 
-        const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
-        const source = ctx.createBufferSource();
-        source.buffer = audioBuffer;
+    const speakChunk = (text: string): Promise<void> => {
+      return new Promise((resolve) => {
+        if (!isActiveRef.current || bargedInRef.current) { resolve(); return; }
 
-        const gainNode = ctx.createGain();
-        gainNode.gain.value = 3.0;
-        source.connect(gainNode);
+        const synth = window.speechSynthesis;
+        synthRef.current = synth;
+        const utter = new SpeechSynthesisUtterance(text.trim());
+        utteranceRef.current = utter;
+        utter.rate = 1.08;
+        utter.pitch = 1.0;
 
-        // Analyser for output level → orb reactivity
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 256;
-        gainNode.connect(analyser);
-        analyser.connect(ctx.destination);
+        const voices = synth.getVoices();
+        const preferred = voices.find(v =>
+          ["Samantha", "Google UK English Female", "Microsoft Aria", "Karen", "Moira"]
+            .some(n => v.name.includes(n))
+        );
+        if (preferred) utter.voice = preferred;
 
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-        let animFrame = 0;
-        const updateLevel = () => {
-          if (!isActiveRef.current) return;
-          analyser.getByteFrequencyData(dataArray);
-          const avg = dataArray.reduce((s, v) => s + v, 0) / dataArray.length;
-          setAudioLevel(avg / 255);
-          animFrame = requestAnimationFrame(updateLevel);
-        };
-        animFrame = requestAnimationFrame(updateLevel);
+        // Simulate audio level while speaking
+        let speakInterval: ReturnType<typeof setInterval> | null = null;
+        speakInterval = setInterval(() => {
+          if (!synth.speaking || bargedInRef.current) {
+            if (speakInterval) clearInterval(speakInterval);
+            return;
+          }
+          setAudioLevel(0.3 + Math.random() * 0.5);
+        }, 80);
 
-        currentAudioRef.current = source;
-        source.onended = () => {
-          cancelAnimationFrame(animFrame);
-          currentAudioRef.current = null;
+        utter.onend = () => {
+          if (speakInterval) clearInterval(speakInterval);
           setAudioLevel(0);
           resolve();
         };
-        source.start(0);
-      } catch (e) {
-        console.error("playAudioBuffer error:", e);
-        resolve();
+        utter.onerror = () => {
+          if (speakInterval) clearInterval(speakInterval);
+          setAudioLevel(0);
+          resolve();
+        };
+
+        synth.speak(utter);
+      });
+    };
+
+    // Queue of chunks to speak sequentially
+    const speakQueue: string[] = [];
+    let isSpeakingQueue = false;
+
+    const processSpeakQueue = async () => {
+      if (isSpeakingQueue) return;
+      isSpeakingQueue = true;
+      while (speakQueue.length > 0 && isActiveRef.current && !bargedInRef.current) {
+        const chunk = speakQueue.shift()!;
+        await speakChunk(chunk);
       }
-    });
-  }, [getOrCreateAudioContext]);
+      isSpeakingQueue = false;
+    };
 
-  // --- STT ---
-  const transcribeAudio = useCallback(async (audioBlob: Blob, headers: Record<string, string>): Promise<string | null> => {
-    const arrayBuffer = await audioBlob.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
-    let binary = "";
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-    const base64Audio = btoa(binary);
-
-    const sttRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/speech-to-text`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ audio: base64Audio }),
-    });
-    if (!sttRes.ok) throw new Error("STT failed");
-    const { transcript, error } = await sttRes.json();
-    if (error) throw new Error(error);
-    if (!transcript || transcript.trim() === "") return null;
-    console.log("Transcribed:", transcript);
-    return transcript;
-  }, []);
-
-  // --- Main pipeline: STT → Stream LLM → Progressive TTS ---
-  const processAudio = useCallback(async (audioBlob: Blob) => {
-    if (!isActiveRef.current || isMutedRef.current) return;
-    const runId = ++processingRunRef.current;
-    const isRunActive = () => isActiveRef.current && !isMutedRef.current && runId === processingRunRef.current;
-
-    setStatus("listening");
-    stopMicLevelTracking();
+    const queueChunk = (text: string) => {
+      if (!text.trim() || bargedInRef.current) return;
+      speakQueue.push(text);
+      processSpeakQueue();
+    };
 
     try {
-      const headers = await getHeaders();
+      // Get auth headers
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      const headers = {
+        "Content-Type": "application/json",
+        apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      };
 
-      // 1. Speech-to-Text
-      const transcript = await transcribeAudio(audioBlob, headers);
-      if (!transcript || !isRunActive()) {
-        if (isRunActive()) {
-          setStatus("listening");
-          startListening();
-        } else {
-          setStatus("idle");
-        }
-        return;
-      }
-
-      conversationHistoryRef.current.push({ role: "user", content: transcript });
-
-      // 2. Stream LLM response
-      const chatResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
         method: "POST",
         headers,
         body: JSON.stringify({
-          messages: conversationHistoryRef.current,
+          messages: historyRef.current.map(({ role, content }) => ({ role, content })),
           isVoiceMode: true,
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           clientTimeISO: new Date().toISOString(),
         }),
       });
 
-      if (!chatResponse.ok) throw new Error("Chat failed");
-      if (!isRunActive()) {
-        setStatus("idle");
-        return;
-      }
+      if (!res.ok) throw new Error(`API ${res.status}`);
+      if (!res.body) throw new Error("No response body");
 
-      // Parse SSE stream, detect boundaries, and start TTS on partial chunks for duplex feel
-      const reader = chatResponse.body!.getReader();
+      const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let sseBuffer = "";
-      let fullResponse = "";
-      let sentenceBuffer = "";
-      let streamDone = false;
-      let lastChunkFlush = Date.now();
 
-      const PARTIAL_CHUNK_MIN_CHARS = 24;
-      const PARTIAL_CHUNK_MAX_WAIT_MS = 260;
-
-      // TTS jobs fire as chunks are detected; played in order
-      const ttsJobs: Promise<ArrayBuffer | null>[] = [];
-
-      const flushChunk = (chunk: string) => {
-        const cleaned = chunk.trim();
-        if (!cleaned) return;
-        lastChunkFlush = Date.now();
-        ttsJobs.push(fetchTTS(cleaned, headers));
-      };
-
-      const tryFlushBuffered = (force = false) => {
-        const elapsed = Date.now() - lastChunkFlush;
-        const hasBoundary = /[.!?;,:\n]/.test(sentenceBuffer);
-        const longEnough = sentenceBuffer.trim().length >= PARTIAL_CHUNK_MIN_CHARS;
-        if (!force && !hasBoundary && !(longEnough && elapsed >= PARTIAL_CHUNK_MAX_WAIT_MS)) return;
-
-        if (hasBoundary) {
-          const idx = sentenceBuffer.search(/[.!?;,:\n]/);
-          const flushUntil = idx >= 0 ? idx + 1 : sentenceBuffer.length;
-          flushChunk(sentenceBuffer.slice(0, flushUntil));
-          sentenceBuffer = sentenceBuffer.slice(flushUntil);
-          return;
-        }
-
-        const splitAt = sentenceBuffer.lastIndexOf(" ");
-        if (splitAt > 10) {
-          flushChunk(sentenceBuffer.slice(0, splitAt));
-          sentenceBuffer = sentenceBuffer.slice(splitAt + 1);
-        }
-      };
-
-      // Playback loop runs concurrently with streaming
-      let playIndex = 0;
-      const playbackLoop = async () => {
-        while (isRunActive()) {
-          if (playIndex < ttsJobs.length) {
-            const audio = await ttsJobs[playIndex];
-            if (audio && isRunActive()) {
-              setStatus("speaking");
-              await playAudioBuffer(audio);
-            }
-            playIndex++;
-          } else if (streamDone) {
-            break;
-          } else {
-            await new Promise(r => setTimeout(r, 20));
-          }
-        }
-      };
-
-      // Start playback in background (waits until first TTS chunk is ready)
-      const playbackPromise = playbackLoop();
-
-      // Read SSE stream
-      while (!streamDone && isRunActive()) {
+      while (true) {
         const { done, value } = await reader.read();
-        if (done) { streamDone = true; break; }
+        if (done) break;
+        if (bargedInRef.current || !isActiveRef.current) {
+          reader.cancel();
+          break;
+        }
+
         sseBuffer += decoder.decode(value, { stream: true });
 
         let newlineIndex;
@@ -344,206 +262,154 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
           if (line.endsWith("\r")) line = line.slice(0, -1);
           if (!line.startsWith("data: ")) continue;
           const jsonStr = line.slice(6).trim();
-          if (jsonStr === "[DONE]") { streamDone = true; break; }
+          if (jsonStr === "[DONE]") break;
           try {
             const parsed = JSON.parse(jsonStr);
             const content = parsed.choices?.[0]?.delta?.content;
-            if (content) {
-              fullResponse += content;
-              sentenceBuffer += content;
-              tryFlushBuffered();
+            if (!content) continue;
+
+            fullReply += content;
+            sentenceBuffer += content;
+
+            const match = sentenceBuffer.match(sentenceEnd);
+            if (match && match.index !== undefined) {
+              const endIdx = match.index + match[0].length;
+              const toSpeak = sentenceBuffer.slice(0, endIdx);
+              sentenceBuffer = sentenceBuffer.slice(endIdx);
+              if (toSpeak.trim() && !bargedInRef.current) {
+                queueChunk(toSpeak);
+              }
             }
           } catch {}
         }
-
-        tryFlushBuffered();
       }
 
-      // Flush any remaining text
-      if (sentenceBuffer.trim()) {
-        flushChunk(sentenceBuffer);
-      }
-      streamDone = true;
-
-      // Wait for all audio to finish playing
-      await playbackPromise;
-      if (!isRunActive()) {
-        setStatus("idle");
-        return;
+      // Speak remaining text
+      if (sentenceBuffer.trim() && !bargedInRef.current && isActiveRef.current) {
+        queueChunk(sentenceBuffer);
       }
 
       // Save to history
-      if (fullResponse) {
-        conversationHistoryRef.current.push({ role: "assistant", content: fullResponse });
+      if (fullReply) {
+        historyRef.current.push({ role: "assistant", content: fullReply });
       }
 
-      // Resume listening
-      setStatus("listening");
-      startListening();
-    } catch (error) {
-      console.error("Process error:", error);
-      toast({ title: "Processing failed", variant: "destructive" });
-      if (isActiveRef.current && !isMutedRef.current) {
-        setStatus("listening");
-        startListening();
-      }
-    }
-  }, [getHeaders, transcribeAudio, fetchTTS, playAudioBuffer, stopMicLevelTracking, toast]);
-
-  // --- Listening with silence detection ---
-  const startListening = useCallback(() => {
-    if (!streamRef.current || isMutedRef.current || !isActiveRef.current) return;
-
-    audioChunksRef.current = [];
-    startMicLevelTracking();
-
-    const mimeType = MediaRecorder.isTypeSupported("audio/webm")
-      ? "audio/webm"
-      : MediaRecorder.isTypeSupported("audio/mp4")
-        ? "audio/mp4"
-        : "";
-
-    const options = mimeType ? { mimeType } : undefined;
-
-    try {
-      const mediaRecorder = new MediaRecorder(streamRef.current, options);
-      mediaRecorderRef.current = mediaRecorder;
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) audioChunksRef.current.push(event.data);
-      };
-
-      mediaRecorder.onstop = () => {
-        stopMicLevelTracking();
-
-        if (isMutedRef.current || !isActiveRef.current) {
-          audioChunksRef.current = [];
-          setStatus("idle");
-          return;
-        }
-
-        if (audioChunksRef.current.length > 0) {
-          const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || "audio/webm" });
-          if (audioBlob.size > 1000) {
-            processAudio(audioBlob);
-          } else {
-            setStatus("listening");
+      // Wait for speech queue to finish, then resume listening
+      const waitForDone = () => {
+        if (!window.speechSynthesis.speaking && !window.speechSynthesis.pending && speakQueue.length === 0) {
+          if (isActiveRef.current && !bargedInRef.current) {
             startListening();
           }
+        } else if (isActiveRef.current) {
+          setTimeout(waitForDone, 100);
         }
       };
-
-      mediaRecorder.onerror = () => {
-        if (isActiveRef.current && !isMutedRef.current) {
-          setTimeout(() => startListening(), 500);
-        }
-      };
-
-      mediaRecorder.start();
-      setStatus("listening");
-
-      // Silence detection
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const source = audioContext.createMediaStreamSource(streamRef.current!);
-      const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 512;
-      source.connect(analyser);
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-      let silenceStart: number | null = null;
-      let hasSpoken = false;
-      const SILENCE_THRESHOLD = 15;
-      const SPEECH_THRESHOLD = 23;
-      const SILENCE_DURATION = silenceCutoffRef.current;
-      const MAX_RECORD_TIME = 50000;
-      const MAX_INITIAL_SILENCE = 8000;
-      const recordStart = Date.now();
-
-      const checkSilence = () => {
-        if (mediaRecorder.state !== "recording" || !isActiveRef.current) {
-          audioContext.close().catch(() => {});
-          return;
-        }
-
-        if (Date.now() - recordStart > MAX_RECORD_TIME) {
-          mediaRecorder.stop();
-          audioContext.close().catch(() => {});
-          return;
-        }
-
-        analyser.getByteFrequencyData(dataArray);
-        const avg = dataArray.reduce((sum, v) => sum + v, 0) / dataArray.length;
-
-        if (avg >= SPEECH_THRESHOLD) {
-          hasSpoken = true;
-          // Interrupt AI if speaking
-          if (currentAudioRef.current) {
-            stopCurrentAudio();
-            setStatus("listening");
-          }
-        }
-
-        if (avg < SILENCE_THRESHOLD) {
-          if (!silenceStart) silenceStart = Date.now();
-          const elapsed = Date.now() - silenceStart;
-          if (hasSpoken && elapsed > SILENCE_DURATION) {
-            mediaRecorder.stop();
-            audioContext.close().catch(() => {});
-            return;
-          }
-          if (!hasSpoken && elapsed > MAX_INITIAL_SILENCE) {
-            mediaRecorder.stop();
-            audioContext.close().catch(() => {});
-            return;
-          }
-        } else {
-          silenceStart = null;
-        }
-
-        requestAnimationFrame(checkSilence);
-      };
-
-      requestAnimationFrame(checkSilence);
-    } catch (error) {
-      console.error("MediaRecorder error:", error);
-      toast({ title: "Recording failed", variant: "destructive" });
+      if (!bargedInRef.current && isActiveRef.current) {
+        waitForDone();
+      }
+    } catch (err: any) {
+      console.error("Voice stream error:", err);
+      toast({ title: err.message ?? "Voice processing failed", variant: "destructive" });
+      if (isActiveRef.current) startListening();
     }
-  }, [processAudio, stopCurrentAudio, startMicLevelTracking, stopMicLevelTracking, toast]);
+  }, [stopMicLevelTracking, toast]);
 
+  // ── Speech recognition ────────────────────────────────────────────────────
+  const startListening = useCallback(() => {
+    if (!isActiveRef.current || isMutedRef.current) return;
+
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      toast({ title: "SpeechRecognition not supported. Use Chrome.", variant: "destructive" });
+      return;
+    }
+
+    speechBufferRef.current = "";
+    clearSilenceTimer();
+
+    const rec = new SR();
+    recognitionRef.current = rec;
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = "en-US";
+    rec.maxAlternatives = 1;
+
+    setStatus("listening");
+    startMicLevelTracking();
+
+    rec.onresult = (e: any) => {
+      let interim = "";
+      let finalText = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) {
+          finalText += t;
+          speechBufferRef.current += " " + t;
+        } else {
+          interim += t;
+        }
+      }
+
+      // Barge-in: user spoke while AI is speaking
+      if ((finalText || interim) && statusRef.current === "speaking") {
+        bargedInRef.current = true;
+        stopSpeaking();
+        setStatus("listening");
+      }
+
+      // Reset silence timer on every speech event
+      if (finalText || interim) {
+        clearSilenceTimer();
+        silenceTimerRef.current = setTimeout(() => {
+          const said = speechBufferRef.current.trim();
+          speechBufferRef.current = "";
+          rec.stop();
+          if (said.length > 1) {
+            streamAndSpeak(said);
+          } else {
+            startListening();
+          }
+        }, silenceCutoffRef.current);
+      }
+    };
+
+    rec.onerror = (e: any) => {
+      if (e.error === "no-speech" || e.error === "aborted") {
+        if (isActiveRef.current && !isMutedRef.current) startListening();
+      } else {
+        toast({ title: `Mic error: ${e.error}`, variant: "destructive" });
+      }
+    };
+
+    rec.onend = () => {
+      if (isActiveRef.current && statusRef.current === "listening" && !silenceTimerRef.current && !isMutedRef.current) {
+        startListening();
+      }
+    };
+
+    rec.start();
+  }, [stopSpeaking, streamAndSpeak, startMicLevelTracking, toast]);
+
+  // ── Start / End call ──────────────────────────────────────────────────────
   const startCall = useCallback(async () => {
     setStatus("connecting");
+    historyRef.current = [];
+    isActiveRef.current = true;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
-
       streamRef.current = stream;
-      isActiveRef.current = true;
       setIsConnected(true);
-
-      // Pre-unlock AudioContext for iOS
-      try {
-        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        if (ctx.state === "suspended") await ctx.resume();
-        const silentBuffer = ctx.createBuffer(1, 1, 22050);
-        const silentSource = ctx.createBufferSource();
-        silentSource.buffer = silentBuffer;
-        silentSource.connect(ctx.destination);
-        silentSource.start(0);
-        audioContextRef.current = ctx;
-      } catch (e) {
-        console.warn("AudioContext pre-unlock failed:", e);
-      }
-
       startListening();
     } catch (error) {
       console.error("Microphone error:", error);
       let errorMessage = "Could not access microphone";
       if (error instanceof Error) {
-        if (error.name === "NotAllowedError") errorMessage = "Microphone access denied. Please allow microphone access in your browser settings.";
-        else if (error.name === "NotFoundError") errorMessage = "No microphone found on this device.";
-        else if (error.name === "NotReadableError") errorMessage = "Microphone is already in use by another application.";
+        if (error.name === "NotAllowedError") errorMessage = "Microphone access denied.";
+        else if (error.name === "NotFoundError") errorMessage = "No microphone found.";
+        else if (error.name === "NotReadableError") errorMessage = "Microphone in use.";
       }
       toast({ title: errorMessage, variant: "destructive" });
       setStatus("idle");
@@ -552,10 +418,11 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
   const endCall = useCallback(() => {
     isActiveRef.current = false;
+    clearSilenceTimer();
+    recognitionRef.current?.abort();
+    stopSpeaking();
     stopMicLevelTracking();
 
-    if (mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.stop();
-    stopCurrentAudio();
     if (audioContextRef.current) {
       audioContextRef.current.close().catch(() => {});
       audioContextRef.current = null;
@@ -568,7 +435,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     setIsConnected(false);
     setStatus("idle");
     onClose();
-  }, [onClose, stopCurrentAudio, stopMicLevelTracking]);
+  }, [onClose, stopSpeaking, stopMicLevelTracking]);
 
   const toggleMute = useCallback(() => {
     const next = !isMuted;
@@ -576,21 +443,22 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     isMutedRef.current = next;
 
     if (next) {
-      processingRunRef.current += 1;
-      if (mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.stop();
-      stopCurrentAudio();
+      clearSilenceTimer();
+      recognitionRef.current?.abort();
+      stopSpeaking();
       stopMicLevelTracking();
       setStatus("idle");
     } else if (isConnected) {
-      setStatus("listening");
       startListening();
     }
-  }, [isMuted, isConnected, startListening, stopCurrentAudio, stopMicLevelTracking]);
+  }, [isMuted, isConnected, startListening, stopSpeaking, stopMicLevelTracking]);
 
   useEffect(() => {
     startCall();
     return () => {
       isActiveRef.current = false;
+      recognitionRef.current?.abort();
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
       if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -632,24 +500,6 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         </div>
 
         <div className="w-full rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm p-3 space-y-3">
-          <select
-            value={selectedVoice}
-            onChange={(e) => {
-              const newVoice = e.target.value;
-              setSelectedVoice(newVoice);
-              selectedVoiceRef.current = newVoice;
-              localStorage.setItem("xai-tts-voice", newVoice);
-            }}
-            className="w-full h-9 rounded-md border border-white/10 bg-black/50 px-3 text-sm text-white outline-none"
-          >
-            <optgroup label="Feminine Voices">
-              {feminineVoices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-            </optgroup>
-            <optgroup label="Masculine Voices">
-              {masculineVoices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-            </optgroup>
-          </select>
-
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-white/70">
               <span>Silence cutoff</span>

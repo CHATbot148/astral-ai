@@ -36,7 +36,7 @@ export const SplashScreen = ({ onComplete }: SplashScreenProps) => {
               <img
                 src={astrazLogo}
                 alt="Astraz"
-                className="w-28 h-28 object-contain drop-shadow-[0_0_24px_hsl(270_80%_60%/0.4)]"
+                className="w-36 h-36 object-contain drop-shadow-[0_0_24px_hsl(270_80%_60%/0.4)]"
               />
               {[1, 2].map((i) => (
                 <motion.div
