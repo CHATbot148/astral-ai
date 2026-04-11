@@ -20,7 +20,7 @@ const Index = () => {
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="aurora-bg" />
         <div className="flex flex-col items-center gap-4">
-          <img src={astrazLogo} alt="Astraz" className="w-14 h-14 object-contain xai-pulse drop-shadow-[0_0_20px_hsl(270_80%_60%/0.3)]" />
+          <img src={astrazLogo} alt="Astraz" className="w-20 h-20 object-contain xai-pulse drop-shadow-[0_0_20px_hsl(270_80%_60%/0.3)]" />
           <Loader2 className="h-5 w-5 animate-spin text-primary" />
           <p className="text-xs text-muted-foreground animate-pulse">Loading Astraz…</p>
         </div>

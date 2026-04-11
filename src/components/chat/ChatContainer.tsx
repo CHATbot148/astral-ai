@@ -577,25 +577,12 @@ export const ChatContainer = () => {
         convId = newConv.id;
       }
 
-      // Show user message IMMEDIATELY (optimistic) before file uploads / DB save
-      const tempId = `temp-${Date.now()}`;
-      setMessages(prev => [...prev, {
-        id: tempId,
-        conversation_id: convId!,
-        role: 'user' as const,
-        content,
-        file_urls: null,
-        created_at: new Date().toISOString(),
-      }]);
-
       let fileUrls: string[] = [];
       if (files && files.length > 0) fileUrls = await uploadFiles(files);
 
-      // Save to DB in background; remove optimistic msg once real one lands
+      // Save user message to DB (no optimistic duplicate)
       extractAndSaveMemory(content);
-      addMessage(convId, 'user', content, fileUrls.length > 0 ? fileUrls : undefined)
-        .then(() => setMessages(prev => prev.filter(m => m.id !== tempId)))
-        .catch(console.error);
+      await addMessage(convId, 'user', content, fileUrls.length > 0 ? fileUrls : undefined);
 
       const userRequestedInlineGeneration = Boolean(
         detectImageGenerationRequest(content) || detectVideoGenerationRequest(content)

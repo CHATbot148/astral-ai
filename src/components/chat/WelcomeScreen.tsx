@@ -27,7 +27,7 @@ export const WelcomeScreen = memo(({ onSuggestionClick, onGenerateImage }: Welco
         <img
           src={astrazLogo}
           alt="Astraz"
-          className="w-20 h-20 object-contain drop-shadow-[0_0_30px_hsl(270_80%_60%/0.35)]"
+          className="w-28 h-28 object-contain drop-shadow-[0_0_30px_hsl(270_80%_60%/0.35)]"
         />
         <motion.div
           className="absolute -inset-6 rounded-full bg-gradient-to-br from-xai-purple/15 to-xai-cyan/15 blur-2xl -z-10"
