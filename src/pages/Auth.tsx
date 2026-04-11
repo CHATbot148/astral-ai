@@ -11,6 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { lovable } from '@/integrations/lovable';
 import { z } from 'zod';
 import astrazLogo from '@/assets/astraz-logo.png';
+import astrazFullLogo from '@/assets/astraz-full-logo.png';
 
 const emailSchema = z.string().email('Please enter a valid email address');
 const passwordSchema = z.string().min(6, 'Password must be at least 6 characters');
@@ -293,7 +294,7 @@ const Auth = () => {
             transition={{ delay: 0.1, type: 'spring' }}
             className="flex items-center gap-3 mb-8"
           >
-            <img src={astrazLogo} alt="Astraz" className="w-12 h-12 object-contain drop-shadow-[0_0_16px_hsl(270_80%_60%/0.3)]" />
+            <img src={astrazLogo} alt="Astraz" className="w-14 h-14 object-contain drop-shadow-[0_0_16px_hsl(270_80%_60%/0.3)]" />
             <span className="text-2xl font-display font-bold xai-gradient-text">Astraz</span>
           </motion.div>
 
@@ -685,44 +686,40 @@ const Auth = () => {
         </motion.div>
       </div>
 
-      {/* Right side - Branding (2/3) */}
-      <div className="hidden md:flex md:w-1/2 lg:w-2/3 relative bg-gradient-to-br from-background via-background to-xai-cyan/5 overflow-hidden items-center justify-center">
-        {/* Background pattern */}
-        <div className="absolute inset-0 auth-bg-pattern opacity-100 dark:opacity-80" />
+      {/* Right side - Full logo image with blended background */}
+      <div className="hidden md:flex md:w-1/2 lg:w-2/3 relative overflow-hidden items-center justify-center"
+        style={{ backgroundColor: '#0a0a1a' }}
+      >
+        {/* Full logo image as background-like element */}
+        <motion.button
+          type="button"
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.3, duration: 0.6 }}
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.97 }}
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          className="relative z-10 cursor-pointer focus:outline-none"
+          aria-label="Toggle theme"
+        >
+          <img src={astrazFullLogo} alt="Astraz" className="w-[70%] max-w-2xl mx-auto object-contain" />
+        </motion.button>
 
-        {/* Large logo in background - CLICKABLE FOR THEME TOGGLE */}
-        <div className="relative z-10 flex flex-col items-center">
-          <motion.button
-            type="button"
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.3, duration: 0.5 }}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            className="relative cursor-pointer focus:outline-none"
-            aria-label="Toggle theme"
-          >
-            <img src={astrazLogo} alt="Astraz" className="w-44 md:w-52 lg:w-60 h-44 md:h-52 lg:h-60 object-contain drop-shadow-[0_0_40px_hsl(270_80%_60%/0.35)]" />
-            <motion.div
-              className="absolute -inset-8 rounded-full bg-gradient-to-br from-xai-cyan/20 to-xai-purple/20 blur-3xl -z-10"
-              animate={{ scale: [1, 1.1, 1], opacity: [0.4, 0.6, 0.4] }}
-              transition={{ duration: 4, repeat: Infinity }}
-            />
-          </motion.button>
+        {/* Made by X-Tech below the image */}
+        <motion.a
+          href="https://xtechnology.vercel.app"
+          target="_blank"
+          rel="noopener noreferrer"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
+          className="absolute bottom-8 text-2xl md:text-3xl lg:text-4xl font-display font-bold text-white/70 hover:text-white transition-colors"
+        >
+          Made by X-Tech
+        </motion.a>
 
-          <motion.a
-            href="https://xtechnology.vercel.app"
-            target="_blank"
-            rel="noopener noreferrer"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5 }}
-            className="mt-8 text-3xl md:text-4xl lg:text-5xl font-display font-bold text-foreground/80 hover:text-foreground transition-colors"
-          >
-            Made by X-Tech
-          </motion.a>
-        </div>
+        {/* Ambient glow */}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a1a] via-transparent to-[#0a0a1a]/50 pointer-events-none" />
       </div>
     </div>
   );
