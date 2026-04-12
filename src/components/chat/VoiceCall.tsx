@@ -264,77 +264,6 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     rec._dead = false;
     recognitionRef.current = rec;
     rec.continuous = false;      // single utterance — avoids continuous CPU drain on mobile
-    rec.interimResults = true;   // needed for barge-in detection
-    rec.lang = "en-US";
-    rec.maxAlternatives = 1;
-
-    let finalTranscript = "";
-    setStatus("listening");
-    startMicLevelTracking();
-
-    rec.onresult = (e: any) => {
-      if (rec._dead) return;
-
-      // Barge-in: kill TTS the instant user starts speaking
-      if (isSpeakingRef.current) {
-        stopSpeaking();
-        setStatus("listening");
-      }
-
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) {
-          finalTranscript += e.results[i][0].transcript;
-        }
-      }
-
-      // Reset silence gate on every speech event
-      clearSilenceTimer();
-      silenceTimerRef.current = setTimeout(() => {
-        if (rec._dead || !isActiveRef.current) return;
-        rec._dead = true;
-        try { rec.stop(); } catch {}
-      }, silenceCutoffRef.current);
-    };
-
-    // Extra barge-in hook
-    rec.onspeechstart = () => {
-      if (isSpeakingRef.current) {
-        stopSpeaking();
-        setStatus("listening");
-      }
-    };
-
-    rec.onend = () => {
-      clearSilenceTimer();
-      stopMicLevelTracking();
-      if (!isActiveRef.current) return;
-
-      const said = finalTranscript.trim();
-      if (said.length > 1) {
-        streamAndSpeak(said);
-      } else {
-        // Nothing heard — restart after small pause
-        setTimeout(() => startListening(), 400);
-      }
-    };
-
-    rec.onerror = (e: any) => {
-      if (rec._dead) return;
-      rec._dead = true;
-      clearSilenceTimer();
-      if (e.error === "aborted" || e.error === "no-speech") {
-        if (isActiveRef.current && !isMutedRef.current) setTimeout(() => startListening(), 500);
-      } else {
-        toast({ title: `Mic error: ${e.error}`, variant: "destructive" });
-      }
-    };
-
-    try {
-      rec.start();
-    } catch {
-      setTimeout(() => startListening(), 500);
-    }
-    rec.continuous = false;
     rec.interimResults = false;  // iOS Safari struggles with interim — use final only
     rec.lang = "en-US";
     rec.maxAlternatives = 1;
@@ -384,7 +313,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       if (said.length > 1) {
         streamAndSpeak(said);
       } else {
-        // Nothing heard — restart after small pause (longer on mobile to prevent CPU spin)
+        // Nothing heard — restart after small pause
         setTimeout(() => startListening(), 600);
       }
     };

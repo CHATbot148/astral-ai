@@ -77,6 +77,10 @@ const hasExplicitVisualIntent = (text: string) => {
 
 export const ChatContainer = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // On mobile, start with sidebar closed so user lands in new chat
+  useEffect(() => {
+    if (window.innerWidth < 1024) setSidebarOpen(false);
+  }, []);
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [streamingStyle, setStreamingStyle] = useState<string>('typewriter');
