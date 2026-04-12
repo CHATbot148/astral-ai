@@ -278,8 +278,41 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-row-reverse">
-      {/* Left side - Form */}
+    <div className="min-h-screen flex">
+      {/* Left side - Full logo image */}
+      <div
+        className="hidden md:flex md:w-1/2 lg:w-2/3 relative overflow-hidden items-center justify-center"
+        style={{ backgroundColor: '#0a0a1a' }}
+      >
+        <img
+          src={astrazFullLogo}
+          alt="Astraz"
+          className="absolute inset-0 w-full h-full object-contain p-8 lg:p-16"
+        />
+
+        {/* Invisible theme toggle over the icon area */}
+        <button
+          onClick={() => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'dark' : 'dark')}
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 lg:w-48 lg:h-48 z-20 cursor-pointer"
+          aria-label="Toggle theme"
+          style={{ background: 'transparent', border: 'none' }}
+        />
+
+        {/* Made by X-Tech - positioned just below center where logo text is */}
+        <motion.a
+          href="https://xtechnology.vercel.app"
+          target="_blank"
+          rel="noopener noreferrer"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
+          className="absolute bottom-[28%] z-10 text-xl md:text-2xl lg:text-3xl font-display font-bold text-white/60 hover:text-white transition-colors"
+        >
+          Made by X-Tech
+        </motion.a>
+      </div>
+
+      {/* Right side - Form */}
       <div className="w-full md:w-1/2 lg:w-1/3 flex items-center justify-center p-6 bg-card">
         <motion.div
           initial={{ opacity: 0, x: -20 }}
@@ -686,30 +719,6 @@ const Auth = () => {
         </motion.div>
       </div>
 
-      {/* Left side - Full logo image */}
-      <div
-        className="hidden md:flex md:w-1/2 lg:w-2/3 relative overflow-hidden items-center justify-center"
-        style={{ backgroundColor: '#0a0a1a' }}
-      >
-        <img
-          src={astrazFullLogo}
-          alt="Astraz"
-          className="absolute inset-0 w-full h-full object-contain p-12 lg:p-20"
-        />
-
-        {/* Made by X-Tech */}
-        <motion.a
-          href="https://xtechnology.vercel.app"
-          target="_blank"
-          rel="noopener noreferrer"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="absolute bottom-8 z-10 text-2xl md:text-3xl lg:text-4xl font-display font-bold text-white/70 hover:text-white transition-colors"
-        >
-          Made by X-Tech
-        </motion.a>
-      </div>
     </div>
   );
 };
