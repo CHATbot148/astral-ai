@@ -278,7 +278,7 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen flex flex-row-reverse">
       {/* Left side - Form */}
       <div className="w-full md:w-1/2 lg:w-1/3 flex items-center justify-center p-6 bg-card">
         <motion.div
@@ -686,26 +686,18 @@ const Auth = () => {
         </motion.div>
       </div>
 
-      {/* Right side - Full logo image with blended background */}
-      <div className="hidden md:flex md:w-1/2 lg:w-2/3 relative overflow-hidden items-center justify-center"
+      {/* Left side - Full logo image */}
+      <div
+        className="hidden md:flex md:w-1/2 lg:w-2/3 relative overflow-hidden items-center justify-center"
         style={{ backgroundColor: '#0a0a1a' }}
       >
-        {/* Full logo image as background-like element */}
-        <motion.button
-          type="button"
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.3, duration: 0.6 }}
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.97 }}
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          className="relative z-10 cursor-pointer focus:outline-none"
-          aria-label="Toggle theme"
-        >
-          <img src={astrazFullLogo} alt="Astraz" className="w-[70%] max-w-2xl mx-auto object-contain" />
-        </motion.button>
+        <img
+          src={astrazFullLogo}
+          alt="Astraz"
+          className="absolute inset-0 w-full h-full object-contain p-12 lg:p-20"
+        />
 
-        {/* Made by X-Tech below the image */}
+        {/* Made by X-Tech */}
         <motion.a
           href="https://xtechnology.vercel.app"
           target="_blank"
@@ -713,13 +705,10 @@ const Auth = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}
-          className="absolute bottom-8 text-2xl md:text-3xl lg:text-4xl font-display font-bold text-white/70 hover:text-white transition-colors"
+          className="absolute bottom-8 z-10 text-2xl md:text-3xl lg:text-4xl font-display font-bold text-white/70 hover:text-white transition-colors"
         >
           Made by X-Tech
         </motion.a>
-
-        {/* Ambient glow */}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a1a] via-transparent to-[#0a0a1a]/50 pointer-events-none" />
       </div>
     </div>
   );
