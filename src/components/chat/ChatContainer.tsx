@@ -77,6 +77,10 @@ const hasExplicitVisualIntent = (text: string) => {
 
 export const ChatContainer = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // On mobile, start with sidebar closed so user lands in new chat
+  useEffect(() => {
+    if (window.innerWidth < 1024) setSidebarOpen(false);
+  }, []);
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [streamingStyle, setStreamingStyle] = useState<string>('typewriter');
@@ -999,7 +1003,7 @@ export const ChatContainer = () => {
           <AnimatePresence mode="wait">
             {displayMessages.length === 0 ? (
               <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pt-14 lg:pt-4">
-                <WelcomeScreen onSuggestionClick={handleSend} onGenerateImage={() => openImageDialog()} />
+                <WelcomeScreen onSuggestionClick={handleSend} onGenerateImage={() => openImageDialog()} profileName={profile?.full_name} />
               </motion.div>
             ) : (
               <motion.div key="messages" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto pt-14 lg:pt-4">

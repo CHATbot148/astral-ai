@@ -1,11 +1,13 @@
 import { memo } from 'react';
 import { motion } from 'framer-motion';
 import { Code, Brain, FileText, ImagePlus } from 'lucide-react';
-import astrazLogo from '@/assets/astraz-logo.png';
+import astrazFullLogo from '@/assets/astraz-full-logo.png';
+import { useAuth } from '@/hooks/useAuth';
 
 interface WelcomeScreenProps {
   onSuggestionClick: (suggestion: string) => void;
   onGenerateImage?: () => void;
+  profileName?: string | null;
 }
 
 const suggestions = [
@@ -15,7 +17,18 @@ const suggestions = [
   { icon: ImagePlus, title: 'Generate Image', description: 'Create an AI-generated image', isImageAction: true },
 ];
 
-export const WelcomeScreen = memo(({ onSuggestionClick, onGenerateImage }: WelcomeScreenProps) => {
+const getGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good Morning';
+  if (hour < 18) return 'Good Afternoon';
+  return 'Good Evening';
+};
+
+export const WelcomeScreen = memo(({ onSuggestionClick, onGenerateImage, profileName }: WelcomeScreenProps) => {
+  const { user } = useAuth();
+  const displayName = profileName || user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || '';
+  const greeting = getGreeting();
+
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-4 py-8">
       <motion.div
@@ -25,9 +38,10 @@ export const WelcomeScreen = memo(({ onSuggestionClick, onGenerateImage }: Welco
         className="mb-6 relative"
       >
         <img
-          src={astrazLogo}
+          src={astrazFullLogo}
           alt="Astraz"
-          className="w-36 h-36 object-contain drop-shadow-[0_0_30px_hsl(270_80%_60%/0.35)]"
+          className="w-28 h-28 rounded-full object-cover drop-shadow-[0_0_30px_hsl(270_80%_60%/0.35)]"
+          style={{ background: '#0a0a1a' }}
         />
         <motion.div
           className="absolute -inset-6 rounded-full bg-gradient-to-br from-xai-purple/15 to-xai-cyan/15 blur-2xl -z-10"
@@ -42,7 +56,7 @@ export const WelcomeScreen = memo(({ onSuggestionClick, onGenerateImage }: Welco
         transition={{ delay: 0.15 }}
         className="text-3xl md:text-4xl font-display font-bold mb-3 text-center"
       >
-        Welcome to <span className="xai-gradient-text">Astraz</span>
+        {greeting}, <span className="xai-gradient-text">{displayName}</span>
       </motion.h1>
 
       <motion.p

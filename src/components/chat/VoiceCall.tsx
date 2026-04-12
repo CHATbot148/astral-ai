@@ -264,7 +264,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     rec._dead = false;
     recognitionRef.current = rec;
     rec.continuous = false;      // single utterance — avoids continuous CPU drain on mobile
-    rec.interimResults = true;   // needed for barge-in detection
+    rec.interimResults = false;  // iOS Safari struggles with interim — use final only
     rec.lang = "en-US";
     rec.maxAlternatives = 1;
 
@@ -314,7 +314,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         streamAndSpeak(said);
       } else {
         // Nothing heard — restart after small pause
-        setTimeout(() => startListening(), 400);
+        setTimeout(() => startListening(), 600);
       }
     };
 
@@ -322,8 +322,8 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       if (rec._dead) return;
       rec._dead = true;
       clearSilenceTimer();
-      if (e.error === "aborted" || e.error === "no-speech") {
-        if (isActiveRef.current && !isMutedRef.current) setTimeout(() => startListening(), 500);
+      if (e.error === "aborted" || e.error === "no-speech" || e.error === "not-allowed") {
+        if (isActiveRef.current && !isMutedRef.current) setTimeout(() => startListening(), 800);
       } else {
         toast({ title: `Mic error: ${e.error}`, variant: "destructive" });
       }
@@ -332,7 +332,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     try {
       rec.start();
     } catch {
-      setTimeout(() => startListening(), 500);
+      setTimeout(() => startListening(), 800);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stopSpeaking, startMicLevelTracking, stopMicLevelTracking, toast]);

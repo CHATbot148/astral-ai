@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import astrazLogo from '@/assets/astraz-logo.png';
+import astrazFullLogo from '@/assets/astraz-full-logo.png';
 
 interface SplashScreenProps {
   onComplete: () => void;
@@ -8,14 +8,22 @@ interface SplashScreenProps {
 
 export const SplashScreen = ({ onComplete }: SplashScreenProps) => {
   const [isVisible, setIsVisible] = useState(true);
+  const [progress, setProgress] = useState(0);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsVisible(false);
       setTimeout(onComplete, 400);
-    }, 1800);
+    }, 2200);
     return () => clearTimeout(timer);
   }, [onComplete]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setProgress(prev => Math.min(prev + 2, 100));
+    }, 40);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <AnimatePresence>
@@ -26,25 +34,37 @@ export const SplashScreen = ({ onComplete }: SplashScreenProps) => {
           transition={{ duration: 0.4 }}
           className="fixed inset-0 z-[100] flex items-center justify-center bg-background"
         >
-          <div className="flex flex-col items-center gap-6">
+          <div className="flex flex-col items-center gap-8">
+            {/* Animated rings */}
             <motion.div
-              initial={{ scale: 0, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ type: 'spring', stiffness: 180, damping: 18, delay: 0.15 }}
+              initial={{ scale: 0, rotate: -180 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ type: 'spring', stiffness: 150, damping: 20, delay: 0.1 }}
               className="relative"
             >
               <img
-                src={astrazLogo}
+                src={astrazFullLogo}
                 alt="Astraz"
-                className="w-36 h-36 object-contain drop-shadow-[0_0_24px_hsl(270_80%_60%/0.4)]"
+                className="w-32 h-32 rounded-full object-cover drop-shadow-[0_0_30px_hsl(270_80%_60%/0.5)]"
+                style={{ background: '#0a0a1a' }}
               />
-              {[1, 2].map((i) => (
+              {/* Orbiting ring */}
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
+                className="absolute -inset-4"
+              >
+                <div className="w-full h-full rounded-full border-2 border-transparent" style={{ borderTopColor: 'hsl(270 80% 60% / 0.6)', borderRightColor: 'hsl(190 90% 48% / 0.4)' }} />
+              </motion.div>
+              {/* Pulsing glow rings */}
+              {[1, 2, 3].map((i) => (
                 <motion.div
                   key={i}
-                  initial={{ scale: 0.8, opacity: 0.4 }}
-                  animate={{ scale: 2.2, opacity: 0 }}
-                  transition={{ duration: 1.8, repeat: Infinity, delay: i * 0.5, ease: 'easeOut' }}
-                  className="absolute inset-0 rounded-full border border-primary/30"
+                  initial={{ scale: 0.8, opacity: 0.3 }}
+                  animate={{ scale: 1.8 + i * 0.3, opacity: 0 }}
+                  transition={{ duration: 2, repeat: Infinity, delay: i * 0.4, ease: 'easeOut' }}
+                  className="absolute inset-0 rounded-full"
+                  style={{ border: `1px solid hsl(${i % 2 === 0 ? '270 80% 60%' : '190 90% 48%'} / 0.3)` }}
                 />
               ))}
             </motion.div>
@@ -55,20 +75,20 @@ export const SplashScreen = ({ onComplete }: SplashScreenProps) => {
               transition={{ delay: 0.4 }}
               className="text-center"
             >
-              <h1 className="text-3xl font-display font-bold xai-gradient-text">Astraz</h1>
-              <p className="text-sm text-muted-foreground mt-1.5">Your Intelligent AI Assistant</p>
+              <h1 className="text-4xl font-display font-bold xai-gradient-text tracking-tight">Astraz</h1>
+              <p className="text-sm text-muted-foreground mt-2 tracking-wide">Your Intelligent AI Assistant</p>
             </motion.div>
 
+            {/* Progress bar */}
             <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: '160px' }}
-              transition={{ duration: 1.2, delay: 0.3, ease: 'easeInOut' }}
-              className="h-0.5 bg-gradient-to-r from-xai-purple to-xai-cyan rounded-full overflow-hidden"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.5 }}
+              className="w-48 h-1 bg-muted rounded-full overflow-hidden"
             >
-              <motion.div
-                animate={{ x: ['-100%', '100%'] }}
-                transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
-                className="h-full w-1/3 bg-white/40"
+              <div
+                className="h-full bg-gradient-to-r from-xai-purple to-xai-cyan rounded-full transition-all duration-100 ease-out"
+                style={{ width: `${progress}%` }}
               />
             </motion.div>
           </div>
