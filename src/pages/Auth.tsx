@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mail, Lock, User, ArrowRight, Loader2, ArrowLeft, Sun, Moon } from 'lucide-react';
+import { Mail, Lock, User, ArrowRight, Loader2, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
@@ -278,42 +278,9 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen flex">
-      {/* Left side - Full logo image */}
-      <div
-        className="hidden md:flex md:w-1/2 lg:w-2/3 relative overflow-hidden items-center justify-center"
-        style={{ backgroundColor: '#0a0a1a' }}
-      >
-        <img
-          src={astrazFullLogo}
-          alt="Astraz"
-          className="absolute inset-0 w-full h-full object-contain p-8 lg:p-16"
-        />
-
-        {/* Invisible theme toggle over the icon area */}
-        <button
-          onClick={() => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'dark' : 'dark')}
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 lg:w-48 lg:h-48 z-20 cursor-pointer"
-          aria-label="Toggle theme"
-          style={{ background: 'transparent', border: 'none' }}
-        />
-
-        {/* Made by X-Tech - positioned just below center where logo text is */}
-        <motion.a
-          href="https://xtechnology.vercel.app"
-          target="_blank"
-          rel="noopener noreferrer"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="absolute bottom-[28%] z-10 text-xl md:text-2xl lg:text-3xl font-display font-bold text-white/60 hover:text-white transition-colors"
-        >
-          Made by X-Tech
-        </motion.a>
-      </div>
-
-      {/* Right side - Form */}
-      <div className="w-full md:w-1/2 lg:w-1/3 flex items-center justify-center p-6 bg-card">
+    <div className="min-h-screen flex flex-col md:flex-row">
+      {/* Left side - Form */}
+      <div className="order-1 w-full md:w-1/2 lg:w-1/3 flex items-center justify-center p-6 bg-card">
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -325,10 +292,10 @@ const Auth = () => {
             initial={{ opacity: 0, scale: 0.5 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.1, type: 'spring' }}
-            className="flex items-center gap-3 mb-8"
+            className="flex items-center gap-4 mb-8"
           >
-            <img src={astrazLogo} alt="Astraz" className="w-14 h-14 object-contain drop-shadow-[0_0_16px_hsl(270_80%_60%/0.3)]" />
-            <span className="text-2xl font-display font-bold xai-gradient-text">Astraz</span>
+            <img src={astrazLogo} alt="Astraz" className="w-24 h-24 object-contain drop-shadow-[0_0_16px_hsl(270_80%_60%/0.3)]" />
+            <span className="text-3xl font-display font-bold xai-gradient-text">Astraz</span>
           </motion.div>
 
           <AnimatePresence mode="wait">
@@ -498,6 +465,260 @@ const Auth = () => {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
               >
+                {/* OTP Verification */}
+                <div className="mb-8">
+                  <h1 className="text-3xl font-display font-bold mb-2">
+                    Verify Your Email
+                  </h1>
+                  <p className="text-muted-foreground">
+                    We sent a 6-digit code to <span className="text-foreground font-medium">{email}</span>
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <Input
+                      type="text"
+                      placeholder="Enter 6-digit code"
+                      value={otp}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                        setOtp(val);
+                        setErrors(prev => ({ ...prev, otp: undefined }));
+                      }}
+                      className={`h-14 text-center text-2xl tracking-[0.5em] font-mono ${errors.otp ? 'border-destructive' : ''}`}
+                      maxLength={6}
+                    />
+                    {errors.otp && (
+                      <p className="text-sm text-destructive mt-1">{errors.otp}</p>
+                    )}
+                  </div>
+
+                  <Button
+                    onClick={handleVerifyOtp}
+                    className="w-full h-12 bg-gradient-to-r from-xai-cyan to-xai-purple text-white hover:opacity-90"
+                    disabled={loading || otp.length !== 6}
+                  >
+                    {loading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      'Verify & Create Account'
+                    )}
+                  </Button>
+
+                  <div className="flex items-center justify-between text-sm">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStep('credentials');
+                        setOtp('');
+                      }}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      ← Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resendOtp}
+                      disabled={sendingOtp}
+                      className="text-xai-cyan hover:underline disabled:opacity-50"
+                    >
+                      {sendingOtp ? 'Sending...' : 'Resend code'}
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            ) : step === 'forgot-password' ? (
+              <motion.div
+                key="forgot-password"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+              >
+                <div className="mb-8">
+                  <h1 className="text-3xl font-display font-bold mb-2">
+                    Forgot Password
+                  </h1>
+                  <p className="text-muted-foreground">
+                    Enter your email to receive a password reset code
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        type="email"
+                        placeholder="Email address"
+                        value={email}
+                        onChange={(e) => {
+                          setEmail(e.target.value);
+                          setErrors(prev => ({ ...prev, email: undefined }));
+                        }}
+                        className={`pl-10 h-12 ${errors.email ? 'border-destructive' : ''}`}
+                      />
+                    </div>
+                    {errors.email && (
+                      <p className="text-sm text-destructive mt-1">{errors.email}</p>
+                    )}
+                  </div>
+
+                  <Button
+                    onClick={handleForgotPassword}
+                    className="w-full h-12 bg-gradient-to-r from-xai-cyan to-xai-purple text-white hover:opacity-90"
+                    disabled={sendingOtp}
+                  >
+                    {sendingOtp ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <>
+                        Send Reset Code
+                        <ArrowRight className="h-4 w-4 ml-2" />
+                      </>
+                    )}
+                  </Button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep('credentials');
+                      setErrors({});
+                    }}
+                    className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Back to login
+                  </button>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="reset-password"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+              >
+                <div className="mb-8">
+                  <h1 className="text-3xl font-display font-bold mb-2">
+                    Reset Password
+                  </h1>
+                  <p className="text-muted-foreground">
+                    Enter the code sent to <span className="text-foreground font-medium">{email}</span>
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <Input
+                      type="text"
+                      placeholder="Enter 6-digit code"
+                      value={otp}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                        setOtp(val);
+                        setErrors(prev => ({ ...prev, otp: undefined }));
+                      }}
+                      className={`h-14 text-center text-2xl tracking-[0.5em] font-mono ${errors.otp ? 'border-destructive' : ''}`}
+                      maxLength={6}
+                    />
+                    {errors.otp && (
+                      <p className="text-sm text-destructive mt-1">{errors.otp}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        type="password"
+                        placeholder="New password"
+                        value={newPassword}
+                        onChange={(e) => {
+                          setNewPassword(e.target.value);
+                          setErrors(prev => ({ ...prev, newPassword: undefined }));
+                        }}
+                        className={`pl-10 h-12 ${errors.newPassword ? 'border-destructive' : ''}`}
+                      />
+                    </div>
+                    {errors.newPassword && (
+                      <p className="text-sm text-destructive mt-1">{errors.newPassword}</p>
+                    )}
+                  </div>
+
+                  <Button
+                    onClick={handleResetPassword}
+                    className="w-full h-12 bg-gradient-to-r from-xai-cyan to-xai-purple text-white hover:opacity-90"
+                    disabled={loading || otp.length !== 6}
+                  >
+                    {loading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      'Reset Password'
+                    )}
+                  </Button>
+
+                  <div className="flex items-center justify-between text-sm">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStep('forgot-password');
+                        setOtp('');
+                        setNewPassword('');
+                      }}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      ← Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleForgotPassword}
+                      disabled={sendingOtp}
+                      className="text-xai-cyan hover:underline disabled:opacity-50"
+                    >
+                      {sendingOtp ? 'Sending...' : 'Resend code'}
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+      </div>
+
+      {/* Right side - Full logo image */}
+      <div
+        className="hidden md:flex order-2 md:w-1/2 lg:w-2/3 relative overflow-hidden items-center justify-center bg-background"
+      >
+        <img
+          src={astrazFullLogo}
+          alt="Astraz"
+          className="absolute inset-0 w-full h-full object-cover object-center"
+        />
+
+        <div className="absolute inset-0 bg-gradient-to-t from-background/55 via-transparent to-background/20" />
+
+        {/* Invisible theme toggle over the icon area */}
+        <button
+          onClick={() => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'dark' : 'dark')}
+          className="absolute top-[26%] left-1/2 -translate-x-1/2 w-[22%] max-w-[180px] aspect-square z-20 cursor-pointer"
+          aria-label="Toggle theme"
+          style={{ background: 'transparent', border: 'none' }}
+        />
+
+        {/* Made by X-Tech */}
+        <motion.a
+          href="https://xtechnology.vercel.app"
+          target="_blank"
+          rel="noopener noreferrer"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
+          className="absolute top-[62%] left-1/2 -translate-x-1/2 z-10 inline-flex items-center rounded-full border border-border/50 bg-background/35 px-6 py-3 text-sm md:text-base lg:text-lg font-display font-semibold tracking-[0.18em] text-foreground/90 backdrop-blur-md shadow-[0_12px_40px_hsl(var(--background)/0.35)] hover:bg-background/45 transition-all"
+        >
+          Made by <span className="ml-2 xai-gradient-text">X-Tech</span>
+        </motion.a>
+      </div>
                 {/* OTP Verification */}
                 <div className="mb-8">
                   <h1 className="text-3xl font-display font-bold mb-2">

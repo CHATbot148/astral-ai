@@ -17,7 +17,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { makeStorageRef, resolveFileUrl } from '@/lib/storageRef';
 import { cn } from '@/lib/utils';
-import astrazLogo from '@/assets/astraz-logo.png';
 import { getAISettings } from '@/lib/aiSettings';
 import { parseReminderRequest } from '@/lib/reminderParser';
 import { subscribeToPush } from '@/utils/pushSubscription';
@@ -956,6 +955,20 @@ export const ChatContainer = () => {
     setShowVideoDialog(true);
   };
 
+  const handleStartVoiceCall = () => {
+    try {
+      const synth = window.speechSynthesis;
+      synth.cancel();
+      const utter = new SpeechSynthesisUtterance('');
+      utter.volume = 0;
+      synth.speak(utter);
+    } catch {
+      // ignore unlock failures
+    }
+
+    setShowVoiceCall(true);
+  };
+
   const displayMessages = [...messages];
   if (streamingContent) {
     displayMessages.push({
@@ -1067,7 +1080,7 @@ export const ChatContainer = () => {
           onStop={(isLoading || isGeneratingImage || isGeneratingVideo) ? stopGeneration : undefined}
           editValue={editingMessageContent}
           onClearEdit={clearEditState}
-          onStartCall={user ? () => setShowVoiceCall(true) : undefined}
+          onStartCall={user ? handleStartVoiceCall : undefined}
           onOpenImageDialog={openImageDialog}
           onOpenVideoDialog={openVideoDialog}
         />
