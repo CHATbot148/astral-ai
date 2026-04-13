@@ -1,8 +1,11 @@
-const CACHE_NAME = 'xai-cache-v1';
+const CACHE_NAME = 'xai-cache-v2';
 const urlsToCache = [
   '/',
   '/index.html',
-  '/manifest.json'
+  '/manifest.json',
+  '/astraz-icon.png',
+  '/astraz-full-logo.png',
+  '/favicon.ico'
 ];
 
 // Install event

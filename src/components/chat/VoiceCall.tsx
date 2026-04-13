@@ -37,6 +37,11 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const historyRef = useRef<{ role: string; content: string }[]>([]);
   const recognitionRef = useRef<any>(null);
+  const startListeningRef = useRef<() => void>(() => {});
+  const speakQueueRef = useRef<string[]>([]);
+  const streamDoneRef = useRef(false);
+  const ttsUnlockedRef = useRef(false);
+  const ttsWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Mic level tracking
   const streamRef = useRef<MediaStream | null>(null);
@@ -69,8 +74,31 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     }
   };
 
+  const clearTtsWatchdog = () => {
+    if (ttsWatchdogRef.current) {
+      clearTimeout(ttsWatchdogRef.current);
+      ttsWatchdogRef.current = null;
+    }
+  };
+
+  const unlockTTS = useCallback(() => {
+    if (ttsUnlockedRef.current) return;
+    ttsUnlockedRef.current = true;
+    try {
+      const utter = new SpeechSynthesisUtterance("");
+      utter.volume = 0;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utter);
+    } catch {
+      // ignore unlock failures
+    }
+  }, []);
+
   const stopSpeaking = useCallback(() => {
     isSpeakingRef.current = false;
+    speakQueueRef.current = [];
+    streamDoneRef.current = false;
+    clearTtsWatchdog();
     window.speechSynthesis?.cancel();
     setAudioLevel(0);
   }, []);
@@ -109,32 +137,46 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     setAudioLevel(0);
   }, []);
 
-  // ── Stream response via edge function, speak each sentence via browser TTS ──
-  const streamAndSpeak = useCallback(async (userText: string) => {
+  const finalizeSpeechTurn = useCallback(() => {
+    clearTtsWatchdog();
     if (!isActiveRef.current) return;
+    isSpeakingRef.current = false;
+    setAudioLevel(0);
+    setTimeout(() => {
+      if (isActiveRef.current && !isMutedRef.current) {
+        startListeningRef.current();
+      }
+    }, 250);
+  }, []);
 
-    historyRef.current.push({ role: "user", content: userText });
-    setStatus("speaking");
-    isSpeakingRef.current = true;
+  const speakNextChunk = useCallback(() => {
+    if (!isActiveRef.current || !isSpeakingRef.current) return;
 
-    let fullReply = "";
-    let sentenceBuffer = "";
-    const sentenceEnd = /[.!?…]+\s*/;
+    const nextChunk = speakQueueRef.current.shift();
+    if (!nextChunk) {
+      if (streamDoneRef.current) finalizeSpeechTurn();
+      return;
+    }
 
-    const speakChunk = (text: string) => {
-      if (!isActiveRef.current || !isSpeakingRef.current) return;
-      const utter = new SpeechSynthesisUtterance(text.trim());
-      utter.rate = 1.05;
-      utter.pitch = 1.0;
-      const voices = window.speechSynthesis.getVoices();
-      const preferred = voices.find(v =>
-        ["Samantha", "Google UK English Female", "Microsoft Aria", "Karen", "Moira"]
-          .some(n => v.name.includes(n))
-      );
-      if (preferred) utter.voice = preferred;
+    const synth = window.speechSynthesis;
+    synth.cancel();
 
-      // Simulate audio level while speaking
-      let speakInterval: ReturnType<typeof setInterval> | null = null;
+    const utter = new SpeechSynthesisUtterance(nextChunk.trim());
+    utter.rate = 1.02;
+    utter.pitch = 1;
+    utter.volume = 1;
+
+    const voices = synth.getVoices();
+    const preferred = voices.find((v) =>
+      ["Samantha", "Google UK English Female", "Microsoft Aria", "Karen", "Moira", "Nicky"]
+        .some((n) => v.name.includes(n))
+    );
+    if (preferred) utter.voice = preferred;
+
+    let speakInterval: ReturnType<typeof setInterval> | null = null;
+
+    utter.onstart = () => {
+      setStatus("speaking");
       speakInterval = setInterval(() => {
         if (!window.speechSynthesis.speaking || !isSpeakingRef.current) {
           if (speakInterval) clearInterval(speakInterval);
@@ -142,18 +184,43 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         }
         setAudioLevel(0.3 + Math.random() * 0.5);
       }, 80);
-
-      utter.onend = () => {
-        if (speakInterval) clearInterval(speakInterval);
-        setAudioLevel(0);
-      };
-      utter.onerror = () => {
-        if (speakInterval) clearInterval(speakInterval);
-        setAudioLevel(0);
-      };
-
-      window.speechSynthesis.speak(utter);
     };
+
+    const handleDone = () => {
+      clearTtsWatchdog();
+      if (speakInterval) clearInterval(speakInterval);
+      setAudioLevel(0);
+      if (!isActiveRef.current || !isSpeakingRef.current) return;
+      speakNextChunk();
+    };
+
+    utter.onend = handleDone;
+    utter.onerror = handleDone;
+
+    const estimatedMs = Math.max(3500, (nextChunk.length / 11) * 1000 + 2500);
+    ttsWatchdogRef.current = setTimeout(() => {
+      if (!synth.speaking && !synth.pending) {
+        handleDone();
+      }
+    }, estimatedMs);
+
+    synth.speak(utter);
+  }, [finalizeSpeechTurn]);
+
+  // ── Stream response via edge function, speak each sentence via browser TTS ──
+  const streamAndSpeak = useCallback(async (userText: string) => {
+    if (!isActiveRef.current) return;
+
+    historyRef.current.push({ role: "user", content: userText });
+    setStatus("speaking");
+    isSpeakingRef.current = true;
+    streamDoneRef.current = false;
+    speakQueueRef.current = [];
+    stopMicLevelTracking();
+
+    let fullReply = "";
+    let sentenceBuffer = "";
+    const sentenceEnd = /[.!?…]+\s*/;
 
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -211,37 +278,41 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
             let match: RegExpExecArray | null;
             while ((match = sentenceEnd.exec(sentenceBuffer)) !== null) {
               const end = match.index + match[0].length;
-              const chunk = sentenceBuffer.slice(0, end);
+              const chunk = sentenceBuffer.slice(0, end).trim();
               sentenceBuffer = sentenceBuffer.slice(end);
-              if (chunk.trim() && isSpeakingRef.current) speakChunk(chunk);
+              if (chunk && isSpeakingRef.current) {
+                const shouldStartSpeaking = speakQueueRef.current.length === 0 && !window.speechSynthesis.speaking && !window.speechSynthesis.pending;
+                speakQueueRef.current.push(chunk);
+                if (shouldStartSpeaking) speakNextChunk();
+              }
             }
           } catch {}
         }
       }
 
-      if (sentenceBuffer.trim() && isSpeakingRef.current) speakChunk(sentenceBuffer);
+      if (sentenceBuffer.trim() && isSpeakingRef.current) {
+        const trailingChunk = sentenceBuffer.trim();
+        const shouldStartSpeaking = speakQueueRef.current.length === 0 && !window.speechSynthesis.speaking && !window.speechSynthesis.pending;
+        speakQueueRef.current.push(trailingChunk);
+        if (shouldStartSpeaking) speakNextChunk();
+      }
 
       if (fullReply) {
         historyRef.current.push({ role: "assistant", content: fullReply });
       }
 
-      // Poll until synth is done, then resume listening
-      const waitDone = setInterval(() => {
-        if (!isActiveRef.current) { clearInterval(waitDone); return; }
-        if (!window.speechSynthesis.speaking && !window.speechSynthesis.pending) {
-          clearInterval(waitDone);
-          isSpeakingRef.current = false;
-          if (isActiveRef.current) startListening();
-        }
-      }, 150);
+      streamDoneRef.current = true;
+      if (!window.speechSynthesis.speaking && !window.speechSynthesis.pending && speakQueueRef.current.length === 0) {
+        finalizeSpeechTurn();
+      }
     } catch (err: any) {
       isSpeakingRef.current = false;
       console.error("Voice stream error:", err);
       toast({ title: err.message ?? "Voice processing failed", variant: "destructive" });
-      if (isActiveRef.current) setTimeout(() => startListening(), 500);
+      if (isActiveRef.current) setTimeout(() => startListeningRef.current(), 600);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toast]);
+  }, [finalizeSpeechTurn, speakNextChunk, stopMicLevelTracking, toast]);
 
   // ── Speech recognition (single-shot, NOT continuous) ──
   const startListening = useCallback(() => {
@@ -263,8 +334,8 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     const rec = new SR();
     rec._dead = false;
     recognitionRef.current = rec;
-    rec.continuous = false;      // single utterance — avoids continuous CPU drain on mobile
-    rec.interimResults = false;  // iOS Safari struggles with interim — use final only
+    rec.continuous = false;
+    rec.interimResults = true;
     rec.lang = "en-US";
     rec.maxAlternatives = 1;
 
@@ -274,12 +345,6 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
     rec.onresult = (e: any) => {
       if (rec._dead) return;
-
-      // Barge-in: kill TTS the instant user starts speaking
-      if (isSpeakingRef.current) {
-        stopSpeaking();
-        setStatus("listening");
-      }
 
       for (let i = e.resultIndex; i < e.results.length; i++) {
         if (e.results[i].isFinal) {
@@ -296,14 +361,6 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       }, silenceCutoffRef.current);
     };
 
-    // Extra barge-in hook
-    rec.onspeechstart = () => {
-      if (isSpeakingRef.current) {
-        stopSpeaking();
-        setStatus("listening");
-      }
-    };
-
     rec.onend = () => {
       clearSilenceTimer();
       stopMicLevelTracking();
@@ -314,7 +371,11 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         streamAndSpeak(said);
       } else {
         // Nothing heard — restart after small pause
-        setTimeout(() => startListening(), 600);
+        setTimeout(() => {
+          if (isActiveRef.current && !isSpeakingRef.current && !isMutedRef.current) {
+            startListening();
+          }
+        }, 500);
       }
     };
 
@@ -323,7 +384,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       rec._dead = true;
       clearSilenceTimer();
       if (e.error === "aborted" || e.error === "no-speech" || e.error === "not-allowed") {
-        if (isActiveRef.current && !isMutedRef.current) setTimeout(() => startListening(), 800);
+        if (isActiveRef.current && !isMutedRef.current && !isSpeakingRef.current) setTimeout(() => startListening(), 800);
       } else {
         toast({ title: `Mic error: ${e.error}`, variant: "destructive" });
       }
@@ -337,11 +398,16 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stopSpeaking, startMicLevelTracking, stopMicLevelTracking, toast]);
 
+  useEffect(() => {
+    startListeningRef.current = startListening;
+  }, [startListening]);
+
   // ── Start / End call ──
   const startCall = useCallback(async () => {
     setStatus("connecting");
     historyRef.current = [];
     isActiveRef.current = true;
+    unlockTTS();
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -360,11 +426,12 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       toast({ title: errorMessage, variant: "destructive" });
       setStatus("idle");
     }
-  }, [startListening, toast]);
+  }, [startListening, toast, unlockTTS]);
 
   const endCall = useCallback(() => {
     isActiveRef.current = false;
     clearSilenceTimer();
+    clearTtsWatchdog();
 
     if (recognitionRef.current) {
       recognitionRef.current._dead = true;
@@ -417,6 +484,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         recognitionRef.current._dead = true;
         try { recognitionRef.current.abort(); } catch {}
       }
+      clearTtsWatchdog();
       if (window.speechSynthesis) window.speechSynthesis.cancel();
       if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
     };

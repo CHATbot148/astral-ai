@@ -119,9 +119,8 @@ export const useConversations = () => {
         return;
       }
 
-      if (messages.length === 0 && latestConversations.length > 0) {
-        setCurrentConversation(latestConversations[0]);
-        await fetchMessages(latestConversations[0].id);
+      if (!currentConversation && messages.length > 0) {
+        setMessages([]);
       }
     };
 

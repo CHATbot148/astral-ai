@@ -108,7 +108,7 @@ export const Sidebar = memo(({
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-sidebar-border">
           <div className="flex items-center gap-2.5">
-            <img src={astrazLogo} alt="Astraz" className="w-12 h-12 object-contain drop-shadow-[0_0_12px_hsl(270_80%_60%/0.3)]" />
+            <img src={astrazLogo} alt="Astraz" className="w-24 h-24 object-contain drop-shadow-[0_0_12px_hsl(270_80%_60%/0.3)]" />
             <span className="font-display font-semibold text-lg xai-gradient-text">Astraz</span>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose} className="lg:hidden h-8 w-8" aria-label="Close sidebar">
