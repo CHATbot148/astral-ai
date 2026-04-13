@@ -37,6 +37,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const historyRef = useRef<{ role: string; content: string }[]>([]);
   const recognitionRef = useRef<any>(null);
+  const startListeningRef = useRef<() => void>(() => {});
   const speakQueueRef = useRef<string[]>([]);
   const streamDoneRef = useRef(false);
   const ttsUnlockedRef = useRef(false);
@@ -143,7 +144,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     setAudioLevel(0);
     setTimeout(() => {
       if (isActiveRef.current && !isMutedRef.current) {
-        startListening();
+        startListeningRef.current();
       }
     }, 250);
   }, []);
@@ -308,10 +309,10 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       isSpeakingRef.current = false;
       console.error("Voice stream error:", err);
       toast({ title: err.message ?? "Voice processing failed", variant: "destructive" });
-      if (isActiveRef.current) setTimeout(() => startListening(), 600);
+      if (isActiveRef.current) setTimeout(() => startListeningRef.current(), 600);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [finalizeSpeechTurn, speakNextChunk, startListening, stopMicLevelTracking, toast]);
+  }, [finalizeSpeechTurn, speakNextChunk, stopMicLevelTracking, toast]);
 
   // ── Speech recognition (single-shot, NOT continuous) ──
   const startListening = useCallback(() => {
@@ -396,6 +397,10 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stopSpeaking, startMicLevelTracking, stopMicLevelTracking, toast]);
+
+  useEffect(() => {
+    startListeningRef.current = startListening;
+  }, [startListening]);
 
   // ── Start / End call ──
   const startCall = useCallback(async () => {
