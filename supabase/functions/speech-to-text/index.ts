@@ -41,11 +41,13 @@ serve(async (req) => {
 
     const contentType = req.headers.get("content-type") || "";
     let audioData: ArrayBuffer;
+    let detectedMime = "audio/webm";
 
     if (contentType.includes("application/json")) {
       const { audio, mimeType = "audio/webm" } = await req.json();
       if (!audio) throw new Error("Audio data is required");
-      
+      detectedMime = mimeType;
+
       const binaryString = atob(audio);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
@@ -54,9 +56,23 @@ serve(async (req) => {
       audioData = bytes.buffer;
     } else {
       audioData = await req.arrayBuffer();
+      if (contentType) detectedMime = contentType.split(";")[0].trim();
     }
 
-    console.log("Sending audio to Deepgram, size:", audioData.byteLength);
+    // Map browser mime types to Deepgram-compatible content types
+    const mimeMap: Record<string, string> = {
+      "audio/webm": "audio/webm",
+      "audio/mp4": "audio/mp4",
+      "audio/m4a": "audio/mp4",
+      "audio/x-m4a": "audio/mp4",
+      "audio/aac": "audio/aac",
+      "audio/ogg": "audio/ogg",
+      "audio/wav": "audio/wav",
+      "audio/mpeg": "audio/mpeg",
+    };
+    const dgContentType = mimeMap[detectedMime] || "audio/webm";
+
+    console.log("Sending audio to Deepgram, size:", audioData.byteLength, "mime:", dgContentType);
 
     const response = await fetch(
       "https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&punctuate=true",
@@ -64,7 +80,7 @@ serve(async (req) => {
         method: "POST",
         headers: {
           Authorization: `Token ${DEEPGRAM_API_KEY}`,
-          "Content-Type": "audio/webm",
+          "Content-Type": dgContentType,
         },
         body: audioData,
       }
