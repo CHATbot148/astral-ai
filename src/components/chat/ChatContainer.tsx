@@ -956,16 +956,6 @@ export const ChatContainer = () => {
   };
 
   const handleStartVoiceCall = () => {
-    try {
-      const synth = window.speechSynthesis;
-      synth.cancel();
-      const utter = new SpeechSynthesisUtterance('');
-      utter.volume = 0;
-      synth.speak(utter);
-    } catch {
-      // ignore unlock failures
-    }
-
     setShowVoiceCall(true);
   };
 
