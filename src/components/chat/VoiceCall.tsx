@@ -24,13 +24,11 @@ const log = (label: string, data?: any) => {
 // Pick the best MediaRecorder mime for the device.
 // iOS Safari supports audio/mp4; Chrome/Android/desktop prefer webm/opus.
 const pickRecorderMime = (): string => {
-  const candidates = [
-    "audio/webm;codecs=opus",
-    "audio/webm",
-    "audio/mp4;codecs=mp4a.40.2",
-    "audio/mp4",
-    "audio/aac",
-  ];
+  const ua = navigator.userAgent.toLowerCase();
+  const preferMp4 = /iphone|ipad|ipod|safari/.test(ua) && !/chrome|crios|fxios|edgios/.test(ua);
+  const candidates = preferMp4
+    ? ["audio/mp4", "audio/mp4;codecs=mp4a.40.2", "audio/aac", "audio/webm;codecs=opus", "audio/webm"]
+    : ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/mp4;codecs=mp4a.40.2", "audio/aac"];
   for (const c of candidates) {
     try {
       if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(c)) return c;
@@ -159,26 +157,17 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
   // ── STT ──
   const transcribeAudio = useCallback(async (audioBlob: Blob): Promise<string> => {
-    const arrayBuffer = await audioBlob.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
-    let binary = "";
-    const chunkSize = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)) as any);
-    }
-    const base64Audio = btoa(binary);
-
     const { data: sessionData } = await supabase.auth.getSession();
     const accessToken = sessionData.session?.access_token;
 
     const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/speech-to-text`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": recorderMimeRef.current || audioBlob.type || "application/octet-stream",
         apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
       },
-      body: JSON.stringify({ audio: base64Audio, mimeType: recorderMimeRef.current }),
+      body: audioBlob,
     });
 
     if (!response.ok) throw new Error(`STT failed: ${response.status}`);
