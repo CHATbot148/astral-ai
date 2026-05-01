@@ -1,6 +1,6 @@
 import { useRef, useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { PhoneOff, Mic, MicOff } from "lucide-react";
+import { PhoneOff, Mic, MicOff, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
@@ -15,24 +15,42 @@ interface VoiceCallProps {
 
 const SYSTEM = `You are a concise AI voice assistant called Astraz. Max 3 sentences per reply. No markdown, no lists, no emojis. Speak naturally as in a phone call.`;
 
-type CallStatus = "idle" | "connecting" | "listening" | "speaking";
+// Status: only listening / speaking. No connecting/processing — instant UX.
+type CallStatus = "idle" | "listening" | "speaking";
 
 const log = (label: string, data?: any) => {
   console.log(`[VoiceCall] ${label}`, data ?? "");
 };
 
-/**
- * Fully server-side voice call: MediaRecorder → Deepgram STT → AI chat → Deepgram TTS → Audio element.
- * No browser SpeechRecognition or SpeechSynthesis used at all.
- */
+// Pick the best MediaRecorder mime for the device.
+// iOS Safari supports audio/mp4; Chrome/Android/desktop prefer webm/opus.
+const pickRecorderMime = (): string => {
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4;codecs=mp4a.40.2",
+    "audio/mp4",
+    "audio/aac",
+  ];
+  for (const c of candidates) {
+    try {
+      if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(c)) return c;
+    } catch {}
+  }
+  return "";
+};
+
+// Split streaming text into speakable chunks at sentence/clause boundaries.
+const SENTENCE_BOUNDARY = /([.!?…]+\s+|[,;:]\s+(?=\S{12,}))/;
+
 export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const { toast } = useToast();
-  const [callStart] = useState(() => Date.now());
+  const [callStart, setCallStart] = useState<number | null>(null);
   const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [silenceCutoff, setSilenceCutoff] = useState<number>(() => {
     const saved = Number(localStorage.getItem("xai-voice-silence-cutoff-ms"));
-    return Number.isFinite(saved) ? Math.min(5500, Math.max(800, saved)) : 2300;
+    return Number.isFinite(saved) ? Math.min(5500, Math.max(800, saved)) : 1800;
   });
   const [status, setStatus] = useState<CallStatus>("idle");
   const [isConnected, setIsConnected] = useState(false);
@@ -53,8 +71,11 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const audioChunksRef = useRef<Blob[]>([]);
   const recorderMimeRef = useRef("audio/webm");
 
-  // Audio playback ref
-  const playbackAudioRef = useRef<HTMLAudioElement | null>(null);
+  // TTS playback pipeline
+  const audioElRef = useRef<HTMLAudioElement | null>(null);
+  const ttsQueueRef = useRef<string[]>([]);
+  const ttsPlayingRef = useRef(false);
+  const cancelTokenRef = useRef(0);
 
   // Mic level tracking
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -68,6 +89,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   }, [silenceCutoff]);
 
   useEffect(() => {
+    if (!callStart) return;
     const t = setInterval(() => setCallDuration(Math.floor((Date.now() - callStart) / 1000)), 1000);
     return () => clearInterval(t);
   }, [callStart]);
@@ -78,7 +100,6 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // ── Helpers ──
   const clearSilenceTimer = () => {
     if (silenceTimerRef.current) {
       clearTimeout(silenceTimerRef.current);
@@ -86,23 +107,25 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     }
   };
 
-  const stopPlayback = useCallback(() => {
+  // ── Cancel any in-flight TTS / playback (barge-in) ──
+  const cancelPlayback = useCallback(() => {
+    cancelTokenRef.current++;
+    ttsQueueRef.current = [];
+    ttsPlayingRef.current = false;
     isSpeakingRef.current = false;
-    if (playbackAudioRef.current) {
-      try { playbackAudioRef.current.pause(); } catch {}
-      playbackAudioRef.current.src = "";
-      playbackAudioRef.current = null;
+    if (audioElRef.current) {
+      try { audioElRef.current.pause(); } catch {}
+      try { audioElRef.current.src = ""; } catch {}
     }
     setAudioLevel(0);
   }, []);
 
-  // ── Mic level tracking via AudioContext analyser ──
+  // ── Mic level tracking ──
   const startMicLevelTracking = useCallback(() => {
-    if (!streamRef.current) return;
+    if (!streamRef.current || !audioContextRef.current) return;
     try {
-      const ctx = audioContextRef.current || new (window.AudioContext || (window as any).webkitAudioContext)();
-      audioContextRef.current = ctx;
-      if (ctx.state === "suspended") ctx.resume();
+      const ctx = audioContextRef.current;
+      if (ctx.state === "suspended") ctx.resume().catch(() => {});
       const source = ctx.createMediaStreamSource(streamRef.current);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
@@ -133,12 +156,15 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     setAudioLevel(0);
   }, []);
 
-  // ── Server-side STT: send recorded audio to Deepgram via edge function ──
+  // ── STT ──
   const transcribeAudio = useCallback(async (audioBlob: Blob): Promise<string> => {
     const arrayBuffer = await audioBlob.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
     let binary = "";
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)) as any);
+    }
     const base64Audio = btoa(binary);
 
     const { data: sessionData } = await supabase.auth.getSession();
@@ -160,11 +186,10 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     return transcript || "";
   }, []);
 
-  // ── Server-side TTS: get audio from Deepgram Aura via edge function, play via Audio element ──
-  const speakServerAudio = useCallback(async (text: string): Promise<void> => {
-    if (!isActiveRef.current) return;
+  // ── Fetch TTS audio for one chunk ──
+  const fetchTTSBlob = useCallback(async (text: string): Promise<Blob | null> => {
     const cleaned = cleanTextForTTS(text);
-    if (!cleaned) return;
+    if (!cleaned || !cleaned.trim()) return null;
 
     const voiceId = localStorage.getItem("xai-tts-voice") || "asteria";
     const { data: sessionData } = await supabase.auth.getSession();
@@ -179,72 +204,97 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       },
       body: JSON.stringify({ text: cleaned, voiceId }),
     });
+    if (!response.ok) {
+      log("TTS failed", response.status);
+      return null;
+    }
+    return await response.blob();
+  }, []);
 
-    if (!response.ok) throw new Error(`TTS failed: ${response.status}`);
-    const ct = response.headers.get("content-type") || "";
-    if (!ct.includes("audio")) throw new Error("TTS did not return audio");
-
-    const audioBlob = await response.blob();
-    const url = URL.createObjectURL(audioBlob);
-
+  // ── Play one audio blob through the unlocked <audio> element ──
+  const playBlob = useCallback((blob: Blob, token: number): Promise<void> => {
     return new Promise<void>((resolve) => {
-      if (!isActiveRef.current || !isSpeakingRef.current) {
-        URL.revokeObjectURL(url);
-        resolve();
-        return;
-      }
+      if (token !== cancelTokenRef.current || !isActiveRef.current) { resolve(); return; }
+      const url = URL.createObjectURL(blob);
+      const audio = audioElRef.current;
+      if (!audio) { URL.revokeObjectURL(url); resolve(); return; }
 
-      const audio = new Audio(url);
-      playbackAudioRef.current = audio;
-
-      // Animate audio level during playback
       let animInterval: ReturnType<typeof setInterval> | null = null;
-      audio.onplay = () => {
-        animInterval = setInterval(() => {
-          if (isSpeakingRef.current) {
-            setAudioLevel(0.3 + Math.random() * 0.5);
-          }
-        }, 80);
-      };
-
       const cleanup = () => {
-        if (animInterval) clearInterval(animInterval);
+        if (animInterval) { clearInterval(animInterval); animInterval = null; }
         setAudioLevel(0);
         URL.revokeObjectURL(url);
-        playbackAudioRef.current = null;
+        audio.onended = null;
+        audio.onerror = null;
         resolve();
       };
 
       audio.onended = cleanup;
-      audio.onerror = () => {
-        log("Audio playback error");
-        cleanup();
-      };
+      audio.onerror = () => { log("audio el error"); cleanup(); };
+      audio.src = url;
 
-      audio.play().catch(() => {
-        log("Audio.play() rejected");
+      // Animate audio level during playback
+      animInterval = setInterval(() => {
+        if (isSpeakingRef.current && token === cancelTokenRef.current) {
+          setAudioLevel(0.3 + Math.random() * 0.5);
+        }
+      }, 80);
+
+      audio.play().catch((e) => {
+        log("audio.play() rejected", e?.message);
         cleanup();
       });
     });
   }, []);
 
-  // ── Get AI response (non-streaming for voice) then speak via server TTS ──
-  const getResponseAndSpeak = useCallback(async (userText: string) => {
+  // ── Sequential TTS queue processor ──
+  const processTTSQueue = useCallback(async (token: number) => {
+    if (ttsPlayingRef.current) return;
+    ttsPlayingRef.current = true;
+    try {
+      while (ttsQueueRef.current.length > 0) {
+        if (token !== cancelTokenRef.current || !isActiveRef.current) break;
+        const next = ttsQueueRef.current.shift()!;
+        const blob = await fetchTTSBlob(next);
+        if (!blob) continue;
+        if (token !== cancelTokenRef.current || !isActiveRef.current) break;
+        await playBlob(blob, token);
+      }
+    } finally {
+      ttsPlayingRef.current = false;
+    }
+  }, [fetchTTSBlob, playBlob]);
+
+  const enqueueTTS = useCallback((text: string, token: number) => {
+    if (!text.trim()) return;
+    ttsQueueRef.current.push(text);
+    // kick the processor
+    void processTTSQueue(token);
+  }, [processTTSQueue]);
+
+  // ── Streaming AI → chunked TTS ──
+  const streamAIAndSpeak = useCallback(async (userText: string) => {
     if (!isActiveRef.current) return;
 
     historyRef.current.push({ role: "user", content: userText });
+
+    // Go straight to "speaking" — no connecting/thinking UI.
     setStatus("speaking");
     isSpeakingRef.current = true;
     stopMicLevelTracking();
+
+    // New cancel token for this turn
+    cancelTokenRef.current++;
+    const token = cancelTokenRef.current;
+    ttsQueueRef.current = [];
 
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
 
-      // Use non-streaming mode for voice to get full text quickly
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
         method: "POST",
         headers: {
@@ -258,79 +308,111 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
             ...historyRef.current.map(({ role, content }) => ({ role, content })),
           ],
           isVoiceMode: true,
-          noStream: true,
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           clientTimeISO: new Date().toISOString(),
         }),
         signal: controller.signal,
-      }).finally(() => clearTimeout(timeoutId));
+      });
+      clearTimeout(timeoutId);
 
-      if (!res.ok) throw new Error(`API ${res.status}`);
+      if (!res.ok || !res.body) throw new Error(`API ${res.status}`);
 
-      // The chat function in noStream + voice mode returns an SSE-like payload.
-      // Parse the text content from it.
-      const rawText = await res.text();
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let textBuffer = "";
+      let pending = "";
       let fullReply = "";
+      let streamDone = false;
 
-      // Try to extract from SSE format
-      const lines = rawText.split("\n").filter(l => l.startsWith("data: "));
-      for (const line of lines) {
-        const jsonStr = line.slice(6).trim();
-        if (jsonStr === "[DONE]") continue;
-        try {
-          const parsed = JSON.parse(jsonStr);
-          const content = parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.message?.content;
-          if (content) fullReply += content;
-        } catch {}
+      const flushChunk = (force = false) => {
+        if (token !== cancelTokenRef.current) return;
+        // emit as many sentence-bounded chunks as possible
+        while (true) {
+          const m = pending.match(SENTENCE_BOUNDARY);
+          if (!m || m.index === undefined) break;
+          const cut = m.index + m[0].length;
+          const chunk = pending.slice(0, cut).trim();
+          pending = pending.slice(cut);
+          if (chunk) enqueueTTS(chunk, token);
+        }
+        if (force && pending.trim()) {
+          enqueueTTS(pending.trim(), token);
+          pending = "";
+        } else if (!force && pending.length > 140) {
+          // safety: if we keep getting tokens with no boundary, flush early
+          enqueueTTS(pending.trim(), token);
+          pending = "";
+        }
+      };
+
+      while (!streamDone) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (token !== cancelTokenRef.current) { try { reader.cancel(); } catch {}; break; }
+        textBuffer += decoder.decode(value, { stream: true });
+
+        let nl: number;
+        while ((nl = textBuffer.indexOf("\n")) !== -1) {
+          let line = textBuffer.slice(0, nl);
+          textBuffer = textBuffer.slice(nl + 1);
+          if (line.endsWith("\r")) line = line.slice(0, -1);
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === "[DONE]") { streamDone = true; break; }
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const delta = parsed.choices?.[0]?.delta?.content
+              || parsed.choices?.[0]?.message?.content
+              || "";
+            if (delta) {
+              fullReply += delta;
+              pending += delta;
+              flushChunk(false);
+            }
+          } catch {
+            textBuffer = line + "\n" + textBuffer;
+            break;
+          }
+        }
       }
 
-      // Fallback: maybe it's plain JSON
-      if (!fullReply) {
-        try {
-          const json = JSON.parse(rawText);
-          fullReply = json.choices?.[0]?.message?.content || json.choices?.[0]?.delta?.content || "";
-        } catch {}
+      flushChunk(true);
+
+      if (!fullReply.trim()) {
+        enqueueTTS("I didn't catch that. Could you say it again?", token);
+      } else {
+        historyRef.current.push({ role: "assistant", content: fullReply.trim() });
       }
 
-      if (!fullReply) {
-        fullReply = "I didn't catch that. Could you say it again?";
-      }
-
-      log("AI reply", fullReply.slice(0, 80));
-      historyRef.current.push({ role: "assistant", content: fullReply });
-
-      // Speak via server TTS
-      if (isActiveRef.current && isSpeakingRef.current) {
-        await speakServerAudio(fullReply);
+      // Wait for queue to drain before re-listening
+      while (
+        token === cancelTokenRef.current &&
+        isActiveRef.current &&
+        (ttsPlayingRef.current || ttsQueueRef.current.length > 0)
+      ) {
+        await new Promise((r) => setTimeout(r, 60));
       }
     } catch (err: any) {
       const msg = err?.name === "AbortError" ? "Response timed out" : (err?.message ?? "Voice processing failed");
-      log("getResponseAndSpeak error", msg);
+      log("streamAIAndSpeak error", msg);
       toast({ title: msg, variant: "destructive" });
     }
 
-    // Done speaking → go back to listening
     isSpeakingRef.current = false;
     setAudioLevel(0);
-    if (isActiveRef.current && !isMutedRef.current) {
-      setTimeout(() => startListeningRef.current(), 300);
+    if (isActiveRef.current && !isMutedRef.current && token === cancelTokenRef.current) {
+      // Tiny gap then back to listening
+      setTimeout(() => startListeningRef.current(), 120);
     }
-  }, [speakServerAudio, stopMicLevelTracking, toast]);
+  }, [enqueueTTS, stopMicLevelTracking, toast]);
 
-  // ── MediaRecorder-based listening (works on ALL platforms) ──
+  // ── Listening (MediaRecorder) ──
   const startListening = useCallback(() => {
     if (!isActiveRef.current || isMutedRef.current) return;
-    if (!streamRef.current) {
-      log("No mic stream, cannot listen");
-      return;
-    }
+    if (!streamRef.current) return;
 
-    // Barge-in: kill any playing audio
-    if (isSpeakingRef.current) {
-      stopPlayback();
-    }
+    if (isSpeakingRef.current) cancelPlayback();
 
-    // Stop previous recorder
     if (recorderRef.current && recorderRef.current.state !== "inactive") {
       try { recorderRef.current.stop(); } catch {}
     }
@@ -339,12 +421,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     startMicLevelTracking();
     audioChunksRef.current = [];
 
-    // Pick a mime type the device supports
-    const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm"
-      : MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4"
-      : "";
-    recorderMimeRef.current = mimeType || "audio/webm";
-
+    const mimeType = recorderMimeRef.current;
     const recorder = new MediaRecorder(streamRef.current, mimeType ? { mimeType } : undefined);
     recorderRef.current = recorder;
 
@@ -352,7 +429,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     let stopped = false;
 
     recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) {
+      if (e.data && e.data.size > 0) {
         audioChunksRef.current.push(e.data);
         hasAudio = true;
       }
@@ -365,110 +442,111 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       if (!isActiveRef.current) return;
 
       if (!hasAudio || audioChunksRef.current.length === 0) {
-        log("No audio captured, restarting");
-        setTimeout(() => {
-          if (isActiveRef.current && !isMutedRef.current && !isSpeakingRef.current) {
-            startListening();
-          }
-        }, 500);
+        if (isActiveRef.current && !isMutedRef.current && !isSpeakingRef.current) {
+          setTimeout(() => startListening(), 250);
+        }
         return;
       }
 
       const audioBlob = new Blob(audioChunksRef.current, { type: recorderMimeRef.current });
-      log("Captured audio", { size: audioBlob.size, mime: recorderMimeRef.current });
+      log("Captured", { size: audioBlob.size, mime: recorderMimeRef.current });
 
-      // Minimum size check (very short recordings are likely silence)
-      if (audioBlob.size < 1000) {
-        log("Audio too short, restarting");
-        setTimeout(() => {
-          if (isActiveRef.current && !isMutedRef.current && !isSpeakingRef.current) {
-            startListening();
-          }
-        }, 500);
+      if (audioBlob.size < 1500) {
+        if (isActiveRef.current && !isMutedRef.current && !isSpeakingRef.current) {
+          setTimeout(() => startListening(), 250);
+        }
         return;
       }
 
       try {
-        setStatus("connecting");
+        // Don't switch to "connecting" — keep listening label briefly until first audio plays
         const transcript = await transcribeAudio(audioBlob);
         log("Transcript", transcript);
-
         if (transcript && transcript.trim().length > 1) {
-          await getResponseAndSpeak(transcript.trim());
-        } else {
-          log("Empty transcript, restarting");
-          if (isActiveRef.current && !isMutedRef.current && !isSpeakingRef.current) {
-            startListening();
-          }
+          await streamAIAndSpeak(transcript.trim());
+        } else if (isActiveRef.current && !isMutedRef.current && !isSpeakingRef.current) {
+          startListening();
         }
       } catch (err: any) {
-        log("Transcription error", err?.message);
+        log("STT err", err?.message);
         if (isActiveRef.current && !isMutedRef.current && !isSpeakingRef.current) {
-          setTimeout(() => startListening(), 800);
+          setTimeout(() => startListening(), 600);
         }
       }
     };
 
     recorder.onerror = () => {
-      log("Recorder error");
       if (!stopped && isActiveRef.current && !isMutedRef.current) {
-        setTimeout(() => startListening(), 800);
+        setTimeout(() => startListening(), 600);
       }
     };
 
     try {
-      recorder.start(250); // Collect data every 250ms
-      log("Recorder started", recorderMimeRef.current);
+      recorder.start(250);
     } catch (e) {
-      log("Failed to start recorder", e);
-      setTimeout(() => {
-        if (isActiveRef.current) startListening();
-      }, 1000);
+      log("recorder.start failed", e);
+      setTimeout(() => { if (isActiveRef.current) startListening(); }, 800);
       return;
     }
 
-    // Silence cutoff: stop the recorder after the configured silence duration
     clearSilenceTimer();
     silenceTimerRef.current = setTimeout(() => {
       if (recorder.state === "recording") {
-        log("Silence cutoff reached");
         try { recorder.stop(); } catch {}
       }
     }, silenceCutoffRef.current);
+  }, [cancelPlayback, startMicLevelTracking, stopMicLevelTracking, transcribeAudio, streamAIAndSpeak]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stopPlayback, startMicLevelTracking, stopMicLevelTracking, transcribeAudio, getResponseAndSpeak]);
+  useEffect(() => { startListeningRef.current = startListening; }, [startListening]);
 
-  useEffect(() => {
-    startListeningRef.current = startListening;
-  }, [startListening]);
-
-  // ── Start / End call ──
+  // ── Start call: MUST be invoked synchronously from a user gesture ──
   const startCall = useCallback(async () => {
-    setStatus("connecting");
+    if (isActiveRef.current) return;
     historyRef.current = [];
-    isActiveRef.current = true;
 
     try {
+      // 1) Synchronously create + unlock AudioContext (iOS requirement)
+      const Ctx: typeof AudioContext =
+        (window as any).AudioContext || (window as any).webkitAudioContext;
+      const ctx = new Ctx();
+      audioContextRef.current = ctx;
+      // resume() returns a promise but the user-gesture "unlock" already happened on construction within click
+      try { await ctx.resume(); } catch {}
+
+      // 2) Synchronously create + unlock <audio> element by playing a silent buffer
+      let audioEl = audioElRef.current;
+      if (!audioEl) {
+        audioEl = document.createElement("audio");
+        audioEl.setAttribute("playsinline", "true");
+        audioEl.setAttribute("webkit-playsinline", "true");
+        audioEl.preload = "auto";
+        audioEl.autoplay = false;
+        // a silent 1-frame WAV to unlock playback on iOS
+        audioEl.src =
+          "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
+        audioElRef.current = audioEl;
+      }
+      try { await audioEl.play(); audioEl.pause(); audioEl.currentTime = 0; } catch {}
+
+      // 3) Mic
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
       streamRef.current = stream;
 
-      // Resume AudioContext if suspended (iOS requirement)
-      if (audioContextRef.current?.state === "suspended") {
-        await audioContextRef.current.resume();
-      }
+      // 4) Resolve recorder mime once
+      recorderMimeRef.current = pickRecorderMime() || "audio/webm";
+      log("Recorder mime", recorderMimeRef.current);
 
+      isActiveRef.current = true;
       setIsConnected(true);
+      setCallStart(Date.now());
       startListening();
-    } catch (error) {
+    } catch (error: any) {
       let errorMessage = "Could not access microphone";
-      if (error instanceof Error) {
-        if (error.name === "NotAllowedError") errorMessage = "Microphone access denied. Check browser settings.";
-        else if (error.name === "NotFoundError") errorMessage = "No microphone found on this device.";
-        else if (error.name === "NotReadableError") errorMessage = "Microphone is in use by another app.";
-      }
+      if (error?.name === "NotAllowedError") errorMessage = "Microphone access denied. Check browser settings.";
+      else if (error?.name === "NotFoundError") errorMessage = "No microphone found on this device.";
+      else if (error?.name === "NotReadableError") errorMessage = "Microphone is in use by another app.";
       toast({ title: errorMessage, variant: "destructive" });
       setStatus("idle");
     }
@@ -477,13 +555,13 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const endCall = useCallback(() => {
     isActiveRef.current = false;
     clearSilenceTimer();
+    cancelPlayback();
 
     if (recorderRef.current && recorderRef.current.state !== "inactive") {
       try { recorderRef.current.stop(); } catch {}
     }
     recorderRef.current = null;
 
-    stopPlayback();
     stopMicLevelTracking();
 
     if (audioContextRef.current) {
@@ -491,14 +569,15 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       audioContextRef.current = null;
     }
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current.getTracks().forEach(t => t.stop());
       streamRef.current = null;
     }
+    audioElRef.current = null;
 
     setIsConnected(false);
     setStatus("idle");
     onClose();
-  }, [onClose, stopPlayback, stopMicLevelTracking]);
+  }, [onClose, cancelPlayback, stopMicLevelTracking]);
 
   const toggleMute = useCallback(() => {
     const next = !isMuted;
@@ -510,33 +589,77 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       if (recorderRef.current && recorderRef.current.state !== "inactive") {
         try { recorderRef.current.stop(); } catch {}
       }
-      stopPlayback();
+      cancelPlayback();
       stopMicLevelTracking();
       setStatus("idle");
     } else if (isConnected) {
       startListening();
     }
-  }, [isMuted, isConnected, startListening, stopPlayback, stopMicLevelTracking]);
+  }, [isMuted, isConnected, startListening, cancelPlayback, stopMicLevelTracking]);
 
+  // Cleanup on unmount
   useEffect(() => {
-    startCall();
     return () => {
       isActiveRef.current = false;
+      cancelTokenRef.current++;
       if (recorderRef.current && recorderRef.current.state !== "inactive") {
         try { recorderRef.current.stop(); } catch {}
       }
-      if (playbackAudioRef.current) {
-        try { playbackAudioRef.current.pause(); } catch {}
+      if (audioElRef.current) {
+        try { audioElRef.current.pause(); } catch {}
       }
-      if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      if (audioContextRef.current) audioContextRef.current.close().catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const statusLabel =
-    status === "connecting" ? "Processing…" :
     status === "listening" ? "Listening…" :
     status === "speaking" ? "Speaking…" : "Ready";
+
+  // Pre-call screen — required for iOS audio unlock via direct user gesture
+  if (!isConnected) {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 flex items-center justify-center"
+        style={{ background: "linear-gradient(180deg, #0a0a0f 0%, #0d0d1a 50%, #0a0a0f 100%)" }}
+      >
+        <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
+          <div className="text-center">
+            <p className="text-white/40 text-xs font-mono tracking-[0.3em] uppercase">Astraz Voice</p>
+            <p className="text-white/70 text-base mt-3">Tap to start your call</p>
+          </div>
+
+          <VoiceOrb status="idle" isMuted={false} audioLevel={0} />
+
+          <div className="flex items-center gap-6">
+            <Button
+              onClick={startCall}
+              className="h-16 w-16 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-[0_0_30px_-5px_rgba(16,185,129,0.5)]"
+              aria-label="Start call"
+            >
+              <Phone className="h-7 w-7" />
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={onClose}
+              className="h-12 px-5 rounded-full border border-white/10 bg-white/[0.04] text-white hover:bg-white/[0.08]"
+            >
+              Cancel
+            </Button>
+          </div>
+
+          <p className="text-white/30 text-xs text-center max-w-xs">
+            Tapping start unlocks audio on iOS and grants microphone access. Streaming begins instantly.
+          </p>
+        </div>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div
@@ -561,7 +684,6 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
             "text-sm font-medium tracking-wide transition-colors duration-300",
             status === "speaking" ? "text-cyan-400" :
             status === "listening" ? "text-emerald-400" :
-            status === "connecting" ? "text-violet-400" :
             "text-white/40"
           )}>
             {statusLabel}
@@ -579,7 +701,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
               max={5500}
               step={100}
               value={[silenceCutoff]}
-              onValueChange={(value) => setSilenceCutoff(value[0] ?? 2300)}
+              onValueChange={(value) => setSilenceCutoff(value[0] ?? 1800)}
               aria-label="Silence cutoff in seconds"
             />
           </div>
@@ -611,12 +733,6 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
             <PhoneOff className="h-7 w-7" />
           </Button>
         </div>
-
-        {!isConnected && status !== "connecting" && (
-          <Button variant="outline" onClick={startCall} className="w-full border-white/10 text-white hover:bg-white/[0.06]">
-            Reconnect
-          </Button>
-        )}
       </div>
     </motion.div>
   );
