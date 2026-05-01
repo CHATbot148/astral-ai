@@ -66,7 +66,6 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const historyRef = useRef<{ role: string; content: string }[]>([]);
   const startListeningRef = useRef<() => void>(() => {});
-  const startPendingRef = useRef(false);
 
   // MediaRecorder refs
   const streamRef = useRef<MediaStream | null>(null);
@@ -518,16 +517,33 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
   // ── Start call: MUST be invoked synchronously from a user gesture ──
   const startCall = useCallback(async () => {
-    if (isActiveRef.current) return;
+    if (isActiveRef.current || isStarting) return;
     historyRef.current = [];
+    setIsStarting(true);
+    setStartHint("Requesting microphone access…");
 
     try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("Media devices are not available on this browser");
+      }
+
+      if (navigator.permissions?.query) {
+        try {
+          const permission = await navigator.permissions.query({ name: "microphone" as PermissionName });
+          if (permission.state === "denied") {
+            throw Object.assign(new Error("Microphone access denied"), { name: "NotAllowedError" });
+          }
+        } catch {
+          // Ignore browsers that don't support microphone permission checks cleanly.
+        }
+      }
+
       // 1) Synchronously create + unlock AudioContext (iOS requirement)
       const Ctx: typeof AudioContext =
         (window as any).AudioContext || (window as any).webkitAudioContext;
-      const ctx = new Ctx();
+      const ctx = new Ctx({ latencyHint: "interactive", sampleRate: 16000 });
       audioContextRef.current = ctx;
-      // resume() returns a promise but the user-gesture "unlock" already happened on construction within click
+      setStartHint("Unlocking speaker…");
       try { await ctx.resume(); } catch {}
 
       // 2) Synchronously create + unlock <audio> element by playing a silent buffer
@@ -546,6 +562,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       try { await audioEl.play(); audioEl.pause(); audioEl.currentTime = 0; } catch {}
 
       // 3) Mic
+      setStartHint("Starting microphone…");
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
@@ -558,16 +575,21 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       isActiveRef.current = true;
       setIsConnected(true);
       setCallStart(Date.now());
+      setStartHint(null);
       startListening();
     } catch (error: any) {
       let errorMessage = "Could not access microphone";
       if (error?.name === "NotAllowedError") errorMessage = "Microphone access denied. Check browser settings.";
       else if (error?.name === "NotFoundError") errorMessage = "No microphone found on this device.";
       else if (error?.name === "NotReadableError") errorMessage = "Microphone is in use by another app.";
+      else if (error?.message) errorMessage = error.message;
       toast({ title: errorMessage, variant: "destructive" });
+      setStartHint(errorMessage);
       setStatus("idle");
+    } finally {
+      setIsStarting(false);
     }
-  }, [startListening, toast]);
+  }, [isStarting, startListening, toast]);
 
   const endCall = useCallback(() => {
     isActiveRef.current = false;
@@ -649,6 +671,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
           <div className="text-center">
             <p className="text-white/40 text-xs font-mono tracking-[0.3em] uppercase">Astraz Voice</p>
             <p className="text-white/70 text-base mt-3">Tap to start your call</p>
+            <p className="mt-2 text-xs text-white/35">{startHint ?? "Optimized for iPhone, Android, and desktop."}</p>
           </div>
 
           <VoiceOrb status="idle" isMuted={false} audioLevel={0} />
@@ -656,10 +679,16 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
           <div className="flex items-center gap-6">
             <Button
               onClick={startCall}
-              className="h-16 w-16 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-[0_0_30px_-5px_rgba(16,185,129,0.5)]"
+              disabled={isStarting}
+              className="h-16 w-16 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-[0_0_30px_-5px_rgba(16,185,129,0.5)] disabled:opacity-100"
               aria-label="Start call"
             >
-              <Phone className="h-7 w-7" />
+              <motion.div
+                animate={isStarting ? { scale: [1, 1.08, 1] } : { scale: 1 }}
+                transition={{ duration: 0.9, repeat: isStarting ? Infinity : 0, ease: "easeInOut" }}
+              >
+                <Phone className="h-7 w-7" />
+              </motion.div>
             </Button>
             <Button
               variant="ghost"
