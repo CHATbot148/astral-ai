@@ -10,8 +10,7 @@ interface VoiceOrbProps {
 }
 
 /**
- * Premium animated voice orb — uses layered canvas glow + framer-motion morphing.
- * Responds to real-time audio levels with organic, fluid animation.
+ * Rebuilt voice orb — a studio-style voice stage with beam core, live bands, and halo motion.
  */
 export const VoiceOrb = ({ status, isMuted, audioLevel = 0, className }: VoiceOrbProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -22,61 +21,43 @@ export const VoiceOrb = ({ status, isMuted, audioLevel = 0, className }: VoiceOr
   const isListening = status === "listening";
   const isConnecting = status === "connecting";
   const isActive = isSpeaking || isListening;
+  const frameTone = isMuted
+    ? "hsl(var(--muted-foreground) / 0.18)"
+    : isSpeaking
+      ? "hsl(var(--xai-cyan) / 0.45)"
+      : isListening
+        ? "hsl(var(--xai-purple) / 0.42)"
+        : "hsl(var(--border) / 0.5)";
 
-  // Canvas glow animation
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const size = 300;
+    const size = 320;
     canvas.width = size * 2;
     canvas.height = size * 2;
 
     const draw = () => {
-      phaseRef.current += 0.015;
+      phaseRef.current += isActive ? 0.028 : 0.014;
       const t = phaseRef.current;
       ctx.clearRect(0, 0, size * 2, size * 2);
       const cx = size;
       const cy = size;
 
-      // Outer nebula layers
-      const layers = isMuted ? 1 : isActive ? 4 : isConnecting ? 3 : 2;
-      for (let i = layers; i >= 0; i--) {
-        const spread = 80 + i * 28 + (isActive ? audioLevel * 40 : 0);
-        const wobble = isActive ? Math.sin(t * 2 + i) * audioLevel * 15 : Math.sin(t + i) * 4;
-        const alpha = isMuted ? 0.03 : isActive ? 0.08 + audioLevel * 0.12 : isConnecting ? 0.06 : 0.04;
+      for (let i = 0; i < 3; i++) {
+        const radius = 88 + i * 32 + (isActive ? audioLevel * 28 : 0);
+        const dx = Math.cos(t * (0.7 + i * 0.18)) * (8 + i * 2);
+        const dy = Math.sin(t * (0.9 + i * 0.15)) * (10 + i * 3);
+        const gradient = ctx.createRadialGradient(cx + dx, cy + dy, 0, cx, cy, radius);
+        const cyanAlpha = isMuted ? 0.02 : isSpeaking ? 0.16 : 0.08;
+        const purpleAlpha = isMuted ? 0.01 : isListening ? 0.16 : 0.08;
 
-        let r: number, g: number, b: number;
-        if (isMuted) {
-          r = 100; g = 100; b = 100;
-        } else if (isSpeaking) {
-          r = 100 + Math.sin(t + i) * 40;
-          g = 180 + Math.cos(t * 0.7 + i) * 40;
-          b = 255;
-        } else if (isListening) {
-          r = 40 + Math.sin(t * 0.8 + i) * 30;
-          g = 210 + Math.cos(t + i) * 30;
-          b = 160 + Math.sin(t * 1.2 + i) * 40;
-        } else if (isConnecting) {
-          r = 160 + Math.sin(t * 1.5 + i) * 40;
-          g = 100 + Math.cos(t + i) * 30;
-          b = 240;
-        } else {
-          r = 140; g = 160; b = 200;
-        }
-
-        const grad = ctx.createRadialGradient(
-          cx + wobble, cy + Math.cos(t + i * 0.5) * wobble * 0.7,
-          0,
-          cx, cy,
-          spread
-        );
-        grad.addColorStop(0, `rgba(${r},${g},${b},${alpha * 1.5})`);
-        grad.addColorStop(0.5, `rgba(${r},${g},${b},${alpha})`);
-        grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
-        ctx.fillStyle = grad;
+        gradient.addColorStop(0, `hsl(190 95% 55% / ${cyanAlpha + audioLevel * 0.12})`);
+        gradient.addColorStop(0.42, `hsl(270 85% 65% / ${purpleAlpha + audioLevel * 0.1})`);
+        gradient.addColorStop(1, "hsl(240 18% 7% / 0)");
+        ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, size * 2, size * 2);
       }
 
@@ -84,170 +65,158 @@ export const VoiceOrb = ({ status, isMuted, audioLevel = 0, className }: VoiceOr
     };
 
     animRef.current = requestAnimationFrame(draw);
-    return () => { cancelAnimationFrame(animRef.current); };
-  }, [isMuted, isSpeaking, isListening, isConnecting, isActive, audioLevel]);
+    return () => cancelAnimationFrame(animRef.current);
+  }, [audioLevel, isActive, isListening, isMuted, isSpeaking]);
 
-  const levelScale = 1 + audioLevel * 0.3;
-  const orbSize = 150;
+  const bars = Array.from({ length: 9 }, (_, i) => i);
+  const sparkRays = Array.from({ length: 12 }, (_, i) => i);
 
   return (
-    <div className={cn("relative flex items-center justify-center", className)} style={{ width: 300, height: 300 }}>
-      {/* Canvas glow background */}
+    <div className={cn("relative flex items-center justify-center", className)} style={{ width: 320, height: 320 }}>
       <canvas
         ref={canvasRef}
         className="absolute inset-0 pointer-events-none"
-        style={{ width: 300, height: 300 }}
+        style={{ width: 320, height: 320 }}
       />
 
-      {/* Orbital ring 1 */}
       <motion.div
-        className="absolute rounded-full"
+        className="absolute inset-[18px] rounded-[40px] border backdrop-blur-2xl"
         style={{
-          width: 220,
-          height: 220,
-          border: `1px solid ${isMuted ? "rgba(255,255,255,0.04)" : isSpeaking ? "rgba(6,182,212,0.3)" : isListening ? "rgba(16,185,129,0.25)" : "rgba(139,92,246,0.15)"}`,
+          borderColor: frameTone,
+          background: "linear-gradient(180deg, hsl(var(--card) / 0.3), hsl(var(--background) / 0.14))",
+          boxShadow: "0 30px 90px hsl(var(--background) / 0.55), inset 0 1px 0 hsl(var(--foreground) / 0.04)",
         }}
         animate={{
-          scale: isActive ? [1, 1 + audioLevel * 0.08, 1] : isConnecting ? [1, 1.04, 1] : 1,
-          rotate: isConnecting ? 360 : isActive ? [0, 3, -3, 0] : 0,
-          opacity: isMuted ? 0.3 : 1,
+          scale: isActive ? [1, 1.01 + audioLevel * 0.03, 1] : [1, 1.01, 1],
+          opacity: isMuted ? 0.5 : 1,
         }}
         transition={{
-          scale: { duration: isActive ? 0.15 : 3, repeat: isConnecting ? Infinity : 0 },
-          rotate: { duration: isConnecting ? 8 : 4, repeat: Infinity, ease: "linear" },
-          opacity: { duration: 0.5 },
+          duration: isActive ? 0.22 : 2.8,
+          repeat: Infinity,
+          ease: "easeInOut",
         }}
       />
 
-      {/* Orbital ring 2 (counter-rotate) */}
       <motion.div
-        className="absolute rounded-full"
+        className="absolute inset-[42px] rounded-[36px] border"
         style={{
-          width: 195,
-          height: 195,
-          border: `1px solid ${isMuted ? "rgba(255,255,255,0.03)" : isSpeaking ? "rgba(139,92,246,0.25)" : isListening ? "rgba(6,182,212,0.2)" : "rgba(100,120,180,0.1)"}`,
+          borderColor: "hsl(var(--foreground) / 0.06)",
         }}
         animate={{
-          rotate: isConnecting ? -360 : isActive ? [0, -2, 2, 0] : 0,
-          scale: isActive ? [1, 1 + audioLevel * 0.05, 1] : 1,
+          rotate: isConnecting ? 360 : isSpeaking ? [0, 2, 0, -2, 0] : 0,
+          scale: isListening ? [1, 1.012, 1] : 1,
         }}
         transition={{
-          rotate: { duration: isConnecting ? 12 : 6, repeat: Infinity, ease: "linear" },
-          scale: { duration: 0.15 },
+          rotate: { duration: isConnecting ? 6 : 5, repeat: Infinity, ease: "linear" },
+          scale: { duration: 1.4, repeat: Infinity, ease: "easeInOut" },
         }}
       />
 
-      {/* Particle dots */}
-      {!isMuted && [0, 1, 2, 3, 4, 5].map((i) => (
+      {!isMuted && sparkRays.map((i) => (
         <motion.div
           key={i}
-          className="absolute rounded-full"
+          className="absolute top-1/2 left-1/2 origin-center rounded-full"
           style={{
-            width: 3 + (isActive ? audioLevel * 3 : 0),
-            height: 3 + (isActive ? audioLevel * 3 : 0),
-            background: isSpeaking ? "rgb(103,232,249)" : isListening ? "rgb(52,211,153)" : "rgb(167,139,250)",
+            width: 2,
+            height: 34,
+            background: "linear-gradient(180deg, hsl(var(--foreground) / 0), hsl(var(--xai-cyan) / 0.5), hsl(var(--foreground) / 0))",
+            transform: `translate(-50%, -50%) rotate(${i * 30}deg) translateY(-118px)`,
           }}
           animate={{
-            x: [
-              Math.cos((i / 6) * Math.PI * 2) * 95,
-              Math.cos((i / 6) * Math.PI * 2 + 0.3) * (95 + (isActive ? audioLevel * 20 : 5)),
-              Math.cos((i / 6) * Math.PI * 2) * 95,
-            ],
-            y: [
-              Math.sin((i / 6) * Math.PI * 2) * 95,
-              Math.sin((i / 6) * Math.PI * 2 + 0.3) * (95 + (isActive ? audioLevel * 20 : 5)),
-              Math.sin((i / 6) * Math.PI * 2) * 95,
-            ],
-            opacity: isActive ? [0.4, 0.9, 0.4] : isConnecting ? [0.2, 0.5, 0.2] : 0.2,
+            opacity: isActive ? [0.15, 0.5 + audioLevel * 0.3, 0.15] : 0.08,
+            scaleY: isSpeaking ? [0.7, 1.3, 0.7] : [0.75, 1, 0.75],
           }}
           transition={{
-            duration: isActive ? 0.8 + i * 0.1 : 3 + i * 0.5,
+            duration: 1 + i * 0.04,
             repeat: Infinity,
             ease: "easeInOut",
           }}
         />
       ))}
 
-      {/* Main orb body */}
       <motion.div
-        className="relative rounded-full overflow-hidden"
-        style={{ width: orbSize, height: orbSize }}
+        className="relative h-[168px] w-[168px] overflow-hidden rounded-[34px] border border-white/10"
+        style={{
+          background: "linear-gradient(160deg, hsl(var(--card) / 0.92), hsl(var(--background) / 0.94))",
+          boxShadow: "0 22px 70px hsl(var(--background) / 0.7), inset 0 1px 0 hsl(var(--foreground) / 0.08)",
+        }}
         animate={{
-          scale: isActive ? levelScale : isMuted ? 0.88 : isConnecting ? [1, 1.04, 1] : [1, 1.015, 1],
+          scale: isMuted ? 0.96 : isActive ? [1, 1.02 + audioLevel * 0.08, 1] : [1, 1.012, 1],
         }}
         transition={{
-          duration: isActive ? 0.1 : 2.5,
-          repeat: isConnecting || (!isActive && !isMuted) ? Infinity : 0,
-          ease: "easeOut",
+          duration: isActive ? 0.18 : 2.4,
+          repeat: Infinity,
+          ease: "easeInOut",
         }}
       >
-        {/* Deep gradient core */}
         <motion.div
-          className="absolute inset-0"
+          className="absolute inset-[16px] rounded-[28px]"
           style={{
             background: isMuted
-              ? "radial-gradient(circle at 45% 40%, #2a2a2a 0%, #111 100%)"
+              ? "radial-gradient(circle at 50% 24%, hsl(var(--muted-foreground) / 0.25), hsl(var(--background)) 75%)"
               : isSpeaking
-              ? "radial-gradient(circle at 40% 35%, #67e8f9 0%, #0891b2 25%, #7c3aed 55%, #4c1d95 100%)"
-              : isListening
-              ? "radial-gradient(circle at 40% 35%, #6ee7b7 0%, #059669 30%, #0891b2 65%, #164e63 100%)"
-              : isConnecting
-              ? "radial-gradient(circle at 40% 35%, #c4b5fd 0%, #7c3aed 35%, #0891b2 70%, #0e7490 100%)"
-              : "radial-gradient(circle at 40% 35%, #cbd5e1 0%, #64748b 35%, #334155 70%, #0f172a 100%)",
+                ? "linear-gradient(180deg, hsl(var(--xai-cyan) / 0.95), hsl(var(--xai-purple) / 0.7) 58%, hsl(var(--background)) 100%)"
+                : isListening
+                  ? "linear-gradient(180deg, hsl(var(--xai-purple) / 0.92), hsl(var(--xai-cyan) / 0.56) 62%, hsl(var(--background)) 100%)"
+                  : "linear-gradient(180deg, hsl(var(--secondary)), hsl(var(--background)))",
           }}
           animate={{
-            rotate: isConnecting ? [0, 360] : [0, 8, -4, 0],
+            backgroundPositionY: isActive ? ["0%", "100%", "0%"] : ["0%", "16%", "0%"],
           }}
           transition={{
-            duration: isConnecting ? 4 : 12,
+            duration: isActive ? 2.1 : 4.2,
             repeat: Infinity,
-            ease: isConnecting ? "linear" : "easeInOut",
+            ease: "easeInOut",
           }}
         />
 
-        {/* Liquid morph overlay */}
         <motion.div
-          className="absolute inset-0"
+          className="absolute inset-x-[26px] top-[28px] h-[26px] rounded-full"
           style={{
-            background: isMuted ? "none" : isSpeaking
-              ? "conic-gradient(from 0deg, transparent 0%, rgba(103,232,249,0.2) 25%, transparent 50%, rgba(139,92,246,0.15) 75%, transparent 100%)"
-              : isListening
-              ? "conic-gradient(from 0deg, transparent 0%, rgba(52,211,153,0.15) 25%, transparent 50%, rgba(6,182,212,0.1) 75%, transparent 100%)"
-              : "none",
+            background: "linear-gradient(180deg, hsl(var(--foreground) / 0.26), hsl(var(--foreground) / 0))",
           }}
           animate={{
-            rotate: [0, 360],
-            scale: isActive ? [1, 1 + audioLevel * 0.15, 1] : 1,
+            opacity: isMuted ? 0.08 : isActive ? [0.12, 0.28, 0.12] : [0.08, 0.16, 0.08],
           }}
           transition={{
-            rotate: { duration: isActive ? 2 : 8, repeat: Infinity, ease: "linear" },
-            scale: { duration: 0.15 },
+            duration: 2.4,
+            repeat: Infinity,
+            ease: "easeInOut",
           }}
         />
 
-        {/* Glass highlight */}
-        <motion.div
-          className="absolute inset-0"
-          style={{
-            background: "radial-gradient(ellipse at 35% 25%, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.15) 25%, transparent 55%)",
-          }}
-          animate={{
-            opacity: isMuted ? 0.08 : isActive ? 0.25 + audioLevel * 0.35 : [0.2, 0.35, 0.2],
-          }}
-          transition={{
-            duration: isActive ? 0.12 : 3,
-            repeat: isActive ? 0 : Infinity,
-            ease: "easeOut",
-          }}
-        />
-
-        {/* Bottom shadow for depth */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background: "radial-gradient(ellipse at 55% 75%, rgba(0,0,0,0.4) 0%, transparent 55%)",
-          }}
-        />
+        <div className="absolute inset-x-[26px] bottom-[32px] flex items-end justify-center gap-[6px]">
+          {bars.map((i) => {
+            const dist = Math.abs(i - 4);
+            const base = 20 - dist * 2;
+            const activeBoost = isMuted ? 0 : audioLevel * (40 - dist * 4);
+            return (
+              <motion.div
+                key={i}
+                className="w-[8px] rounded-full"
+                style={{
+                  background: i % 2 === 0
+                    ? "linear-gradient(180deg, hsl(var(--xai-cyan)), hsl(var(--xai-cyan) / 0.18))"
+                    : "linear-gradient(180deg, hsl(var(--xai-purple)), hsl(var(--xai-purple) / 0.18))",
+                }}
+                animate={{
+                  height: isMuted
+                    ? 10
+                    : isActive
+                      ? [base, base + activeBoost, base + activeBoost * 0.45, base]
+                      : [base, base + 8, base],
+                  opacity: isMuted ? 0.24 : isActive ? 1 : 0.55,
+                }}
+                transition={{
+                  duration: isActive ? 0.42 + i * 0.02 : 1.6 + i * 0.04,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                  delay: i * 0.03,
+                }}
+              />
+            );
+          })}
+        </div>
       </motion.div>
     </div>
   );
