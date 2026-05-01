@@ -498,7 +498,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       if (recorder.state === "recording") {
         try { recorder.stop(); } catch {}
       }
-    }, silenceCutoffRef.current);
+    }, VOICE_SILENCE_MS);
   }, [cancelPlayback, startMicLevelTracking, stopMicLevelTracking, transcribeAudio, streamAIAndSpeak]);
 
   useEffect(() => { startListeningRef.current = startListening; }, [startListening]);
@@ -694,20 +694,10 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
           </p>
         </div>
 
-        <div className="w-full rounded-2xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-sm p-4 space-y-3">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs text-white/50">
-              <span>Silence cutoff</span>
-              <span className="font-mono">{(silenceCutoff / 1000).toFixed(1)}s</span>
-            </div>
-            <Slider
-              min={800}
-              max={5500}
-              step={100}
-              value={[silenceCutoff]}
-              onValueChange={(value) => setSilenceCutoff(value[0] ?? 1800)}
-              aria-label="Silence cutoff in seconds"
-            />
+        <div className="w-full rounded-2xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-sm p-4">
+          <div className="flex items-center justify-between text-xs uppercase tracking-[0.24em] text-white/45">
+            <span>Realtime voice</span>
+            <span className="font-mono text-white/60">0.8s turn cutoff</span>
           </div>
         </div>
 
