@@ -256,7 +256,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       while (ttsQueueRef.current.length > 0) {
         if (token !== cancelTokenRef.current || !isActiveRef.current) break;
         const next = ttsQueueRef.current.shift()!;
-        const blob = await fetchTTSBlob(next);
+        const blob = await next.blobPromise;
         if (!blob) continue;
         if (token !== cancelTokenRef.current || !isActiveRef.current) break;
         await playBlob(blob, token);
@@ -268,10 +268,13 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
   const enqueueTTS = useCallback((text: string, token: number) => {
     if (!text.trim()) return;
-    ttsQueueRef.current.push(text);
+    ttsQueueRef.current.push({
+      text,
+      blobPromise: fetchTTSBlob(text),
+    });
     // kick the processor
     void processTTSQueue(token);
-  }, [processTTSQueue]);
+  }, [fetchTTSBlob, processTTSQueue]);
 
   // ── Streaming AI → chunked TTS ──
   const streamAIAndSpeak = useCallback(async (userText: string) => {
