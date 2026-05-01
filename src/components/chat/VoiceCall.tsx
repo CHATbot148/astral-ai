@@ -2,7 +2,6 @@ import { useRef, useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { PhoneOff, Mic, MicOff, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -42,28 +41,34 @@ const pickRecorderMime = (): string => {
 
 // Split streaming text into speakable chunks at sentence/clause boundaries.
 const SENTENCE_BOUNDARY = /([.!?…]+\s+|[,;:]\s+(?=\S{12,}))/;
+const VOICE_SILENCE_MS = 800;
+const EARLY_TTS_FLUSH_MS = 220;
+const EARLY_TTS_MIN_CHARS = 48;
+
+type TTSQueueItem = {
+  text: string;
+  blobPromise: Promise<Blob | null>;
+};
 
 export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const { toast } = useToast();
   const [callStart, setCallStart] = useState<number | null>(null);
   const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
-  const [silenceCutoff, setSilenceCutoff] = useState<number>(() => {
-    const saved = Number(localStorage.getItem("xai-voice-silence-cutoff-ms"));
-    return Number.isFinite(saved) ? Math.min(5500, Math.max(800, saved)) : 1800;
-  });
   const [status, setStatus] = useState<CallStatus>("idle");
   const [isConnected, setIsConnected] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
+  const [isStarting, setIsStarting] = useState(false);
+  const [startHint, setStartHint] = useState<string | null>(null);
 
   // Refs
   const isActiveRef = useRef(false);
   const isSpeakingRef = useRef(false);
   const isMutedRef = useRef(isMuted);
-  const silenceCutoffRef = useRef(silenceCutoff);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const historyRef = useRef<{ role: string; content: string }[]>([]);
   const startListeningRef = useRef<() => void>(() => {});
+  const startPendingRef = useRef(false);
 
   // MediaRecorder refs
   const streamRef = useRef<MediaStream | null>(null);
@@ -73,7 +78,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
   // TTS playback pipeline
   const audioElRef = useRef<HTMLAudioElement | null>(null);
-  const ttsQueueRef = useRef<string[]>([]);
+  const ttsQueueRef = useRef<TTSQueueItem[]>([]);
   const ttsPlayingRef = useRef(false);
   const cancelTokenRef = useRef(0);
 
@@ -83,10 +88,6 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const micAnimFrameRef = useRef<number>(0);
 
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
-  useEffect(() => {
-    silenceCutoffRef.current = silenceCutoff;
-    localStorage.setItem("xai-voice-silence-cutoff-ms", String(silenceCutoff));
-  }, [silenceCutoff]);
 
   useEffect(() => {
     if (!callStart) return;
