@@ -327,9 +327,19 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       let pending = "";
       let fullReply = "";
       let streamDone = false;
+      let firstChunkQueued = false;
+      let earlyFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const clearEarlyFlushTimer = () => {
+        if (earlyFlushTimer) {
+          clearTimeout(earlyFlushTimer);
+          earlyFlushTimer = null;
+        }
+      };
 
       const flushChunk = (force = false) => {
         if (token !== cancelTokenRef.current) return;
+        clearEarlyFlushTimer();
         // emit as many sentence-bounded chunks as possible
         while (true) {
           const m = pending.match(SENTENCE_BOUNDARY);
@@ -337,15 +347,28 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
           const cut = m.index + m[0].length;
           const chunk = pending.slice(0, cut).trim();
           pending = pending.slice(cut);
-          if (chunk) enqueueTTS(chunk, token);
+          if (chunk) {
+            enqueueTTS(chunk, token);
+            firstChunkQueued = true;
+          }
         }
         if (force && pending.trim()) {
           enqueueTTS(pending.trim(), token);
+          firstChunkQueued = true;
           pending = "";
         } else if (!force && pending.length > 140) {
           // safety: if we keep getting tokens with no boundary, flush early
           enqueueTTS(pending.trim(), token);
+          firstChunkQueued = true;
           pending = "";
+        } else if (!force && !firstChunkQueued && pending.trim().length >= EARLY_TTS_MIN_CHARS && !earlyFlushTimer) {
+          earlyFlushTimer = setTimeout(() => {
+            if (token !== cancelTokenRef.current || !pending.trim()) return;
+            enqueueTTS(pending.trim(), token);
+            firstChunkQueued = true;
+            pending = "";
+            earlyFlushTimer = null;
+          }, EARLY_TTS_FLUSH_MS);
         }
       };
 
@@ -380,6 +403,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         }
       }
 
+      clearEarlyFlushTimer();
       flushChunk(true);
 
       if (!fullReply.trim()) {
