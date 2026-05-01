@@ -2,7 +2,6 @@ import { useRef, useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { PhoneOff, Mic, MicOff, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -25,13 +24,11 @@ const log = (label: string, data?: any) => {
 // Pick the best MediaRecorder mime for the device.
 // iOS Safari supports audio/mp4; Chrome/Android/desktop prefer webm/opus.
 const pickRecorderMime = (): string => {
-  const candidates = [
-    "audio/webm;codecs=opus",
-    "audio/webm",
-    "audio/mp4;codecs=mp4a.40.2",
-    "audio/mp4",
-    "audio/aac",
-  ];
+  const ua = navigator.userAgent.toLowerCase();
+  const preferMp4 = /iphone|ipad|ipod|safari/.test(ua) && !/chrome|crios|fxios|edgios/.test(ua);
+  const candidates = preferMp4
+    ? ["audio/mp4", "audio/mp4;codecs=mp4a.40.2", "audio/aac", "audio/webm;codecs=opus", "audio/webm"]
+    : ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/mp4;codecs=mp4a.40.2", "audio/aac"];
   for (const c of candidates) {
     try {
       if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(c)) return c;
@@ -42,25 +39,30 @@ const pickRecorderMime = (): string => {
 
 // Split streaming text into speakable chunks at sentence/clause boundaries.
 const SENTENCE_BOUNDARY = /([.!?…]+\s+|[,;:]\s+(?=\S{12,}))/;
+const VOICE_SILENCE_MS = 800;
+const EARLY_TTS_FLUSH_MS = 220;
+const EARLY_TTS_MIN_CHARS = 48;
+
+type TTSQueueItem = {
+  text: string;
+  blobPromise: Promise<Blob | null>;
+};
 
 export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const { toast } = useToast();
   const [callStart, setCallStart] = useState<number | null>(null);
   const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
-  const [silenceCutoff, setSilenceCutoff] = useState<number>(() => {
-    const saved = Number(localStorage.getItem("xai-voice-silence-cutoff-ms"));
-    return Number.isFinite(saved) ? Math.min(5500, Math.max(800, saved)) : 1800;
-  });
   const [status, setStatus] = useState<CallStatus>("idle");
   const [isConnected, setIsConnected] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
+  const [isStarting, setIsStarting] = useState(false);
+  const [startHint, setStartHint] = useState<string | null>(null);
 
   // Refs
   const isActiveRef = useRef(false);
   const isSpeakingRef = useRef(false);
   const isMutedRef = useRef(isMuted);
-  const silenceCutoffRef = useRef(silenceCutoff);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const historyRef = useRef<{ role: string; content: string }[]>([]);
   const startListeningRef = useRef<() => void>(() => {});
@@ -73,7 +75,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
   // TTS playback pipeline
   const audioElRef = useRef<HTMLAudioElement | null>(null);
-  const ttsQueueRef = useRef<string[]>([]);
+  const ttsQueueRef = useRef<TTSQueueItem[]>([]);
   const ttsPlayingRef = useRef(false);
   const cancelTokenRef = useRef(0);
 
@@ -83,10 +85,6 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   const micAnimFrameRef = useRef<number>(0);
 
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
-  useEffect(() => {
-    silenceCutoffRef.current = silenceCutoff;
-    localStorage.setItem("xai-voice-silence-cutoff-ms", String(silenceCutoff));
-  }, [silenceCutoff]);
 
   useEffect(() => {
     if (!callStart) return;
@@ -158,26 +156,17 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
   // ── STT ──
   const transcribeAudio = useCallback(async (audioBlob: Blob): Promise<string> => {
-    const arrayBuffer = await audioBlob.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
-    let binary = "";
-    const chunkSize = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)) as any);
-    }
-    const base64Audio = btoa(binary);
-
     const { data: sessionData } = await supabase.auth.getSession();
     const accessToken = sessionData.session?.access_token;
 
     const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/speech-to-text`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": recorderMimeRef.current || audioBlob.type || "application/octet-stream",
         apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
       },
-      body: JSON.stringify({ audio: base64Audio, mimeType: recorderMimeRef.current }),
+      body: audioBlob,
     });
 
     if (!response.ok) throw new Error(`STT failed: ${response.status}`);
@@ -255,7 +244,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       while (ttsQueueRef.current.length > 0) {
         if (token !== cancelTokenRef.current || !isActiveRef.current) break;
         const next = ttsQueueRef.current.shift()!;
-        const blob = await fetchTTSBlob(next);
+        const blob = await next.blobPromise;
         if (!blob) continue;
         if (token !== cancelTokenRef.current || !isActiveRef.current) break;
         await playBlob(blob, token);
@@ -267,10 +256,13 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
 
   const enqueueTTS = useCallback((text: string, token: number) => {
     if (!text.trim()) return;
-    ttsQueueRef.current.push(text);
+    ttsQueueRef.current.push({
+      text,
+      blobPromise: fetchTTSBlob(text),
+    });
     // kick the processor
     void processTTSQueue(token);
-  }, [processTTSQueue]);
+  }, [fetchTTSBlob, processTTSQueue]);
 
   // ── Streaming AI → chunked TTS ──
   const streamAIAndSpeak = useCallback(async (userText: string) => {
@@ -323,9 +315,19 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       let pending = "";
       let fullReply = "";
       let streamDone = false;
+      let firstChunkQueued = false;
+      let earlyFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const clearEarlyFlushTimer = () => {
+        if (earlyFlushTimer) {
+          clearTimeout(earlyFlushTimer);
+          earlyFlushTimer = null;
+        }
+      };
 
       const flushChunk = (force = false) => {
         if (token !== cancelTokenRef.current) return;
+        clearEarlyFlushTimer();
         // emit as many sentence-bounded chunks as possible
         while (true) {
           const m = pending.match(SENTENCE_BOUNDARY);
@@ -333,15 +335,28 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
           const cut = m.index + m[0].length;
           const chunk = pending.slice(0, cut).trim();
           pending = pending.slice(cut);
-          if (chunk) enqueueTTS(chunk, token);
+          if (chunk) {
+            enqueueTTS(chunk, token);
+            firstChunkQueued = true;
+          }
         }
         if (force && pending.trim()) {
           enqueueTTS(pending.trim(), token);
+          firstChunkQueued = true;
           pending = "";
         } else if (!force && pending.length > 140) {
           // safety: if we keep getting tokens with no boundary, flush early
           enqueueTTS(pending.trim(), token);
+          firstChunkQueued = true;
           pending = "";
+        } else if (!force && !firstChunkQueued && pending.trim().length >= EARLY_TTS_MIN_CHARS && !earlyFlushTimer) {
+          earlyFlushTimer = setTimeout(() => {
+            if (token !== cancelTokenRef.current || !pending.trim()) return;
+            enqueueTTS(pending.trim(), token);
+            firstChunkQueued = true;
+            pending = "";
+            earlyFlushTimer = null;
+          }, EARLY_TTS_FLUSH_MS);
         }
       };
 
@@ -376,6 +391,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         }
       }
 
+      clearEarlyFlushTimer();
       flushChunk(true);
 
       if (!fullReply.trim()) {
@@ -494,23 +510,40 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       if (recorder.state === "recording") {
         try { recorder.stop(); } catch {}
       }
-    }, silenceCutoffRef.current);
+    }, VOICE_SILENCE_MS);
   }, [cancelPlayback, startMicLevelTracking, stopMicLevelTracking, transcribeAudio, streamAIAndSpeak]);
 
   useEffect(() => { startListeningRef.current = startListening; }, [startListening]);
 
   // ── Start call: MUST be invoked synchronously from a user gesture ──
   const startCall = useCallback(async () => {
-    if (isActiveRef.current) return;
+    if (isActiveRef.current || isStarting) return;
     historyRef.current = [];
+    setIsStarting(true);
+    setStartHint("Requesting microphone access…");
 
     try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("Media devices are not available on this browser");
+      }
+
+      if (navigator.permissions?.query) {
+        try {
+          const permission = await navigator.permissions.query({ name: "microphone" as PermissionName });
+          if (permission.state === "denied") {
+            throw Object.assign(new Error("Microphone access denied"), { name: "NotAllowedError" });
+          }
+        } catch {
+          // Ignore browsers that don't support microphone permission checks cleanly.
+        }
+      }
+
       // 1) Synchronously create + unlock AudioContext (iOS requirement)
       const Ctx: typeof AudioContext =
         (window as any).AudioContext || (window as any).webkitAudioContext;
-      const ctx = new Ctx();
+      const ctx = new Ctx({ latencyHint: "interactive", sampleRate: 16000 });
       audioContextRef.current = ctx;
-      // resume() returns a promise but the user-gesture "unlock" already happened on construction within click
+      setStartHint("Unlocking speaker…");
       try { await ctx.resume(); } catch {}
 
       // 2) Synchronously create + unlock <audio> element by playing a silent buffer
@@ -529,6 +562,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       try { await audioEl.play(); audioEl.pause(); audioEl.currentTime = 0; } catch {}
 
       // 3) Mic
+      setStartHint("Starting microphone…");
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
@@ -541,16 +575,21 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       isActiveRef.current = true;
       setIsConnected(true);
       setCallStart(Date.now());
+      setStartHint(null);
       startListening();
     } catch (error: any) {
       let errorMessage = "Could not access microphone";
       if (error?.name === "NotAllowedError") errorMessage = "Microphone access denied. Check browser settings.";
       else if (error?.name === "NotFoundError") errorMessage = "No microphone found on this device.";
       else if (error?.name === "NotReadableError") errorMessage = "Microphone is in use by another app.";
+      else if (error?.message) errorMessage = error.message;
       toast({ title: errorMessage, variant: "destructive" });
+      setStartHint(errorMessage);
       setStatus("idle");
+    } finally {
+      setIsStarting(false);
     }
-  }, [startListening, toast]);
+  }, [isStarting, startListening, toast]);
 
   const endCall = useCallback(() => {
     isActiveRef.current = false;
@@ -632,6 +671,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
           <div className="text-center">
             <p className="text-white/40 text-xs font-mono tracking-[0.3em] uppercase">Astraz Voice</p>
             <p className="text-white/70 text-base mt-3">Tap to start your call</p>
+            <p className="mt-2 text-xs text-white/35">{startHint ?? "Optimized for iPhone, Android, and desktop."}</p>
           </div>
 
           <VoiceOrb status="idle" isMuted={false} audioLevel={0} />
@@ -639,10 +679,16 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
           <div className="flex items-center gap-6">
             <Button
               onClick={startCall}
-              className="h-16 w-16 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-[0_0_30px_-5px_rgba(16,185,129,0.5)]"
+              disabled={isStarting}
+              className="h-16 w-16 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-[0_0_30px_-5px_rgba(16,185,129,0.5)] disabled:opacity-100"
               aria-label="Start call"
             >
-              <Phone className="h-7 w-7" />
+              <motion.div
+                animate={isStarting ? { scale: [1, 1.08, 1] } : { scale: 1 }}
+                transition={{ duration: 0.9, repeat: isStarting ? Infinity : 0, ease: "easeInOut" }}
+              >
+                <Phone className="h-7 w-7" />
+              </motion.div>
             </Button>
             <Button
               variant="ghost"
@@ -690,20 +736,10 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
           </p>
         </div>
 
-        <div className="w-full rounded-2xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-sm p-4 space-y-3">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs text-white/50">
-              <span>Silence cutoff</span>
-              <span className="font-mono">{(silenceCutoff / 1000).toFixed(1)}s</span>
-            </div>
-            <Slider
-              min={800}
-              max={5500}
-              step={100}
-              value={[silenceCutoff]}
-              onValueChange={(value) => setSilenceCutoff(value[0] ?? 1800)}
-              aria-label="Silence cutoff in seconds"
-            />
+        <div className="w-full rounded-2xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-sm p-4">
+          <div className="flex items-center justify-between text-xs uppercase tracking-[0.24em] text-white/45">
+            <span>Realtime voice</span>
+            <span className="font-mono text-white/60">0.8s turn cutoff</span>
           </div>
         </div>
 
