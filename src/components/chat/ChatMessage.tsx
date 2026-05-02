@@ -194,10 +194,32 @@ const LANGUAGE_COLORS: Record<string, { bg: string; text: string; label: string 
   code: { bg: 'bg-muted', text: 'text-muted-foreground', label: 'Code' },
 };
 
+// Map common aliases to Prism-supported language ids
+const LANG_ALIAS: Record<string, string> = {
+  js: 'javascript',
+  ts: 'typescript',
+  py: 'python',
+  sh: 'bash',
+  shell: 'bash',
+  yml: 'yaml',
+  md: 'markdown',
+  'c++': 'cpp',
+  'c#': 'csharp',
+  cs: 'csharp',
+  html: 'markup',
+  xml: 'markup',
+  vue: 'markup',
+  text: 'plaintext',
+  txt: 'plaintext',
+  code: 'plaintext',
+};
+
 // Parse and render code blocks with syntax highlighting
-const CodeBlock = ({ language, code }: { language: string; code: string }) => {
+const CodeBlock = ({ language, code, isStreaming }: { language: string; code: string; isStreaming?: boolean }) => {
   const [copied, setCopied] = useState(false);
+  const { resolvedTheme } = useTheme();
   const lang = language.toLowerCase();
+  const prismLang = LANG_ALIAS[lang] || lang || 'plaintext';
   const colors = LANGUAGE_COLORS[lang] || LANGUAGE_COLORS['code'];
 
   const copyCode = async () => {
@@ -206,16 +228,32 @@ const CodeBlock = ({ language, code }: { language: string; code: string }) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const themeStyle = resolvedTheme === 'light' ? oneLight : oneDark;
+
   return (
-    <div className="my-3 rounded-lg overflow-hidden border border-border bg-secondary/50">
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2 }}
+      className="my-3 rounded-lg overflow-hidden border border-border bg-secondary/50"
+    >
       <div className="flex items-center justify-between px-3 py-1.5 bg-secondary border-b border-border">
-        <span className={cn("text-xs font-mono px-2 py-0.5 rounded", colors.bg, colors.text)}>
-          {colors.label}
-        </span>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={cn("text-xs font-mono px-2 py-0.5 rounded", colors.bg, colors.text)}>
+            {colors.label}
+          </span>
+          {isStreaming && (
+            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+              writing
+            </span>
+          )}
+        </div>
         <Button
           variant="ghost"
           size="sm"
           onClick={copyCode}
+          disabled={!code}
           className="h-6 px-2 text-xs shrink-0"
         >
           {copied ? (
@@ -231,12 +269,33 @@ const CodeBlock = ({ language, code }: { language: string; code: string }) => {
           )}
         </Button>
       </div>
-      <div className="relative">
-        <pre className="p-3 overflow-x-auto text-sm max-w-full">
-          <code className="font-mono text-foreground whitespace-pre-wrap break-words">{code}</code>
-        </pre>
+      <div className="relative max-w-full overflow-x-auto">
+        {code ? (
+          <SyntaxHighlighter
+            language={prismLang}
+            style={themeStyle as any}
+            PreTag="pre"
+            customStyle={{
+              margin: 0,
+              padding: '0.75rem',
+              background: 'transparent',
+              fontSize: '0.8125rem',
+              lineHeight: 1.55,
+            }}
+            codeTagProps={{
+              style: {
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              },
+            }}
+            wrapLongLines={false}
+          >
+            {code}
+          </SyntaxHighlighter>
+        ) : (
+          <div className="px-3 py-4 text-xs text-muted-foreground">Preparing code…</div>
+        )}
       </div>
-    </div>
+    </motion.div>
   );
 };
 
