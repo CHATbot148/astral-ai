@@ -509,7 +509,9 @@ serve(async (req) => {
     }
 
     // Get mode-specific prompt
-    const modePrompt = MODE_PROMPTS[aiMode] || MODE_PROMPTS['smart_friendly'];
+    const modePrompt = aiMode === 'custom'
+      ? buildCustomModePrompt(customPrompt)
+      : (MODE_PROMPTS[aiMode] || MODE_PROMPTS['smart_friendly']);
     const voiceRestrictions = isVoiceMode ? VOICE_MODE_RESTRICTIONS : '';
     const followUpInstruction = followUpQuestions === true
       ? '\n\nFOLLOW-UP QUESTIONS: ON — After answering, you MAY ask one short follow-up question only when it is genuinely useful (especially after a concise summary of a complex topic). Do not force a follow-up on every reply.'
