@@ -16,6 +16,7 @@ import { subscribeToPush } from '@/utils/pushSubscription';
 import { MemoryPopup } from './MemoryPopup';
 import { AIMode, AISettings, TypingStyle, modeDescriptions, typingStyleDescriptions, getAISettings, saveAISettings } from '@/lib/aiSettings';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Textarea } from '@/components/ui/textarea';
 import { ManageSubscription } from '@/components/subscription/ManageSubscription';
 import { UpgradeDialog } from '@/components/subscription/UpgradeDialog';
 
@@ -752,6 +753,24 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
             );
           })}
         </div>
+
+        {aiSettings.mode === 'custom' && (
+          <div className="mt-3 space-y-2">
+            <label className="text-xs font-medium text-muted-foreground">
+              Custom personality instructions
+            </label>
+            <Textarea
+              value={aiSettings.customPrompt}
+              onChange={(e) => handleAISettingsChange({ customPrompt: e.target.value })}
+              placeholder={`Describe exactly how Astraz should behave. For example:\n"Talk like a sarcastic best friend who roasts me when I'm being silly. Use slang, swear if it fits, and don't be overly polite."`}
+              className="min-h-[120px] text-sm resize-y"
+              maxLength={2000}
+            />
+            <p className="text-[11px] text-muted-foreground">
+              This only changes the AI's personality and tone. All features (web search, images, reminders, etc.) keep working normally.
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 border border-border">

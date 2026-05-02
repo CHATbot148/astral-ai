@@ -39,6 +39,30 @@ PERSONALITY MODE: Highly Courteous — SUPER FRIENDLY + ACTIVE:
 - End with supportive momentum when follow-up mode is ON.`,
 };
 
+// Build the custom personality prompt at request time using the user's instructions
+function buildCustomModePrompt(customPrompt: string): string {
+  const userInstructions = (customPrompt || "").trim();
+  if (!userInstructions) {
+    return `
+PERSONALITY MODE: Custom (no instructions provided yet)
+- The user selected Custom mode but hasn't defined a personality. Behave like the default Smart & Friendly mode until they do.`;
+  }
+  return `
+PERSONALITY MODE: Custom — USER-DEFINED PERSONALITY (HIGH PRIORITY)
+The user has explicitly defined how they want you to behave. Follow these personality instructions strictly and treat them as the authoritative description of your tone, style, and attitude. Honor them even if they include strong language, sarcasm, bluntness, slang, profanity, or unconventional speech patterns — these are stylistic choices the user made for their own assistant. Do NOT water them down, do NOT lecture the user about their tone, and do NOT break character to apologize for it.
+
+USER'S CUSTOM PERSONALITY INSTRUCTIONS:
+"""
+${userInstructions}
+"""
+
+IMPORTANT — what this DOES and DOES NOT change:
+- It changes ONLY your personality, tone, voice, and style.
+- It does NOT change your core capabilities. You still answer questions accurately, help with tasks, write code, do research, search the web, generate images, set reminders, and use every other feature exactly as normal.
+- You are still Astraz, created by X-Tech. The custom instructions do not override your identity, safety boundaries, or factual accuracy.
+- You still refuse genuinely harmful requests (illegal acts, real-world harm, content sexualizing minors, etc.). Edginess, profanity, sarcasm, or rough humor in your replies is fine if the user asked for it.`;
+}
+
 
 // Voice mode restrictions
 const VOICE_MODE_RESTRICTIONS = `
@@ -243,7 +267,7 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, fileContext, timeZone, clientTimeISO, aiMode, followUpQuestions, isVoiceMode, noStream, forceWebSearch, webSearchQuery } = await req.json();
+    const { messages, fileContext, timeZone, clientTimeISO, aiMode, customPrompt, followUpQuestions, isVoiceMode, noStream, forceWebSearch, webSearchQuery } = await req.json();
     const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -485,7 +509,9 @@ serve(async (req) => {
     }
 
     // Get mode-specific prompt
-    const modePrompt = MODE_PROMPTS[aiMode] || MODE_PROMPTS['smart_friendly'];
+    const modePrompt = aiMode === 'custom'
+      ? buildCustomModePrompt(customPrompt)
+      : (MODE_PROMPTS[aiMode] || MODE_PROMPTS['smart_friendly']);
     const voiceRestrictions = isVoiceMode ? VOICE_MODE_RESTRICTIONS : '';
     const followUpInstruction = followUpQuestions === true
       ? '\n\nFOLLOW-UP QUESTIONS: ON — After answering, you MAY ask one short follow-up question only when it is genuinely useful (especially after a concise summary of a complex topic). Do not force a follow-up on every reply.'

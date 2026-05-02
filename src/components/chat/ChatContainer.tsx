@@ -705,6 +705,7 @@ export const ChatContainer = () => {
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           clientTimeISO: new Date().toISOString(),
           aiMode: getAISettings().mode,
+          customPrompt: getAISettings().customPrompt,
           followUpQuestions: getAISettings().followUpQuestions,
         }),
         signal: abortControllerRef.current?.signal,
