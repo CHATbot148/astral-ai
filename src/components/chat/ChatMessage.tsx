@@ -191,6 +191,7 @@ const LANGUAGE_COLORS: Record<string, { bg: string; text: string; label: string 
   yml: { bg: 'bg-red-500/20', text: 'text-red-400', label: 'YAML' },
   markdown: { bg: 'bg-gray-500/20', text: 'text-gray-400', label: 'Markdown' },
   md: { bg: 'bg-gray-500/20', text: 'text-gray-400', label: 'Markdown' },
+  graph: { bg: 'bg-primary/20', text: 'text-primary', label: 'Graph' },
   code: { bg: 'bg-muted', text: 'text-muted-foreground', label: 'Code' },
 };
 
