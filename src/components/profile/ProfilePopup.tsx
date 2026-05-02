@@ -16,6 +16,7 @@ import { subscribeToPush } from '@/utils/pushSubscription';
 import { MemoryPopup } from './MemoryPopup';
 import { AIMode, AISettings, TypingStyle, modeDescriptions, typingStyleDescriptions, getAISettings, saveAISettings } from '@/lib/aiSettings';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Textarea } from '@/components/ui/textarea';
 import { ManageSubscription } from '@/components/subscription/ManageSubscription';
 import { UpgradeDialog } from '@/components/subscription/UpgradeDialog';
 
