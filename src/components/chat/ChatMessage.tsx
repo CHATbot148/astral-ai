@@ -690,26 +690,56 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
 
     sources.push(...sourcesMap.values());
 
-    const parts: Array<{ type: 'text' | 'code' | 'media' | 'table'; content: string; language?: string; tableData?: { headers: string[]; rows: string[][] } }> = [];
-    const codeBlockRegex = /```(\w+)?\n?([\s\S]*?)```/g;
-    
+    const parts: Array<{
+      type: 'text' | 'code' | 'media' | 'table' | 'graph';
+      content: string;
+      language?: string;
+      open?: boolean;
+      tableData?: { headers: string[]; rows: string[][] };
+    }> = [];
+
+    // Match closed fences first; then handle a single trailing unclosed fence so the
+    // container shows up immediately while streaming.
+    const closedFenceRegex = /```(\w+)?\n?([\s\S]*?)```/g;
+
     let lastIndex = 0;
     let match;
-    
-    while ((match = codeBlockRegex.exec(mainText)) !== null) {
+
+    while ((match = closedFenceRegex.exec(mainText)) !== null) {
       if (match.index > lastIndex) {
         const textPart = mainText.slice(lastIndex, match.index).trim();
         if (textPart) splitTextAndTables(textPart, parts);
       }
-      parts.push({ type: 'code', language: match[1] || 'code', content: match[2].trim() });
+      const lang = (match[1] || 'code').toLowerCase();
+      const body = match[2].trim();
+      if (lang === 'graph') {
+        parts.push({ type: 'graph', content: body, language: 'graph', open: false });
+      } else {
+        parts.push({ type: 'code', language: lang, content: body, open: false });
+      }
       lastIndex = match.index + match[0].length;
     }
-    
+
     if (lastIndex < mainText.length) {
-      const textPart = mainText.slice(lastIndex).trim();
-      if (textPart) splitTextAndTables(textPart, parts);
+      const remaining = mainText.slice(lastIndex);
+      // Detect a trailing unclosed fence: ```lang\n...  with no closing ```
+      const openFenceMatch = remaining.match(/```(\w+)?\n?([\s\S]*)$/);
+      if (openFenceMatch && !openFenceMatch[2].includes('```')) {
+        const before = remaining.slice(0, openFenceMatch.index!).trim();
+        if (before) splitTextAndTables(before, parts);
+        const lang = (openFenceMatch[1] || 'code').toLowerCase();
+        const body = openFenceMatch[2];
+        if (lang === 'graph') {
+          parts.push({ type: 'graph', content: body, language: 'graph', open: true });
+        } else {
+          parts.push({ type: 'code', language: lang, content: body, open: true });
+        }
+      } else {
+        const textPart = remaining.trim();
+        if (textPart) splitTextAndTables(textPart, parts);
+      }
     }
-    
+
     return { parts, mediaItems, sources };
   }, [content]);
 
