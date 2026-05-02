@@ -1214,9 +1214,16 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
               : "w-full min-w-0 max-w-full break-words [overflow-wrap:anywhere]"
           )}
         >
-          {parsedContent.parts.map((part, index) => 
+          {parsedContent.parts.map((part, index) =>
             part.type === 'code' ? (
-              <CodeBlock key={index} language={part.language || 'code'} code={part.content} />
+              <CodeBlock
+                key={index}
+                language={part.language || 'code'}
+                code={part.content}
+                isStreaming={!!part.open}
+              />
+            ) : part.type === 'graph' ? (
+              <GraphBlock key={index} raw={part.content} isStreaming={!!part.open} />
             ) : part.type === 'table' && part.tableData ? (
               <TableBlock key={index} data={part.tableData} />
             ) : isStreaming && (streamingStyle === 'line_fade' || streamingStyle === 'slide_down') ? (
