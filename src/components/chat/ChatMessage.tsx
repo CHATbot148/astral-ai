@@ -313,8 +313,8 @@ function parseMarkdownTable(lines: string[]): { headers: string[]; rows: string[
 
 // Split text into text parts and table parts
 function splitTextAndTables(
-  text: string, 
-  parts: Array<{ type: 'text' | 'code' | 'media' | 'table'; content: string; language?: string; tableData?: { headers: string[]; rows: string[][] } }>
+  text: string,
+  parts: Array<{ type: 'text' | 'code' | 'media' | 'table' | 'graph'; content: string; language?: string; open?: boolean; tableData?: { headers: string[]; rows: string[][] } }>
 ) {
   const lines = text.split('\n');
   let buffer: string[] = [];
