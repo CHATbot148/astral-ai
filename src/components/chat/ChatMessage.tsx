@@ -1,15 +1,19 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Copy, Check, ThumbsUp, ThumbsDown, Heart, Sparkles, FileText, Volume2, Download, Pencil, Globe, ChevronDown, ChevronUp } from 'lucide-react';
 import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { AudioPlayer } from './AudioPlayer';
 import { ImagePreviewModal } from './ImagePreviewModal';
 import { MediaRenderer } from './MediaRenderer';
+import { GraphBlock } from './GraphBlock';
 import { resolveFileUrl } from '@/lib/storageRef';
 import { extractMediaFromMessage } from '@/utils/mediaDetector';
 import { useToast } from '@/hooks/use-toast';
+import { useTheme } from '@/hooks/useTheme';
 
 
 interface ChatMessageProps {
@@ -187,13 +191,36 @@ const LANGUAGE_COLORS: Record<string, { bg: string; text: string; label: string 
   yml: { bg: 'bg-red-500/20', text: 'text-red-400', label: 'YAML' },
   markdown: { bg: 'bg-gray-500/20', text: 'text-gray-400', label: 'Markdown' },
   md: { bg: 'bg-gray-500/20', text: 'text-gray-400', label: 'Markdown' },
+  graph: { bg: 'bg-primary/20', text: 'text-primary', label: 'Graph' },
   code: { bg: 'bg-muted', text: 'text-muted-foreground', label: 'Code' },
 };
 
+// Map common aliases to Prism-supported language ids
+const LANG_ALIAS: Record<string, string> = {
+  js: 'javascript',
+  ts: 'typescript',
+  py: 'python',
+  sh: 'bash',
+  shell: 'bash',
+  yml: 'yaml',
+  md: 'markdown',
+  'c++': 'cpp',
+  'c#': 'csharp',
+  cs: 'csharp',
+  html: 'markup',
+  xml: 'markup',
+  vue: 'markup',
+  text: 'plaintext',
+  txt: 'plaintext',
+  code: 'plaintext',
+};
+
 // Parse and render code blocks with syntax highlighting
-const CodeBlock = ({ language, code }: { language: string; code: string }) => {
+const CodeBlock = ({ language, code, isStreaming }: { language: string; code: string; isStreaming?: boolean }) => {
   const [copied, setCopied] = useState(false);
+  const { resolvedTheme } = useTheme();
   const lang = language.toLowerCase();
+  const prismLang = LANG_ALIAS[lang] || lang || 'plaintext';
   const colors = LANGUAGE_COLORS[lang] || LANGUAGE_COLORS['code'];
 
   const copyCode = async () => {
@@ -202,16 +229,32 @@ const CodeBlock = ({ language, code }: { language: string; code: string }) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const themeStyle = resolvedTheme === 'light' ? oneLight : oneDark;
+
   return (
-    <div className="my-3 rounded-lg overflow-hidden border border-border bg-secondary/50">
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2 }}
+      className="my-3 rounded-lg overflow-hidden border border-border bg-secondary/50"
+    >
       <div className="flex items-center justify-between px-3 py-1.5 bg-secondary border-b border-border">
-        <span className={cn("text-xs font-mono px-2 py-0.5 rounded", colors.bg, colors.text)}>
-          {colors.label}
-        </span>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={cn("text-xs font-mono px-2 py-0.5 rounded", colors.bg, colors.text)}>
+            {colors.label}
+          </span>
+          {isStreaming && (
+            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+              writing
+            </span>
+          )}
+        </div>
         <Button
           variant="ghost"
           size="sm"
           onClick={copyCode}
+          disabled={!code}
           className="h-6 px-2 text-xs shrink-0"
         >
           {copied ? (
@@ -227,12 +270,33 @@ const CodeBlock = ({ language, code }: { language: string; code: string }) => {
           )}
         </Button>
       </div>
-      <div className="relative">
-        <pre className="p-3 overflow-x-auto text-sm max-w-full">
-          <code className="font-mono text-foreground whitespace-pre-wrap break-words">{code}</code>
-        </pre>
+      <div className="relative max-w-full overflow-x-auto">
+        {code ? (
+          <SyntaxHighlighter
+            language={prismLang}
+            style={themeStyle as any}
+            PreTag="pre"
+            customStyle={{
+              margin: 0,
+              padding: '0.75rem',
+              background: 'transparent',
+              fontSize: '0.8125rem',
+              lineHeight: 1.55,
+            }}
+            codeTagProps={{
+              style: {
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              },
+            }}
+            wrapLongLines={false}
+          >
+            {code}
+          </SyntaxHighlighter>
+        ) : (
+          <div className="px-3 py-4 text-xs text-muted-foreground">Preparing code…</div>
+        )}
       </div>
-    </div>
+    </motion.div>
   );
 };
 
@@ -250,8 +314,8 @@ function parseMarkdownTable(lines: string[]): { headers: string[]; rows: string[
 
 // Split text into text parts and table parts
 function splitTextAndTables(
-  text: string, 
-  parts: Array<{ type: 'text' | 'code' | 'media' | 'table'; content: string; language?: string; tableData?: { headers: string[]; rows: string[][] } }>
+  text: string,
+  parts: Array<{ type: 'text' | 'code' | 'media' | 'table' | 'graph'; content: string; language?: string; open?: boolean; tableData?: { headers: string[]; rows: string[][] } }>
 ) {
   const lines = text.split('\n');
   let buffer: string[] = [];
@@ -627,26 +691,56 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
 
     sources.push(...sourcesMap.values());
 
-    const parts: Array<{ type: 'text' | 'code' | 'media' | 'table'; content: string; language?: string; tableData?: { headers: string[]; rows: string[][] } }> = [];
-    const codeBlockRegex = /```(\w+)?\n?([\s\S]*?)```/g;
-    
+    const parts: Array<{
+      type: 'text' | 'code' | 'media' | 'table' | 'graph';
+      content: string;
+      language?: string;
+      open?: boolean;
+      tableData?: { headers: string[]; rows: string[][] };
+    }> = [];
+
+    // Match closed fences first; then handle a single trailing unclosed fence so the
+    // container shows up immediately while streaming.
+    const closedFenceRegex = /```(\w+)?\n?([\s\S]*?)```/g;
+
     let lastIndex = 0;
     let match;
-    
-    while ((match = codeBlockRegex.exec(mainText)) !== null) {
+
+    while ((match = closedFenceRegex.exec(mainText)) !== null) {
       if (match.index > lastIndex) {
         const textPart = mainText.slice(lastIndex, match.index).trim();
         if (textPart) splitTextAndTables(textPart, parts);
       }
-      parts.push({ type: 'code', language: match[1] || 'code', content: match[2].trim() });
+      const lang = (match[1] || 'code').toLowerCase();
+      const body = match[2].trim();
+      if (lang === 'graph') {
+        parts.push({ type: 'graph', content: body, language: 'graph', open: false });
+      } else {
+        parts.push({ type: 'code', language: lang, content: body, open: false });
+      }
       lastIndex = match.index + match[0].length;
     }
-    
+
     if (lastIndex < mainText.length) {
-      const textPart = mainText.slice(lastIndex).trim();
-      if (textPart) splitTextAndTables(textPart, parts);
+      const remaining = mainText.slice(lastIndex);
+      // Detect a trailing unclosed fence: ```lang\n...  with no closing ```
+      const openFenceMatch = remaining.match(/```(\w+)?\n?([\s\S]*)$/);
+      if (openFenceMatch && !openFenceMatch[2].includes('```')) {
+        const before = remaining.slice(0, openFenceMatch.index!).trim();
+        if (before) splitTextAndTables(before, parts);
+        const lang = (openFenceMatch[1] || 'code').toLowerCase();
+        const body = openFenceMatch[2];
+        if (lang === 'graph') {
+          parts.push({ type: 'graph', content: body, language: 'graph', open: true });
+        } else {
+          parts.push({ type: 'code', language: lang, content: body, open: true });
+        }
+      } else {
+        const textPart = remaining.trim();
+        if (textPart) splitTextAndTables(textPart, parts);
+      }
     }
-    
+
     return { parts, mediaItems, sources };
   }, [content]);
 
@@ -1121,9 +1215,16 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
               : "w-full min-w-0 max-w-full break-words [overflow-wrap:anywhere]"
           )}
         >
-          {parsedContent.parts.map((part, index) => 
+          {parsedContent.parts.map((part, index) =>
             part.type === 'code' ? (
-              <CodeBlock key={index} language={part.language || 'code'} code={part.content} />
+              <CodeBlock
+                key={index}
+                language={part.language || 'code'}
+                code={part.content}
+                isStreaming={!!part.open}
+              />
+            ) : part.type === 'graph' ? (
+              <GraphBlock key={index} raw={part.content} isStreaming={!!part.open} />
             ) : part.type === 'table' && part.tableData ? (
               <TableBlock key={index} data={part.tableData} />
             ) : isStreaming && (streamingStyle === 'line_fade' || streamingStyle === 'slide_down') ? (
