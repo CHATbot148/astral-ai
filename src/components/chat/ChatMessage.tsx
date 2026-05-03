@@ -236,7 +236,7 @@ const CodeBlock = ({ language, code, isStreaming }: { language: string; code: st
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2 }}
-      className="my-3 rounded-lg overflow-hidden border border-border bg-secondary/50"
+      className="my-3 block w-full min-w-0 max-w-[calc(100vw-2.5rem)] sm:max-w-full rounded-lg overflow-hidden border border-border bg-secondary/50"
     >
       <div className="flex items-center justify-between px-3 py-1.5 bg-secondary border-b border-border">
         <div className="flex items-center gap-2 min-w-0">
