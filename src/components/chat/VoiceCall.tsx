@@ -7,12 +7,18 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { VoiceOrb } from "./VoiceOrb";
 import { cleanTextForTTS } from "@/utils/cleanTextForTTS";
+import { getAISettings, getModeSystemPrompt } from "@/lib/aiSettings";
 
 interface VoiceCallProps {
   onClose: () => void;
 }
 
-const SYSTEM = `You are a concise AI voice assistant called Astraz. Max 3 sentences per reply. No markdown, no lists, no emojis. Speak naturally as in a phone call.`;
+const VOICE_BASE = `You are Astraz, a voice assistant on a phone call. Reply in at most 3 short sentences. No markdown, no lists, no emojis — speak naturally.`;
+const buildVoiceSystem = () => {
+  const s = getAISettings();
+  const personality = getModeSystemPrompt(s.mode, s.customPrompt);
+  return `${VOICE_BASE}\n\n${personality}\n\nKeep replies brief and conversational regardless of personality.`;
+};
 
 // Status: only listening / speaking. No connecting/processing — instant UX.
 type CallStatus = "idle" | "listening" | "speaking";
@@ -296,7 +302,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         },
         body: JSON.stringify({
           messages: [
-            { role: "system", content: SYSTEM },
+            { role: "system", content: buildVoiceSystem() },
             ...historyRef.current.map(({ role, content }) => ({ role, content })),
           ],
           isVoiceMode: true,

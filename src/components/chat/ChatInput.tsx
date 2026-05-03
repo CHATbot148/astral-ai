@@ -337,191 +337,199 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
 
       <input ref={fileInputRef} type="file" multiple onChange={handleFileChange} className="hidden" accept="image/*,video/*,.pdf,.doc,.docx,.txt" />
 
-      {/* Input Bar */}
-      <div className="flex items-end gap-2">
-        {/* + Attachment Button */}
-        <div className="relative">
-          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-shrink-0">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowAttachMenu(!showAttachMenu)}
-              disabled={disabled || isRecording || isLoading}
-              className="h-10 w-10 rounded-full bg-secondary hover:bg-secondary/80"
-              aria-label="Attach files"
-            >
-              <Plus className="h-5 w-5" />
-            </Button>
-          </motion.div>
+      {/* Modern unified input bar */}
+      <div className="relative">
+        {/* Animated gradient glow */}
+        <div
+          className="pointer-events-none absolute -inset-[1.5px] rounded-[28px] opacity-70 blur-[6px] transition-opacity duration-500"
+          style={{
+            background:
+              'conic-gradient(from 180deg at 50% 50%, hsl(var(--xai-purple)/0.55), hsl(var(--xai-cyan)/0.55), hsl(var(--xai-purple)/0.55))',
+          }}
+          aria-hidden
+        />
 
-          {/* Attachment Menu - ChatGPT style */}
-          <AnimatePresence>
-            {showAttachMenu && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                className="absolute bottom-full left-0 mb-2 bg-popover border border-border rounded-xl shadow-lg overflow-hidden min-w-[200px]"
-              >
-                {/* Create Image */}
-                <button
-                  onClick={() => {
-                    setShowAttachMenu(false);
-                    const prefill = message.trim();
-                    onOpenImageDialog?.(prefill || undefined);
-                  }}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-secondary w-full text-left text-sm transition-colors"
-                >
-                  <Wand2 className="h-4 w-4 text-xai-cyan" />
-                  <div>
-                    <p className="font-medium">Create Image</p>
-                    <p className="text-xs text-muted-foreground">Visualize anything</p>
-                  </div>
-                </button>
-
-                {/* Create Video */}
-                <button
-                  onClick={() => {
-                    setShowAttachMenu(false);
-                    onOpenVideoDialog?.();
-                  }}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-secondary w-full text-left text-sm transition-colors"
-                >
-                  <Video className="h-4 w-4 text-xai-purple" />
-                  <div>
-                    <p className="font-medium">Create Video</p>
-                    <p className="text-xs text-muted-foreground">Generate short videos</p>
-                  </div>
-                </button>
-
-                {/* Add Files */}
-                <button
-                  onClick={() => {
-                    fileInputRef.current?.click();
-                    setShowAttachMenu(false);
-                  }}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-secondary w-full text-left text-sm transition-colors"
-                >
-                  <FileText className="h-4 w-4 text-muted-foreground" />
-                  <div>
-                    <p className="font-medium">Add Files</p>
-                    <p className="text-xs text-muted-foreground">Upload images & documents</p>
-                  </div>
-                </button>
-
-                {/* Web Search */}
-                <button
-                  onClick={() => {
-                    setShowAttachMenu(false);
-                    setMessage(prev => {
-                      const prefix = 'Search for: ';
-                      if (prev.startsWith(prefix)) return prev;
-                      return prefix + prev;
-                    });
-                    textareaRef.current?.focus();
-                  }}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-secondary w-full text-left text-sm transition-colors"
-                >
-                  <Globe className="h-4 w-4 text-green-500" />
-                  <div>
-                    <p className="font-medium">Web Search</p>
-                    <p className="text-xs text-muted-foreground">Find real-time info</p>
-                  </div>
-                </button>
-
-                {/* GIFs */}
-                <button
-                  onClick={() => {
-                    setShowGifPicker(true);
-                    setShowAttachMenu(false);
-                  }}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-secondary w-full text-left text-sm transition-colors"
-                >
-                  <Smile className="h-4 w-4 text-yellow-500" />
-                  <div>
-                    <p className="font-medium">GIFs</p>
-                    <p className="text-xs text-muted-foreground">Send animated GIFs</p>
-                  </div>
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
-        {/* Main Input Container */}
-        {isRecording ? (
-          <div className="flex-1 flex items-center bg-secondary rounded-3xl px-3 py-2 min-h-[44px] overflow-hidden">
-            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-              <Button variant="ghost" size="icon" onClick={stopRecording} className="h-8 w-8 rounded-full text-destructive bg-destructive/10">
-                <MicOff className="h-4 w-4" />
-              </Button>
-            </motion.div>
-            <div className="flex-1 flex flex-col items-center justify-center px-2 min-w-0">
-              <VoiceVisualizer isActive={true} levels={levels} className="w-full max-w-[200px]" />
-              <p className="text-[10px] text-muted-foreground mt-1">Listening…</p>
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1 flex items-center bg-secondary rounded-3xl px-3 py-2 min-h-[44px]">
-            <textarea
-              ref={textareaRef}
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask anything"
-              disabled={disabled || isLoading}
-              rows={1}
-              className={cn(
-                'flex-1 resize-none bg-transparent border-0 outline-none',
-                'text-foreground placeholder:text-muted-foreground',
-                'min-h-[28px] max-h-[120px] py-0 px-1',
-                'focus:ring-0 text-sm'
-              )}
-            />
-
-            {/* Voice Input Button */}
-            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-shrink-0">
+        <div
+          className={cn(
+            'relative flex items-end gap-2 rounded-[26px] px-2 py-2 sm:px-2.5 sm:py-2',
+            'bg-background/80 backdrop-blur-xl',
+            'border border-border/60 shadow-[0_10px_40px_-12px_hsl(var(--xai-purple)/0.35)]',
+            'transition-all duration-300',
+            isRecording && 'border-destructive/40'
+          )}
+        >
+          {/* + Attachment Button */}
+          <div className="relative flex-shrink-0">
+            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.92 }}>
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={toggleRecording}
-                disabled={disabled || isTranscribing}
-                className={cn(
-                  'h-8 w-8 rounded-full transition-colors',
-                  isRecording && 'text-destructive bg-destructive/10 animate-pulse'
-                )}
+                onClick={() => setShowAttachMenu(!showAttachMenu)}
+                disabled={disabled || isRecording || isLoading}
+                className="h-10 w-10 rounded-full bg-secondary/60 hover:bg-secondary text-foreground"
+                aria-label="Attach files"
               >
-                {isTranscribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4 text-muted-foreground" />}
+                <motion.span animate={{ rotate: showAttachMenu ? 45 : 0 }} transition={{ type: 'spring', stiffness: 300, damping: 20 }}>
+                  <Plus className="h-5 w-5" />
+                </motion.span>
               </Button>
             </motion.div>
-          </div>
-        )}
 
-        {/* Send/Stop/Call Button */}
-        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-shrink-0">
-          {onStop ? (
-            <Button variant="destructive" size="icon" onClick={onStop} className="h-10 w-10 rounded-full" aria-label="Stop generating">
-              <Square className="h-4 w-4" />
-            </Button>
-          ) : showCallButton ? (
-            <Button variant="xai" size="icon" onClick={onStartCall} disabled={disabled} className="h-10 w-10 rounded-full" aria-label="Start voice call">
-              <Phone className="h-4 w-4" />
-            </Button>
+            {/* Attachment Menu */}
+            <AnimatePresence>
+              {showAttachMenu && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.92, y: 8 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.92, y: 8 }}
+                  transition={{ type: 'spring', stiffness: 320, damping: 24 }}
+                  className="absolute bottom-full left-0 mb-3 bg-popover/95 backdrop-blur-xl border border-border/70 rounded-2xl shadow-2xl overflow-hidden min-w-[220px]"
+                >
+                  <button
+                    onClick={() => { setShowAttachMenu(false); onOpenImageDialog?.(message.trim() || undefined); }}
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/70 w-full text-left text-sm transition-colors"
+                  >
+                    <Wand2 className="h-4 w-4 text-xai-cyan" />
+                    <div>
+                      <p className="font-medium">Create Image</p>
+                      <p className="text-xs text-muted-foreground">Visualize anything</p>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => { setShowAttachMenu(false); onOpenVideoDialog?.(); }}
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/70 w-full text-left text-sm transition-colors"
+                  >
+                    <Video className="h-4 w-4 text-xai-purple" />
+                    <div>
+                      <p className="font-medium">Create Video</p>
+                      <p className="text-xs text-muted-foreground">Generate short videos</p>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => { fileInputRef.current?.click(); setShowAttachMenu(false); }}
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/70 w-full text-left text-sm transition-colors"
+                  >
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="font-medium">Add Files</p>
+                      <p className="text-xs text-muted-foreground">Upload images & documents</p>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowAttachMenu(false);
+                      setMessage(prev => prev.startsWith('Search for: ') ? prev : 'Search for: ' + prev);
+                      textareaRef.current?.focus();
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/70 w-full text-left text-sm transition-colors"
+                  >
+                    <Globe className="h-4 w-4 text-green-500" />
+                    <div>
+                      <p className="font-medium">Web Search</p>
+                      <p className="text-xs text-muted-foreground">Find real-time info</p>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => { setShowGifPicker(true); setShowAttachMenu(false); }}
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/70 w-full text-left text-sm transition-colors"
+                  >
+                    <Smile className="h-4 w-4 text-yellow-500" />
+                    <div>
+                      <p className="font-medium">GIFs</p>
+                      <p className="text-xs text-muted-foreground">Send animated GIFs</p>
+                    </div>
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Center: textarea or recording visualizer */}
+          {isRecording ? (
+            <div className="flex-1 flex items-center gap-2 min-h-[40px] px-2">
+              <motion.div whileTap={{ scale: 0.92 }}>
+                <Button variant="ghost" size="icon" onClick={stopRecording} className="h-9 w-9 rounded-full text-destructive bg-destructive/10">
+                  <MicOff className="h-4 w-4" />
+                </Button>
+              </motion.div>
+              <div className="flex-1 flex flex-col items-center justify-center min-w-0">
+                <VoiceVisualizer isActive={true} levels={levels} className="w-full max-w-[260px]" />
+                <p className="text-[10px] text-muted-foreground mt-0.5">Listening…</p>
+              </div>
+            </div>
           ) : (
-            <Button
-              variant="xai"
-              size="icon"
-              onClick={handleSubmit}
-              disabled={isRecording || (!message.trim() && files.length === 0) || isLoading || disabled}
-              className="h-10 w-10 rounded-full"
-            >
-              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            </Button>
+            <div className="flex-1 flex items-end min-h-[40px] px-1">
+              <textarea
+                ref={textareaRef}
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask anything"
+                disabled={disabled || isLoading}
+                rows={1}
+                className={cn(
+                  'flex-1 resize-none bg-transparent border-0 outline-none',
+                  'text-foreground placeholder:text-muted-foreground/70',
+                  'min-h-[28px] max-h-[180px] py-2 px-2',
+                  'focus:ring-0 text-[15px] leading-snug'
+                )}
+              />
+            </div>
           )}
-        </motion.div>
+
+          {/* Right cluster: mic + send/call */}
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {!isRecording && (
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.92 }}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={toggleRecording}
+                  disabled={disabled || isTranscribing}
+                  className="h-9 w-9 rounded-full hover:bg-secondary/70"
+                  aria-label="Voice input"
+                >
+                  {isTranscribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-[18px] w-[18px] text-muted-foreground" />}
+                </Button>
+              </motion.div>
+            )}
+
+            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.9 }}>
+              {onStop ? (
+                <Button variant="destructive" size="icon" onClick={onStop} className="h-10 w-10 rounded-full shadow-lg" aria-label="Stop generating">
+                  <Square className="h-4 w-4" />
+                </Button>
+              ) : showCallButton ? (
+                <Button
+                  size="icon"
+                  onClick={onStartCall}
+                  disabled={disabled}
+                  className="h-10 w-10 rounded-full text-white shadow-[0_8px_24px_-6px_hsl(var(--xai-purple)/0.6)] bg-gradient-to-br from-xai-purple to-xai-cyan hover:opacity-95 hover:shadow-[0_10px_30px_-6px_hsl(var(--xai-cyan)/0.6)]"
+                  aria-label="Start voice call"
+                >
+                  <Phone className="h-[18px] w-[18px]" />
+                </Button>
+              ) : (
+                <Button
+                  size="icon"
+                  onClick={handleSubmit}
+                  disabled={isRecording || (!message.trim() && files.length === 0) || isLoading || disabled}
+                  className={cn(
+                    'h-10 w-10 rounded-full text-white transition-all',
+                    'bg-gradient-to-br from-xai-purple to-xai-cyan shadow-[0_8px_24px_-6px_hsl(var(--xai-purple)/0.55)]',
+                    'hover:opacity-95 disabled:opacity-40 disabled:shadow-none disabled:from-muted disabled:to-muted disabled:bg-muted'
+                  )}
+                  aria-label="Send"
+                >
+                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-[17px] w-[17px]" />}
+                </Button>
+              )}
+            </motion.div>
+          </div>
+        </div>
       </div>
 
-      <p className="text-center text-[10px] sm:text-xs text-muted-foreground mt-2">
+      <p className="text-center text-[10px] sm:text-xs text-muted-foreground mt-2.5">
         Astraz can make mistakes. Consider checking important information.
       </p>
     </div>
