@@ -270,7 +270,7 @@ const CodeBlock = ({ language, code, isStreaming }: { language: string; code: st
           )}
         </Button>
       </div>
-      <div className="relative max-w-full overflow-x-auto">
+      <div className="relative w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain [touch-action:pan-x] [-webkit-overflow-scrolling:touch]">
         {code ? (
           <SyntaxHighlighter
             language={prismLang}
