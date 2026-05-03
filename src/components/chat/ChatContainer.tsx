@@ -132,6 +132,17 @@ export const ChatContainer = () => {
     return () => viewport.removeEventListener('scroll', updateAffordance);
   }, [messages, streamingContent]);
 
+  // Always scroll to the latest message when opening a conversation
+  useEffect(() => {
+    const viewport = viewportRef.current || (scrollRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null);
+    if (!viewport) return;
+    const snap = () => { viewport.scrollTop = viewport.scrollHeight; };
+    // Run twice to ensure layout has settled (images, fonts, etc.)
+    requestAnimationFrame(snap);
+    const t = setTimeout(snap, 150);
+    return () => clearTimeout(t);
+  }, [currentConversation?.id]);
+
   useEffect(() => { if (user) fetchProfile(); }, [user]);
 
   const fetchProfile = async () => {
