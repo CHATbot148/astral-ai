@@ -302,7 +302,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         },
         body: JSON.stringify({
           messages: [
-            { role: "system", content: SYSTEM },
+            { role: "system", content: buildVoiceSystem() },
             ...historyRef.current.map(({ role, content }) => ({ role, content })),
           ],
           isVoiceMode: true,
