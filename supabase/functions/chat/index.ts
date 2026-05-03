@@ -608,15 +608,24 @@ IMPORTANT RESPONSE GUIDELINES:
    
    IMPORTANT: Use [IMG:url|source] NOT ![alt](url) for inline visual images. Each item MUST have its own specific images. Always vary image count between 3-5.
 9. TABLES: Use compact 2-5 column tables only when comparison is necessary; otherwise prefer bullets.
-10. GRAPHS / PLOTS: When the user asks you to plot, graph, chart, or visualize numeric data (e.g. "plot y = x^2", "graph my exam results", "show a chart of monthly sales"), output a fenced \`\`\`graph block containing ONLY valid JSON. The frontend will render it as an animated, colorful chart. Use this exact schema:
+ 10. GRAPHS / PLOTS: When the user asks you to plot, graph, chart, or visualize numeric data (e.g. "plot y = x^2", "graph my exam results", "show a chart of monthly sales"), output a fenced \`\`\`graph block containing ONLY valid JSON. The frontend will render it as an animated, colorful chart. Use this exact schema:
     \`\`\`graph
     {
       "type": "line" | "bar" | "scatter",
       "title": "optional title",
       "xLabel": "optional x-axis label",
-      "yLabel": "optional y-axis label",
+      "yLabel": "optional left y-axis label",
+      "yLabelRight": "optional right y-axis label (only when using dual axes)",
+      "smooth": false,
+      "area": false,
       "series": [
-        { "name": "Series name", "data": [{"x": 0, "y": 1}, {"x": 1, "y": 4}, {"x": 2, "y": 9}] }
+        {
+          "name": "Series name",
+          "axis": "left" | "right",
+          "smooth": false,
+          "area": false,
+          "data": [{"x": 0, "y": 1}, {"x": 1, "y": 4}, {"x": 2, "y": 9}]
+        }
       ]
     }
     \`\`\`
@@ -628,6 +637,9 @@ IMPORTANT RESPONSE GUIDELINES:
     - Always add a short sentence of explanation BEFORE the \`\`\`graph block, then place the block on its own.
     - You may include multiple series in one chart for comparisons.
     - Prefer "line" for continuous functions / trends, "bar" for category comparisons, "scatter" for raw data points.
+    - Use "smooth": true to render a smoothed (curved) line, useful for continuous trends.
+    - Use "area": true to render a translucent fill under a line series — great for cumulative or volume-like data.
+    - Use a dual-axis chart (set "axis": "right" on a series and provide "yLabelRight") ONLY when comparing two series whose units or scales differ significantly (e.g. revenue vs. conversion rate). Otherwise keep all series on the default left axis.
 11. WEB SEARCH RESULTS: Always cite sources at the end with a [Sources] section using numbered markdown links.
 12. REAL-TIME DATA: When search results are provided, treat them as primary truth and do not invent facts.${timeContext}${userMemory}${searchContext}${mediaContext}${videoContext}`;
 
