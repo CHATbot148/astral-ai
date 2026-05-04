@@ -111,13 +111,6 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose,
     }
   };
 
-  useImperativeHandle(ref, () => ({
-    startFromTrigger: () => {
-      startRequestedRef.current = true;
-      void startCall();
-    },
-  }), [startCall]);
-
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
 
   useEffect(() => {
@@ -213,20 +206,28 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose,
     const { data: sessionData } = await supabase.auth.getSession();
     const accessToken = sessionData.session?.access_token;
 
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/speech-to-text`, {
-      method: "POST",
-      headers: {
-        "Content-Type": recorderMimeRef.current || audioBlob.type || "application/octet-stream",
-        apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-      },
-      body: audioBlob,
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), STT_TIMEOUT_MS);
 
-    if (!response.ok) throw new Error(`STT failed: ${response.status}`);
-    const { transcript, error } = await response.json();
-    if (error) throw new Error(error);
-    return transcript || "";
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/speech-to-text`, {
+        method: "POST",
+        headers: {
+          "Content-Type": recorderMimeRef.current || audioBlob.type || "application/octet-stream",
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: audioBlob,
+        signal: controller.signal,
+      });
+
+      if (!response.ok) throw new Error(`STT failed: ${response.status}`);
+      const { transcript, error } = await response.json();
+      if (error) throw new Error(error);
+      return transcript || "";
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }, []);
 
   // ── Fetch TTS audio for one chunk ──
@@ -238,20 +239,28 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose,
     const { data: sessionData } = await supabase.auth.getSession();
     const accessToken = sessionData.session?.access_token;
 
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/text-to-speech`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-      },
-      body: JSON.stringify({ text: cleaned, voiceId }),
-    });
-    if (!response.ok) {
-      log("TTS failed", response.status);
-      return null;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TTS_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/text-to-speech`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ text: cleaned, voiceId }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        log("TTS failed", response.status);
+        return null;
+      }
+      return await response.blob();
+    } finally {
+      clearTimeout(timeoutId);
     }
-    return await response.blob();
   }, []);
 
   // ── Play one audio blob through the unlocked <audio> element ──
