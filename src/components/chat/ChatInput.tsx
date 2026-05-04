@@ -529,10 +529,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
           </div>
         </div>
       </div>
-
-      <p className="text-center text-[10px] sm:text-xs text-muted-foreground mt-2.5">
-        Astraz can make mistakes. Consider checking important information.
-      </p>
+     </div>
     </div>
   );
 };
