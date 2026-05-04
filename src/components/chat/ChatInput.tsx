@@ -246,7 +246,8 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-3 sm:px-4 pb-4 pt-2">
+    <div className="pointer-events-none w-full max-w-3xl mx-auto px-2 sm:px-4 pb-3 sm:pb-4 pt-2">
+     <div className="pointer-events-auto">
       {/* Editing indicator */}
       <AnimatePresence>
         {isEditing && (
