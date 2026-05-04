@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect, useState } from "react";
+import { forwardRef, useRef, useCallback, useEffect, useImperativeHandle, useState } from "react";
 import { motion } from "framer-motion";
 import { PhoneOff, Mic, MicOff, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,10 @@ import { getAISettings, getModeSystemPrompt } from "@/lib/aiSettings";
 
 interface VoiceCallProps {
   onClose: () => void;
+}
+
+export interface VoiceCallHandle {
+  startFromTrigger: () => void;
 }
 
 const VOICE_BASE = `You are Astraz, a voice assistant on a phone call. Reply in at most 3 short sentences. No markdown, no lists, no emojis — speak naturally.`;
@@ -48,13 +52,18 @@ const SENTENCE_BOUNDARY = /([.!?…]+\s+|[,;:]\s+(?=\S{12,}))/;
 const VOICE_SILENCE_MS = 800;
 const EARLY_TTS_FLUSH_MS = 220;
 const EARLY_TTS_MIN_CHARS = 48;
+const INITIAL_SPEECH_WAIT_MS = 3200;
+const MAX_RECORDING_MS = 14000;
+const VOICE_ACTIVITY_THRESHOLD = 0.075;
+const STT_TIMEOUT_MS = 12000;
+const TTS_TIMEOUT_MS = 15000;
 
 type TTSQueueItem = {
   text: string;
   blobPromise: Promise<Blob | null>;
 };
 
-export const VoiceCall = ({ onClose }: VoiceCallProps) => {
+export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose }, ref) => {
   const { toast } = useToast();
   const [callStart, setCallStart] = useState<number | null>(null);
   const [callDuration, setCallDuration] = useState(0);
@@ -88,7 +97,17 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
   // Mic level tracking
   const audioContextRef = useRef<AudioContext | null>(null);
   const micAnalyserRef = useRef<AnalyserNode | null>(null);
+  const micSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const micAnimFrameRef = useRef<number>(0);
+  const recordingMaxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const speechDetectedRef = useRef(false);
+
+  const clearRecordingMaxTimer = () => {
+    if (recordingMaxTimerRef.current) {
+      clearTimeout(recordingMaxTimerRef.current);
+      recordingMaxTimerRef.current = null;
+    }
+  };
 
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
 
@@ -130,10 +149,15 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     try {
       const ctx = audioContextRef.current;
       if (ctx.state === "suspended") ctx.resume().catch(() => {});
+      try { micSourceRef.current?.disconnect(); } catch {}
+      try { micAnalyserRef.current?.disconnect(); } catch {}
+
       const source = ctx.createMediaStreamSource(streamRef.current);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.18;
       source.connect(analyser);
+      micSourceRef.current = source;
       micAnalyserRef.current = analyser;
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
@@ -141,8 +165,19 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         if (!isActiveRef.current) return;
         analyser.getByteFrequencyData(dataArray);
         const avg = dataArray.reduce((s, v) => s + v, 0) / dataArray.length;
+        const normalized = Math.min(1, (avg / 255) * 1.8);
+        if (normalized >= VOICE_ACTIVITY_THRESHOLD) {
+          speechDetectedRef.current = true;
+          clearSilenceTimer();
+          silenceTimerRef.current = setTimeout(() => {
+            const recorder = recorderRef.current;
+            if (recorder?.state === "recording") {
+              try { recorder.stop(); } catch {}
+            }
+          }, VOICE_SILENCE_MS);
+        }
         if (!isSpeakingRef.current) {
-          setAudioLevel(Math.min(1, (avg / 255) * 1.6));
+          setAudioLevel(normalized);
         }
         micAnimFrameRef.current = requestAnimationFrame(update);
       };
@@ -157,6 +192,10 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       cancelAnimationFrame(micAnimFrameRef.current);
       micAnimFrameRef.current = 0;
     }
+    try { micSourceRef.current?.disconnect(); } catch {}
+    try { micAnalyserRef.current?.disconnect(); } catch {}
+    micSourceRef.current = null;
+    micAnalyserRef.current = null;
     setAudioLevel(0);
   }, []);
 
@@ -165,20 +204,28 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     const { data: sessionData } = await supabase.auth.getSession();
     const accessToken = sessionData.session?.access_token;
 
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/speech-to-text`, {
-      method: "POST",
-      headers: {
-        "Content-Type": recorderMimeRef.current || audioBlob.type || "application/octet-stream",
-        apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-      },
-      body: audioBlob,
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), STT_TIMEOUT_MS);
 
-    if (!response.ok) throw new Error(`STT failed: ${response.status}`);
-    const { transcript, error } = await response.json();
-    if (error) throw new Error(error);
-    return transcript || "";
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/speech-to-text`, {
+        method: "POST",
+        headers: {
+          "Content-Type": recorderMimeRef.current || audioBlob.type || "application/octet-stream",
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: audioBlob,
+        signal: controller.signal,
+      });
+
+      if (!response.ok) throw new Error(`STT failed: ${response.status}`);
+      const { transcript, error } = await response.json();
+      if (error) throw new Error(error);
+      return transcript || "";
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }, []);
 
   // ── Fetch TTS audio for one chunk ──
@@ -190,20 +237,28 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     const { data: sessionData } = await supabase.auth.getSession();
     const accessToken = sessionData.session?.access_token;
 
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/text-to-speech`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-      },
-      body: JSON.stringify({ text: cleaned, voiceId }),
-    });
-    if (!response.ok) {
-      log("TTS failed", response.status);
-      return null;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TTS_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/text-to-speech`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ text: cleaned, voiceId }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        log("TTS failed", response.status);
+        return null;
+      }
+      return await response.blob();
+    } finally {
+      clearTimeout(timeoutId);
     }
-    return await response.blob();
   }, []);
 
   // ── Play one audio blob through the unlocked <audio> element ──
@@ -442,6 +497,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     setStatus("listening");
     startMicLevelTracking();
     audioChunksRef.current = [];
+    speechDetectedRef.current = false;
 
     const mimeType = recorderMimeRef.current;
     const recorder = new MediaRecorder(streamRef.current, mimeType ? { mimeType } : undefined);
@@ -460,6 +516,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     recorder.onstop = async () => {
       stopped = true;
       clearSilenceTimer();
+      clearRecordingMaxTimer();
       stopMicLevelTracking();
       if (!isActiveRef.current) return;
 
@@ -473,7 +530,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       const audioBlob = new Blob(audioChunksRef.current, { type: recorderMimeRef.current });
       log("Captured", { size: audioBlob.size, mime: recorderMimeRef.current });
 
-      if (audioBlob.size < 1500) {
+      if (audioBlob.size < 1500 || !speechDetectedRef.current) {
         if (isActiveRef.current && !isMutedRef.current && !isSpeakingRef.current) {
           setTimeout(() => startListening(), 250);
         }
@@ -516,7 +573,13 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       if (recorder.state === "recording") {
         try { recorder.stop(); } catch {}
       }
-    }, VOICE_SILENCE_MS);
+    }, INITIAL_SPEECH_WAIT_MS);
+    clearRecordingMaxTimer();
+    recordingMaxTimerRef.current = setTimeout(() => {
+      if (recorder.state === "recording") {
+        try { recorder.stop(); } catch {}
+      }
+    }, MAX_RECORDING_MS);
   }, [cancelPlayback, startMicLevelTracking, stopMicLevelTracking, transcribeAudio, streamAIAndSpeak]);
 
   useEffect(() => { startListeningRef.current = startListening; }, [startListening]);
@@ -597,9 +660,16 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     }
   }, [isStarting, startListening, toast]);
 
+  useImperativeHandle(ref, () => ({
+    startFromTrigger: () => {
+      void startCall();
+    },
+  }), [startCall]);
+
   const endCall = useCallback(() => {
     isActiveRef.current = false;
     clearSilenceTimer();
+    clearRecordingMaxTimer();
     cancelPlayback();
 
     if (recorderRef.current && recorderRef.current.state !== "inactive") {
@@ -647,6 +717,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
     return () => {
       isActiveRef.current = false;
       cancelTokenRef.current++;
+      clearRecordingMaxTimer();
       if (recorderRef.current && recorderRef.current.state !== "inactive") {
         try { recorderRef.current.stop(); } catch {}
       }
@@ -676,7 +747,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
         <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
           <div className="text-center">
             <p className="text-white/40 text-xs font-mono tracking-[0.3em] uppercase">Astraz Voice</p>
-            <p className="text-white/70 text-base mt-3">Tap to start your call</p>
+            <p className="text-white/70 text-base mt-3">{isStarting ? "Starting your call…" : "Voice call ready"}</p>
             <p className="mt-2 text-xs text-white/35">{startHint ?? "Optimized for iPhone, Android, and desktop."}</p>
           </div>
 
@@ -706,7 +777,7 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
           </div>
 
           <p className="text-white/30 text-xs text-center max-w-xs">
-            Tapping start unlocks audio on iOS and grants microphone access. Streaming begins instantly.
+            {isStarting ? "Please wait while microphone and speaker access finish initializing." : "Use start if your browser requires an explicit microphone confirmation step."}
           </p>
         </div>
       </motion.div>
@@ -778,4 +849,6 @@ export const VoiceCall = ({ onClose }: VoiceCallProps) => {
       </div>
     </motion.div>
   );
-};
+});
+
+VoiceCall.displayName = "VoiceCall";
