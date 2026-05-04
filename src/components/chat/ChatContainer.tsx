@@ -1014,7 +1014,7 @@ export const ChatContainer = () => {
           </Button>
         </div>
 
-        <ScrollArea ref={scrollRef} className="flex-1">
+        <ScrollArea ref={scrollRef} className="flex-1 [&_>_div_>_div]:pb-32 sm:[&_>_div_>_div]:pb-36">
           <AnimatePresence mode="wait">
             {displayMessages.length === 0 ? (
               <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pt-14 lg:pt-4">
