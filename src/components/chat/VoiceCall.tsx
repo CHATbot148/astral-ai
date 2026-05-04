@@ -835,4 +835,6 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose,
       </div>
     </motion.div>
   );
-};
+});
+
+VoiceCall.displayName = "VoiceCall";
