@@ -1006,7 +1006,7 @@ export const ChatContainer = () => {
         onProfileUpdate={fetchProfile}
       />
 
-      <main className="flex-1 flex flex-col min-w-0">
+      <main className="flex-1 flex flex-col min-w-0 relative">
         <div className="absolute top-3 left-3 z-20">
           <Button variant="secondary" size="icon" onClick={() => setSidebarOpen(true)}
             className={cn("rounded-full", sidebarOpen ? 'lg:hidden' : '')} aria-label="Open sidebar">
