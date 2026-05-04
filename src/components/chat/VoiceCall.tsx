@@ -102,7 +102,6 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose,
   const micAnimFrameRef = useRef<number>(0);
   const recordingMaxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechDetectedRef = useRef(false);
-  const startRequestedRef = useRef(false);
 
   const clearRecordingMaxTimer = () => {
     if (recordingMaxTimerRef.current) {
@@ -499,6 +498,7 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose,
     setStatus("listening");
     startMicLevelTracking();
     audioChunksRef.current = [];
+    speechDetectedRef.current = false;
 
     const mimeType = recorderMimeRef.current;
     const recorder = new MediaRecorder(streamRef.current, mimeType ? { mimeType } : undefined);
@@ -517,6 +517,7 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose,
     recorder.onstop = async () => {
       stopped = true;
       clearSilenceTimer();
+      clearRecordingMaxTimer();
       stopMicLevelTracking();
       if (!isActiveRef.current) return;
 
@@ -530,7 +531,7 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose,
       const audioBlob = new Blob(audioChunksRef.current, { type: recorderMimeRef.current });
       log("Captured", { size: audioBlob.size, mime: recorderMimeRef.current });
 
-      if (audioBlob.size < 1500) {
+      if (audioBlob.size < 1500 || !speechDetectedRef.current) {
         if (isActiveRef.current && !isMutedRef.current && !isSpeakingRef.current) {
           setTimeout(() => startListening(), 250);
         }
@@ -573,7 +574,13 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose,
       if (recorder.state === "recording") {
         try { recorder.stop(); } catch {}
       }
-    }, VOICE_SILENCE_MS);
+    }, INITIAL_SPEECH_WAIT_MS);
+    clearRecordingMaxTimer();
+    recordingMaxTimerRef.current = setTimeout(() => {
+      if (recorder.state === "recording") {
+        try { recorder.stop(); } catch {}
+      }
+    }, MAX_RECORDING_MS);
   }, [cancelPlayback, startMicLevelTracking, stopMicLevelTracking, transcribeAudio, streamAIAndSpeak]);
 
   useEffect(() => { startListeningRef.current = startListening; }, [startListening]);
@@ -654,9 +661,21 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose,
     }
   }, [isStarting, startListening, toast]);
 
+  useImperativeHandle(ref, () => ({
+    startFromTrigger: () => {
+      void startCall();
+    },
+  }), [startCall]);
+
+  useEffect(() => {
+    if (!autoStart) return;
+    void startCall();
+  }, [autoStart, startCall]);
+
   const endCall = useCallback(() => {
     isActiveRef.current = false;
     clearSilenceTimer();
+    clearRecordingMaxTimer();
     cancelPlayback();
 
     if (recorderRef.current && recorderRef.current.state !== "inactive") {
@@ -704,6 +723,7 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose,
     return () => {
       isActiveRef.current = false;
       cancelTokenRef.current++;
+      clearRecordingMaxTimer();
       if (recorderRef.current && recorderRef.current.state !== "inactive") {
         try { recorderRef.current.stop(); } catch {}
       }
