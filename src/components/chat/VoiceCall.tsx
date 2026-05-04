@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect, useState } from "react";
+import { forwardRef, useRef, useCallback, useEffect, useImperativeHandle, useState } from "react";
 import { motion } from "framer-motion";
 import { PhoneOff, Mic, MicOff, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,11 @@ import { getAISettings, getModeSystemPrompt } from "@/lib/aiSettings";
 
 interface VoiceCallProps {
   onClose: () => void;
+  autoStart?: boolean;
+}
+
+export interface VoiceCallHandle {
+  startFromTrigger: () => void;
 }
 
 const VOICE_BASE = `You are Astraz, a voice assistant on a phone call. Reply in at most 3 short sentences. No markdown, no lists, no emojis — speak naturally.`;
@@ -48,13 +53,18 @@ const SENTENCE_BOUNDARY = /([.!?…]+\s+|[,;:]\s+(?=\S{12,}))/;
 const VOICE_SILENCE_MS = 800;
 const EARLY_TTS_FLUSH_MS = 220;
 const EARLY_TTS_MIN_CHARS = 48;
+const INITIAL_SPEECH_WAIT_MS = 3200;
+const MAX_RECORDING_MS = 14000;
+const VOICE_ACTIVITY_THRESHOLD = 0.075;
+const STT_TIMEOUT_MS = 12000;
+const TTS_TIMEOUT_MS = 15000;
 
 type TTSQueueItem = {
   text: string;
   blobPromise: Promise<Blob | null>;
 };
 
-export const VoiceCall = ({ onClose }: VoiceCallProps) => {
+export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose, autoStart = false }, ref) => {
   const { toast } = useToast();
   const [callStart, setCallStart] = useState<number | null>(null);
   const [callDuration, setCallDuration] = useState(0);
