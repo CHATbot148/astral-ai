@@ -63,32 +63,68 @@ serve(async (req) => {
 
     if (!text) throw new Error("Text is required");
 
-    const truncatedText = String(text).slice(0, 2000);
-
     const voiceKey =
       Object.keys(VOICE_MAP).find((k) => String(voiceId).toLowerCase().includes(k)) || "asteria";
     const deepgramVoiceModel = VOICE_MAP[voiceKey] || VOICE_MAP.asteria;
 
-    const response = await fetch(
-      `https://api.deepgram.com/v1/speak?model=${deepgramVoiceModel}&encoding=mp3`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Token ${DEEPGRAM_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ text: truncatedText }),
+    // Split long text into chunks at sentence boundaries (Deepgram has ~2000 char limit per request)
+    const fullText = String(text).trim();
+    const MAX_CHUNK = 1800;
+    const chunks: string[] = [];
+    if (fullText.length <= MAX_CHUNK) {
+      chunks.push(fullText);
+    } else {
+      // Split on sentence boundaries, then accumulate up to MAX_CHUNK
+      const sentences = fullText.match(/[^.!?\n]+[.!?\n]+|\S+/g) || [fullText];
+      let current = "";
+      for (const s of sentences) {
+        if ((current + s).length > MAX_CHUNK && current) {
+          chunks.push(current.trim());
+          current = s;
+        } else {
+          current += s;
+        }
+        // Hard split words longer than MAX_CHUNK
+        while (current.length > MAX_CHUNK) {
+          chunks.push(current.slice(0, MAX_CHUNK));
+          current = current.slice(MAX_CHUNK);
+        }
       }
-    );
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("Deepgram TTS error:", response.status, errText);
-      throw new Error(`Deepgram TTS failed: ${response.status}`);
+      if (current.trim()) chunks.push(current.trim());
     }
 
-    const audioBuffer = await response.arrayBuffer();
-    return new Response(audioBuffer, {
+    // Synthesize each chunk in parallel and concatenate MP3 frames
+    const audioBuffers = await Promise.all(
+      chunks.map(async (chunk) => {
+        const r = await fetch(
+          `https://api.deepgram.com/v1/speak?model=${deepgramVoiceModel}&encoding=mp3`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Token ${DEEPGRAM_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ text: chunk }),
+          }
+        );
+        if (!r.ok) {
+          const errText = await r.text();
+          console.error("Deepgram TTS error:", r.status, errText);
+          throw new Error(`Deepgram TTS failed: ${r.status}`);
+        }
+        return new Uint8Array(await r.arrayBuffer());
+      })
+    );
+
+    const totalLen = audioBuffers.reduce((sum, b) => sum + b.byteLength, 0);
+    const merged = new Uint8Array(totalLen);
+    let offset = 0;
+    for (const b of audioBuffers) {
+      merged.set(b, offset);
+      offset += b.byteLength;
+    }
+
+    return new Response(merged, {
       headers: { ...corsHeaders, "Content-Type": "audio/mpeg" },
     });
   } catch (error) {
