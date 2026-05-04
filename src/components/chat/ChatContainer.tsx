@@ -1075,17 +1075,21 @@ export const ChatContainer = () => {
           )}
         </AnimatePresence>
 
-        <ChatInput
-          onSend={handleSend}
-          isLoading={isLoading}
-          disabled={!user}
-          onStop={(isLoading || isGeneratingImage || isGeneratingVideo) ? stopGeneration : undefined}
-          editValue={editingMessageContent}
-          onClearEdit={clearEditState}
-          onStartCall={user ? handleStartVoiceCall : undefined}
-          onOpenImageDialog={openImageDialog}
-          onOpenVideoDialog={openVideoDialog}
-        />
+        <div className="absolute bottom-0 left-0 right-0 z-20 pointer-events-none bg-gradient-to-t from-background via-background/80 to-transparent">
+          <div className="pointer-events-auto">
+            <ChatInput
+              onSend={handleSend}
+              isLoading={isLoading}
+              disabled={!user}
+              onStop={(isLoading || isGeneratingImage || isGeneratingVideo) ? stopGeneration : undefined}
+              editValue={editingMessageContent}
+              onClearEdit={clearEditState}
+              onStartCall={user ? handleStartVoiceCall : undefined}
+              onOpenImageDialog={openImageDialog}
+              onOpenVideoDialog={openVideoDialog}
+            />
+          </div>
+        </div>
       </main>
     </div>
   );
