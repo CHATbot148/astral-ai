@@ -338,11 +338,11 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
 
       <input ref={fileInputRef} type="file" multiple onChange={handleFileChange} className="hidden" accept="image/*,video/*,.pdf,.doc,.docx,.txt" />
 
-      {/* Modern unified input bar */}
+      {/* Modern unified input bar - floating */}
       <div className="relative">
         {/* Animated gradient glow */}
         <div
-          className="pointer-events-none absolute -inset-[1.5px] rounded-[28px] opacity-70 blur-[6px] transition-opacity duration-500"
+          className="pointer-events-none absolute -inset-[1px] rounded-[28px] opacity-60 blur-[8px] transition-opacity duration-500"
           style={{
             background:
               'conic-gradient(from 180deg at 50% 50%, hsl(var(--xai-purple)/0.55), hsl(var(--xai-cyan)/0.55), hsl(var(--xai-purple)/0.55))',
@@ -352,10 +352,10 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
 
         <div
           className={cn(
-            'relative flex items-end gap-2 rounded-[26px] px-2 py-2 sm:px-2.5 sm:py-2',
-            'bg-background/80 backdrop-blur-xl',
+            'relative flex items-end gap-1.5 sm:gap-2 rounded-[26px] px-1.5 py-1.5 sm:px-2 sm:py-2',
+            'bg-background/85 backdrop-blur-xl',
             'border border-border/60 shadow-[0_10px_40px_-12px_hsl(var(--xai-purple)/0.35)]',
-            'transition-all duration-300',
+            'transition-all duration-300 overflow-hidden',
             isRecording && 'border-destructive/40'
           )}
         >
