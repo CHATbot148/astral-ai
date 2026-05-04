@@ -98,7 +98,25 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose,
   // Mic level tracking
   const audioContextRef = useRef<AudioContext | null>(null);
   const micAnalyserRef = useRef<AnalyserNode | null>(null);
+  const micSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const micAnimFrameRef = useRef<number>(0);
+  const recordingMaxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const speechDetectedRef = useRef(false);
+  const startRequestedRef = useRef(false);
+
+  const clearRecordingMaxTimer = () => {
+    if (recordingMaxTimerRef.current) {
+      clearTimeout(recordingMaxTimerRef.current);
+      recordingMaxTimerRef.current = null;
+    }
+  };
+
+  useImperativeHandle(ref, () => ({
+    startFromTrigger: () => {
+      startRequestedRef.current = true;
+      void startCall();
+    },
+  }), [startCall]);
 
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
 
@@ -140,10 +158,15 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose,
     try {
       const ctx = audioContextRef.current;
       if (ctx.state === "suspended") ctx.resume().catch(() => {});
+      try { micSourceRef.current?.disconnect(); } catch {}
+      try { micAnalyserRef.current?.disconnect(); } catch {}
+
       const source = ctx.createMediaStreamSource(streamRef.current);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.18;
       source.connect(analyser);
+      micSourceRef.current = source;
       micAnalyserRef.current = analyser;
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
@@ -151,8 +174,19 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose,
         if (!isActiveRef.current) return;
         analyser.getByteFrequencyData(dataArray);
         const avg = dataArray.reduce((s, v) => s + v, 0) / dataArray.length;
+        const normalized = Math.min(1, (avg / 255) * 1.8);
+        if (normalized >= VOICE_ACTIVITY_THRESHOLD) {
+          speechDetectedRef.current = true;
+          clearSilenceTimer();
+          silenceTimerRef.current = setTimeout(() => {
+            const recorder = recorderRef.current;
+            if (recorder?.state === "recording") {
+              try { recorder.stop(); } catch {}
+            }
+          }, VOICE_SILENCE_MS);
+        }
         if (!isSpeakingRef.current) {
-          setAudioLevel(Math.min(1, (avg / 255) * 1.6));
+          setAudioLevel(normalized);
         }
         micAnimFrameRef.current = requestAnimationFrame(update);
       };
@@ -167,6 +201,10 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose,
       cancelAnimationFrame(micAnimFrameRef.current);
       micAnimFrameRef.current = 0;
     }
+    try { micSourceRef.current?.disconnect(); } catch {}
+    try { micAnalyserRef.current?.disconnect(); } catch {}
+    micSourceRef.current = null;
+    micAnalyserRef.current = null;
     setAudioLevel(0);
   }, []);
 
