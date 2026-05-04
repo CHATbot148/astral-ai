@@ -1006,7 +1006,7 @@ export const ChatContainer = () => {
         onProfileUpdate={fetchProfile}
       />
 
-      <main className="flex-1 flex flex-col min-w-0">
+      <main className="flex-1 flex flex-col min-w-0 relative">
         <div className="absolute top-3 left-3 z-20">
           <Button variant="secondary" size="icon" onClick={() => setSidebarOpen(true)}
             className={cn("rounded-full", sidebarOpen ? 'lg:hidden' : '')} aria-label="Open sidebar">
@@ -1014,7 +1014,7 @@ export const ChatContainer = () => {
           </Button>
         </div>
 
-        <ScrollArea ref={scrollRef} className="flex-1">
+        <ScrollArea ref={scrollRef} className="flex-1 [&_>_div_>_div]:pb-32 sm:[&_>_div_>_div]:pb-36">
           <AnimatePresence mode="wait">
             {displayMessages.length === 0 ? (
               <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pt-14 lg:pt-4">
@@ -1075,17 +1075,21 @@ export const ChatContainer = () => {
           )}
         </AnimatePresence>
 
-        <ChatInput
-          onSend={handleSend}
-          isLoading={isLoading}
-          disabled={!user}
-          onStop={(isLoading || isGeneratingImage || isGeneratingVideo) ? stopGeneration : undefined}
-          editValue={editingMessageContent}
-          onClearEdit={clearEditState}
-          onStartCall={user ? handleStartVoiceCall : undefined}
-          onOpenImageDialog={openImageDialog}
-          onOpenVideoDialog={openVideoDialog}
-        />
+        <div className="absolute bottom-0 left-0 right-0 z-20 pointer-events-none bg-gradient-to-t from-background via-background/80 to-transparent">
+          <div className="pointer-events-auto">
+            <ChatInput
+              onSend={handleSend}
+              isLoading={isLoading}
+              disabled={!user}
+              onStop={(isLoading || isGeneratingImage || isGeneratingVideo) ? stopGeneration : undefined}
+              editValue={editingMessageContent}
+              onClearEdit={clearEditState}
+              onStartCall={user ? handleStartVoiceCall : undefined}
+              onOpenImageDialog={openImageDialog}
+              onOpenVideoDialog={openVideoDialog}
+            />
+          </div>
+        </div>
       </main>
     </div>
   );
