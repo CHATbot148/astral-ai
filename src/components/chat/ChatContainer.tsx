@@ -990,7 +990,7 @@ export const ChatContainer = () => {
     <div className="flex h-[100dvh] overflow-hidden bg-background">
       <div className="aurora-bg" />
       <AnimatePresence>
-        {showVoiceCall && <VoiceCall ref={voiceCallRef} autoStart onClose={() => setShowVoiceCall(false)} />}
+        {showVoiceCall && <VoiceCall ref={voiceCallRef} onClose={() => setShowVoiceCall(false)} />}
       </AnimatePresence>
 
       <ImageGenerateDialog open={showImageDialog} onOpenChange={setShowImageDialog} onGenerate={handleImageGenerate} initialPrompt={imageDialogPrompt} />
