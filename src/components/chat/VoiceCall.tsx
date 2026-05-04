@@ -11,7 +11,6 @@ import { getAISettings, getModeSystemPrompt } from "@/lib/aiSettings";
 
 interface VoiceCallProps {
   onClose: () => void;
-  autoStart?: boolean;
 }
 
 export interface VoiceCallHandle {
@@ -64,7 +63,7 @@ type TTSQueueItem = {
   blobPromise: Promise<Blob | null>;
 };
 
-export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose, autoStart = false }, ref) => {
+export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose }, ref) => {
   const { toast } = useToast();
   const [callStart, setCallStart] = useState<number | null>(null);
   const [callDuration, setCallDuration] = useState(0);
@@ -667,11 +666,6 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose,
     },
   }), [startCall]);
 
-  useEffect(() => {
-    if (!autoStart) return;
-    void startCall();
-  }, [autoStart, startCall]);
-
   const endCall = useCallback(() => {
     isActiveRef.current = false;
     clearSilenceTimer();
@@ -753,7 +747,7 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose,
         <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
           <div className="text-center">
             <p className="text-white/40 text-xs font-mono tracking-[0.3em] uppercase">Astraz Voice</p>
-            <p className="text-white/70 text-base mt-3">Tap to start your call</p>
+            <p className="text-white/70 text-base mt-3">{isStarting ? "Starting your call…" : "Voice call ready"}</p>
             <p className="mt-2 text-xs text-white/35">{startHint ?? "Optimized for iPhone, Android, and desktop."}</p>
           </div>
 
@@ -783,7 +777,7 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose,
           </div>
 
           <p className="text-white/30 text-xs text-center max-w-xs">
-            Tapping start unlocks audio on iOS and grants microphone access. Streaming begins instantly.
+            {isStarting ? "Please wait while microphone and speaker access finish initializing." : "Use start if your browser requires an explicit microphone confirmation step."}
           </p>
         </div>
       </motion.div>
