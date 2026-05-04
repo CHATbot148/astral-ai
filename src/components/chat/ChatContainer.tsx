@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { flushSync } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PanelLeft, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -8,7 +9,7 @@ import { ChatInput } from './ChatInput';
 import { WelcomeScreen } from './WelcomeScreen';
 import { Sidebar } from './Sidebar';
 import { TypingIndicator } from './TypingIndicator';
-import { VoiceCall } from './VoiceCall';
+import { VoiceCall, type VoiceCallHandle } from './VoiceCall';
 import { ImageGenerateDialog, ImageGenOptions } from './ImageGenerateDialog';
 import { VideoGenerateDialog, VideoGenOptions } from './VideoGenerateDialog';
 import { useConversations } from '@/hooks/useConversations';
@@ -98,6 +99,7 @@ export const ChatContainer = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const voiceCallRef = useRef<VoiceCallHandle | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -968,7 +970,8 @@ export const ChatContainer = () => {
   };
 
   const handleStartVoiceCall = () => {
-    setShowVoiceCall(true);
+    flushSync(() => setShowVoiceCall(true));
+    voiceCallRef.current?.startFromTrigger();
   };
 
   const displayMessages = [...messages];
@@ -987,7 +990,7 @@ export const ChatContainer = () => {
     <div className="flex h-[100dvh] overflow-hidden bg-background">
       <div className="aurora-bg" />
       <AnimatePresence>
-        {showVoiceCall && <VoiceCall onClose={() => setShowVoiceCall(false)} />}
+        {showVoiceCall && <VoiceCall ref={voiceCallRef} autoStart onClose={() => setShowVoiceCall(false)} />}
       </AnimatePresence>
 
       <ImageGenerateDialog open={showImageDialog} onOpenChange={setShowImageDialog} onGenerate={handleImageGenerate} initialPrompt={imageDialogPrompt} />
