@@ -640,21 +640,14 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
         throw new Error("Media devices are not available on this browser");
       }
 
-      if (navigator.permissions?.query) {
-        try {
-          const permission = await navigator.permissions.query({ name: "microphone" as PermissionName });
-          if (permission.state === "denied") {
-            throw Object.assign(new Error("Microphone access denied"), { name: "NotAllowedError" });
-          }
-        } catch {
-          // Ignore browsers that don't support microphone permission checks cleanly.
-        }
-      }
+      const streamPromise = navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
 
       // 1) Synchronously create + unlock AudioContext (iOS requirement)
       const Ctx: typeof AudioContext =
         (window as any).AudioContext || (window as any).webkitAudioContext;
-      const ctx = new Ctx({ latencyHint: "interactive", sampleRate: 16000 });
+      const ctx = new Ctx({ latencyHint: "interactive" });
       audioContextRef.current = ctx;
       setStartHint("Unlocking speaker…");
       try { await ctx.resume(); } catch {}
@@ -667,18 +660,18 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
         audioEl.setAttribute("webkit-playsinline", "true");
         audioEl.preload = "auto";
         audioEl.autoplay = false;
+        audioEl.style.display = "none";
         // a silent 1-frame WAV to unlock playback on iOS
         audioEl.src =
           "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
+        document.body.appendChild(audioEl);
         audioElRef.current = audioEl;
       }
       try { await audioEl.play(); audioEl.pause(); audioEl.currentTime = 0; } catch {}
 
       // 3) Mic
       setStartHint("Starting microphone…");
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      });
+      const stream = await streamPromise;
       streamRef.current = stream;
 
       // 4) Resolve recorder mime once
@@ -704,6 +697,29 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
     }
   }, [isStarting, startListening, toast]);
 
+  useEffect(() => {
+    if (!open && isConnected) {
+      isActiveRef.current = false;
+      clearSilenceTimer();
+      clearRecordingMaxTimer();
+      cancelPlayback();
+      stopMicLevelTracking();
+      if (recorderRef.current && recorderRef.current.state !== "inactive") {
+        try { recorderRef.current.stop(); } catch {}
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(() => {});
+        audioContextRef.current = null;
+      }
+      setIsConnected(false);
+      setStatus("idle");
+    }
+  }, [open, isConnected, cancelPlayback, stopMicLevelTracking]);
+
   useImperativeHandle(ref, () => ({
     startFromTrigger: () => {
       void startCall();
@@ -727,11 +743,22 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
       audioContextRef.current.close().catch(() => {});
       audioContextRef.current = null;
     }
+    if (outputAnimFrameRef.current) {
+      cancelAnimationFrame(outputAnimFrameRef.current);
+      outputAnimFrameRef.current = 0;
+    }
+    try { outputSourceRef.current?.disconnect(); } catch {}
+    try { outputAnalyserRef.current?.disconnect(); } catch {}
+    outputSourceRef.current = null;
+    outputAnalyserRef.current = null;
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(t => t.stop());
       streamRef.current = null;
     }
-    audioElRef.current = null;
+    if (audioElRef.current) {
+      try { audioElRef.current.remove(); } catch {}
+      audioElRef.current = null;
+    }
 
     setIsConnected(false);
     setStatus("idle");
@@ -777,6 +804,8 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
   const statusLabel =
     status === "listening" ? "Listening…" :
     status === "speaking" ? "Speaking…" : "Ready";
+
+  if (!open) return null;
 
   // Pre-call screen — required for iOS audio unlock via direct user gesture
   if (!isConnected) {
