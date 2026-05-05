@@ -144,8 +144,9 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
       try { audioElRef.current.pause(); } catch {}
       try { audioElRef.current.src = ""; } catch {}
     }
+    stopOutputLevelTracking();
     setAudioLevel(0);
-  }, []);
+  }, [stopOutputLevelTracking]);
 
   // ── Mic level tracking ──
   const startMicLevelTracking = useCallback(() => {
@@ -316,9 +317,8 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
       const audio = audioElRef.current;
       if (!audio) { URL.revokeObjectURL(url); resolve(); return; }
 
-      let animInterval: ReturnType<typeof setInterval> | null = null;
       const cleanup = () => {
-        if (animInterval) { clearInterval(animInterval); animInterval = null; }
+        stopOutputLevelTracking();
         setAudioLevel(0);
         URL.revokeObjectURL(url);
         audio.onended = null;
@@ -329,20 +329,14 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
       audio.onended = cleanup;
       audio.onerror = () => { log("audio el error"); cleanup(); };
       audio.src = url;
-
-      // Animate audio level during playback
-      animInterval = setInterval(() => {
-        if (isSpeakingRef.current && token === cancelTokenRef.current) {
-          setAudioLevel(0.3 + Math.random() * 0.5);
-        }
-      }, 80);
+      startOutputLevelTracking();
 
       audio.play().catch((e) => {
         log("audio.play() rejected", e?.message);
         cleanup();
       });
     });
-  }, []);
+  }, [startOutputLevelTracking, stopOutputLevelTracking]);
 
   // ── Sequential TTS queue processor ──
   const processTTSQueue = useCallback(async (token: number) => {
