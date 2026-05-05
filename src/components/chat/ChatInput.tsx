@@ -44,6 +44,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const touchStartYRef = useRef<number | null>(null);
   const { toast } = useToast();
 
   const { levels } = useMicVisualizer({ enabled: isRecording, bars: 12 });
@@ -245,9 +246,27 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
     onClearEdit?.();
   };
 
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    touchStartYRef.current = e.touches[0]?.clientY ?? null;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    const startY = touchStartYRef.current;
+    touchStartYRef.current = null;
+    if (startY == null) return;
+    const endY = e.changedTouches[0]?.clientY ?? startY;
+    const deltaY = endY - startY;
+
+    if (deltaY < -18) {
+      textareaRef.current?.focus();
+    } else if (deltaY > 22 && document.activeElement === textareaRef.current) {
+      textareaRef.current?.blur();
+    }
+  };
+
   return (
     <div className="pointer-events-none w-full max-w-3xl mx-auto px-2 sm:px-4 pb-3 sm:pb-4 pt-2">
-     <div className="pointer-events-auto">
+      <div className="pointer-events-auto" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
       {/* Editing indicator */}
       <AnimatePresence>
         {isEditing && (
@@ -355,7 +374,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
             'relative flex items-end gap-1.5 sm:gap-2 rounded-[26px] px-1.5 py-1.5 sm:px-2 sm:py-2',
             'bg-background/85 backdrop-blur-xl',
             'border border-border/60 shadow-[0_10px_40px_-12px_hsl(var(--xai-purple)/0.35)]',
-            'transition-all duration-300 overflow-hidden',
+            'transition-all duration-300 overflow-hidden min-h-[58px] sm:min-h-[62px]',
             isRecording && 'border-destructive/40'
           )}
         >

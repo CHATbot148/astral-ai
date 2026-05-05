@@ -270,8 +270,16 @@ const GraphChart: React.FC<{
   const useStringXLabels = firstSeries.points.every(
     (p) => p.xLabel !== undefined
   );
-  const xTickValues: { x: number; label: string }[] = useStringXLabels
-    ? firstSeries.points.map((p) => ({ x: p.x, label: p.xLabel! }))
+  const plotWidth = W - PAD_L - PAD_R;
+  const categoryCenters = firstSeries.points.map((_, index) =>
+    PAD_L + plotWidth * ((index + 0.5) / Math.max(firstSeries.points.length, 1))
+  );
+  const xTickValues: { x: number; label: string; px?: number }[] = useStringXLabels
+    ? firstSeries.points.map((p, index) => ({
+        x: p.x,
+        label: p.xLabel!,
+        px: categoryCenters[index],
+      }))
     : niceTicks(xMin, xMax, Math.min(6, firstSeries.points.length)).map(
         (v) => ({ x: v, label: fmt(v) })
       );
@@ -390,15 +398,15 @@ const GraphChart: React.FC<{
       {xTickValues.map((t, i) => (
         <g key={`xt-${i}`}>
           <line
-            x1={sx(t.x)}
-            x2={sx(t.x)}
+            x1={t.px ?? sx(t.x)}
+            x2={t.px ?? sx(t.x)}
             y1={H - PAD_B}
             y2={H - PAD_B + 4}
             stroke="hsl(var(--foreground))"
             opacity={0.7}
           />
           <text
-            x={sx(t.x)}
+            x={t.px ?? sx(t.x)}
             y={H - PAD_B + 16}
             textAnchor="middle"
             fontSize={11}
@@ -456,12 +464,14 @@ const GraphChart: React.FC<{
 
         if (parsed.type === 'bar') {
           const groupCount = parsed.series.length;
-          const slotW = (W - PAD_L - PAD_R) / Math.max(s.points.length, 1);
-          const barW = Math.max(4, (slotW * 0.7) / groupCount);
+          const slotW = plotWidth / Math.max(s.points.length, 1);
+          const barW = Math.min(28, Math.max(4, (slotW * 0.64) / groupCount));
+          const groupWidth = barW * groupCount;
           return (
             <g key={`bar-${si}`}>
               {s.points.map((p, i) => {
-                const cx = sx(p.x) - slotW * 0.35 + si * barW + barW / 2;
+                const centerX = useStringXLabels ? categoryCenters[i] : sx(p.x);
+                const x = centerX - groupWidth / 2 + si * barW;
                 const baselineY =
                   s.axis === 'right'
                     ? sy(0 < yRightMin ? yRightMin : 0 > yRightMax ? yRightMax : 0)
@@ -472,7 +482,7 @@ const GraphChart: React.FC<{
                 return (
                   <motion.rect
                     key={`${playKey}-${i}`}
-                    x={cx - barW / 2}
+                    x={x}
                     width={barW}
                     y={top}
                     height={h}
@@ -480,7 +490,7 @@ const GraphChart: React.FC<{
                     rx={3}
                     initial={
                       animate
-                        ? { scaleY: 0, transformOrigin: `${cx}px ${baselineY}px` }
+                        ? { scaleY: 0, transformOrigin: `${x + barW / 2}px ${baselineY}px` }
                         : false
                     }
                     animate={animate ? { scaleY: 1 } : { scaleY: 1 }}
