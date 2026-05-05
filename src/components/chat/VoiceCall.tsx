@@ -10,6 +10,7 @@ import { cleanTextForTTS } from "@/utils/cleanTextForTTS";
 import { getAISettings, getModeSystemPrompt } from "@/lib/aiSettings";
 
 interface VoiceCallProps {
+  open: boolean;
   onClose: () => void;
 }
 
@@ -63,7 +64,7 @@ type TTSQueueItem = {
   blobPromise: Promise<Blob | null>;
 };
 
-export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose }, ref) => {
+export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, onClose }, ref) => {
   const { toast } = useToast();
   const [callStart, setCallStart] = useState<number | null>(null);
   const [callDuration, setCallDuration] = useState(0);
@@ -98,6 +99,9 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ onClose 
   const audioContextRef = useRef<AudioContext | null>(null);
   const micAnalyserRef = useRef<AnalyserNode | null>(null);
   const micSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const outputAnalyserRef = useRef<AnalyserNode | null>(null);
+  const outputSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const outputAnimFrameRef = useRef<number>(0);
   const micAnimFrameRef = useRef<number>(0);
   const recordingMaxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechDetectedRef = useRef(false);
