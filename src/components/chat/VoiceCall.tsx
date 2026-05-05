@@ -203,6 +203,49 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
     setAudioLevel(0);
   }, []);
 
+  const startOutputLevelTracking = useCallback(() => {
+    const ctx = audioContextRef.current;
+    const audioEl = audioElRef.current;
+    if (!ctx || !audioEl) return;
+
+    try {
+      if (!outputSourceRef.current) {
+        outputSourceRef.current = ctx.createMediaElementSource(audioEl);
+      }
+      if (!outputAnalyserRef.current) {
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.22;
+        outputAnalyserRef.current = analyser;
+        outputSourceRef.current.connect(analyser);
+        analyser.connect(ctx.destination);
+      }
+
+      const analyser = outputAnalyserRef.current;
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const update = () => {
+        if (!isSpeakingRef.current) return;
+        analyser.getByteFrequencyData(dataArray);
+        const avg = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
+        const normalized = Math.min(1, Math.pow(avg / 255, 0.78) * 2.1);
+        setAudioLevel(normalized);
+        outputAnimFrameRef.current = requestAnimationFrame(update);
+      };
+
+      if (outputAnimFrameRef.current) cancelAnimationFrame(outputAnimFrameRef.current);
+      outputAnimFrameRef.current = requestAnimationFrame(update);
+    } catch (e) {
+      log("Output level tracking failed", e);
+    }
+  }, []);
+
+  const stopOutputLevelTracking = useCallback(() => {
+    if (outputAnimFrameRef.current) {
+      cancelAnimationFrame(outputAnimFrameRef.current);
+      outputAnimFrameRef.current = 0;
+    }
+  }, []);
+
   // ── STT ──
   const transcribeAudio = useCallback(async (audioBlob: Blob): Promise<string> => {
     const { data: sessionData } = await supabase.auth.getSession();
