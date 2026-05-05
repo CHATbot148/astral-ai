@@ -144,9 +144,12 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
       try { audioElRef.current.pause(); } catch {}
       try { audioElRef.current.src = ""; } catch {}
     }
-    stopOutputLevelTracking();
+    if (outputAnimFrameRef.current) {
+      cancelAnimationFrame(outputAnimFrameRef.current);
+      outputAnimFrameRef.current = 0;
+    }
     setAudioLevel(0);
-  }, [stopOutputLevelTracking]);
+  }, []);
 
   // ── Mic level tracking ──
   const startMicLevelTracking = useCallback(() => {
