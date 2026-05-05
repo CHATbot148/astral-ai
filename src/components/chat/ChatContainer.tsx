@@ -96,10 +96,13 @@ export const ChatContainer = () => {
   const [imageDialogPrompt, setImageDialogPrompt] = useState("");
   const [showVideoDialog, setShowVideoDialog] = useState(false);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
+  const [keyboardInset, setKeyboardInset] = useState(0);
+  const [inputDockHeight, setInputDockHeight] = useState(116);
   const scrollRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const voiceCallRef = useRef<VoiceCallHandle | null>(null);
+  const inputDockRef = useRef<HTMLDivElement | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -133,6 +136,40 @@ export const ChatContainer = () => {
     viewport.addEventListener('scroll', updateAffordance, { passive: true });
     return () => viewport.removeEventListener('scroll', updateAffordance);
   }, [messages, streamingContent]);
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const updateInset = () => {
+      const nextInset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      setKeyboardInset(Math.round(nextInset));
+    };
+
+    updateInset();
+    vv.addEventListener('resize', updateInset);
+    vv.addEventListener('scroll', updateInset);
+
+    return () => {
+      vv.removeEventListener('resize', updateInset);
+      vv.removeEventListener('scroll', updateInset);
+    };
+  }, []);
+
+  useEffect(() => {
+    const node = inputDockRef.current;
+    if (!node || typeof ResizeObserver === 'undefined') return;
+
+    const updateHeight = () => {
+      setInputDockHeight(Math.ceil(node.getBoundingClientRect().height));
+    };
+
+    updateHeight();
+    const observer = new ResizeObserver(() => updateHeight());
+    observer.observe(node);
+
+    return () => observer.disconnect();
+  }, [showVoiceCall, editingMessageContent]);
 
   // Always scroll to the latest message when opening a conversation
   useEffect(() => {
@@ -986,11 +1023,14 @@ export const ChatContainer = () => {
     });
   }
 
+  const composerOffset = keyboardInset + 14;
+  const scrollBottomPadding = inputDockHeight + composerOffset + 24;
+
   return (
     <div className="flex h-[100dvh] overflow-hidden bg-background">
       <div className="aurora-bg" />
       <AnimatePresence>
-        {showVoiceCall && <VoiceCall ref={voiceCallRef} onClose={() => setShowVoiceCall(false)} />}
+        <VoiceCall ref={voiceCallRef} open={showVoiceCall} onClose={() => setShowVoiceCall(false)} />
       </AnimatePresence>
 
       <ImageGenerateDialog open={showImageDialog} onOpenChange={setShowImageDialog} onGenerate={handleImageGenerate} initialPrompt={imageDialogPrompt} />
@@ -1017,15 +1057,16 @@ export const ChatContainer = () => {
           </Button>
         </div>
 
-        <ScrollArea ref={scrollRef} className="flex-1 [&_>_div_>_div]:pb-32 sm:[&_>_div_>_div]:pb-36">
-          <AnimatePresence mode="wait">
-            {displayMessages.length === 0 ? (
-              <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pt-14 lg:pt-4">
-                <WelcomeScreen onSuggestionClick={handleSend} onGenerateImage={() => openImageDialog()} profileName={profile?.full_name} />
-              </motion.div>
-            ) : (
-              <motion.div key="messages" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto pt-14 lg:pt-4">
-                {displayMessages.map((msg, msgIndex) => {
+        <ScrollArea ref={scrollRef} className="flex-1">
+          <div style={{ paddingBottom: `${scrollBottomPadding}px` }}>
+            <AnimatePresence mode="wait">
+              {displayMessages.length === 0 ? (
+                <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pt-14 lg:pt-4">
+                  <WelcomeScreen onSuggestionClick={handleSend} onGenerateImage={() => openImageDialog()} profileName={profile?.full_name} />
+                </motion.div>
+              ) : (
+                <motion.div key="messages" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto pt-14 lg:pt-4">
+                  {displayMessages.map((msg, msgIndex) => {
                   const userMessages = displayMessages.filter(m => m.role === 'user');
                   const userMsgIndex = userMessages.findIndex(m => m.id === msg.id);
                   const canEdit = msg.role === 'user' && userMsgIndex >= userMessages.length - 3;
@@ -1039,36 +1080,37 @@ export const ChatContainer = () => {
                   }
                   const enableAutoListImages = msg.role === 'assistant' && hasExplicitVisualIntent(previousUserContent);
 
-                  return (
-                    <ChatMessage key={msg.id} role={msg.role} content={msg.content} isStreaming={msg.id === 'streaming'}
-                      streamingStyle={msg.id === 'streaming' ? streamingStyle : undefined}
-                      fileUrls={msg.file_urls} userAvatar={profile?.avatar_url} userName={profile?.full_name}
-                      onEdit={canEdit ? (content: string) => handleEditMessage(msg.id, content) : undefined} canEdit={canEdit}
-                      onNotificationAction={handleNotificationAction}
-                      enableAutoListImages={enableAutoListImages} />
-                  );
-                })}
-                {isLoading && !streamingContent && !isGeneratingImage && !isGeneratingVideo && (
-                  <TypingIndicator label={typingLabel} mode={typingMode} />
-                )}
-                {(isGeneratingImage || isGeneratingVideo) && (
-                  <div className="flex items-center gap-3 px-6 py-4">
-                    <motion.span className="text-xai-cyan font-medium" animate={{ opacity: [1, 0.5, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>
-                      {isGeneratingVideo ? '🎬 Generating video...' : '🎨 Generating image...'}
-                    </motion.span>
-                    <Button variant="outline" size="sm" onClick={stopGeneration} className="h-7 px-3 text-xs rounded-full border-destructive/50 text-destructive hover:bg-destructive/10">
-                      Cancel
-                    </Button>
-                  </div>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
+                    return (
+                      <ChatMessage key={msg.id} role={msg.role} content={msg.content} isStreaming={msg.id === 'streaming'}
+                        streamingStyle={msg.id === 'streaming' ? streamingStyle : undefined}
+                        fileUrls={msg.file_urls} userAvatar={profile?.avatar_url} userName={profile?.full_name}
+                        onEdit={canEdit ? (content: string) => handleEditMessage(msg.id, content) : undefined} canEdit={canEdit}
+                        onNotificationAction={handleNotificationAction}
+                        enableAutoListImages={enableAutoListImages} />
+                    );
+                  })}
+                  {isLoading && !streamingContent && !isGeneratingImage && !isGeneratingVideo && (
+                    <TypingIndicator label={typingLabel} mode={typingMode} />
+                  )}
+                  {(isGeneratingImage || isGeneratingVideo) && (
+                    <div className="flex items-center gap-3 px-6 py-4">
+                      <motion.span className="text-xai-cyan font-medium" animate={{ opacity: [1, 0.5, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>
+                        {isGeneratingVideo ? '🎬 Generating video...' : '🎨 Generating image...'}
+                      </motion.span>
+                      <Button variant="outline" size="sm" onClick={stopGeneration} className="h-7 px-3 text-xs rounded-full border-destructive/50 text-destructive hover:bg-destructive/10">
+                        Cancel
+                      </Button>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </ScrollArea>
 
         <AnimatePresence>
           {showScrollToBottom && (
-            <motion.div initial={{ opacity: 0, scale: 0.9, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 10 }} className="fixed right-4 bottom-24 z-30">
+            <motion.div initial={{ opacity: 0, scale: 0.9, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 10 }} className="fixed right-4 z-30" style={{ bottom: `${Math.max(88, scrollBottomPadding - 12)}px` }}>
               <Button variant="secondary" size="icon" className="rounded-full shadow-lg"
                 onClick={() => { const viewport = viewportRef.current; if (viewport) viewport.scrollTop = viewport.scrollHeight; }}
                 aria-label="Scroll to bottom">
@@ -1078,8 +1120,9 @@ export const ChatContainer = () => {
           )}
         </AnimatePresence>
 
-        <div className="absolute bottom-0 left-0 right-0 z-20 pointer-events-none bg-gradient-to-t from-background via-background/80 to-transparent">
-          <div className="pointer-events-auto">
+        <div className="absolute left-0 right-0 z-20 pointer-events-none" style={{ bottom: `calc(env(safe-area-inset-bottom, 0px) + ${composerOffset}px)` }}>
+          <div className="pointer-events-none absolute inset-x-0 -bottom-8 h-36 bg-gradient-to-t from-background via-background/78 to-transparent" />
+          <div ref={inputDockRef} className="pointer-events-auto relative">
             <ChatInput
               onSend={handleSend}
               isLoading={isLoading}
