@@ -403,7 +403,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.92, y: 8 }}
                   transition={{ type: 'spring', stiffness: 320, damping: 24 }}
-                  className="absolute bottom-full left-0 mb-3 bg-popover/95 backdrop-blur-xl border border-border/70 rounded-2xl shadow-2xl overflow-hidden min-w-[220px]"
+                  className="absolute bottom-full left-0 mb-3 z-50 bg-popover/95 backdrop-blur-xl border border-border/70 rounded-2xl shadow-2xl overflow-hidden min-w-[220px]"
                 >
                   <button
                     onClick={() => { setShowAttachMenu(false); onOpenImageDialog?.(message.trim() || undefined); }}
