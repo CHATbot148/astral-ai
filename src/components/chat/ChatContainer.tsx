@@ -1035,6 +1035,15 @@ export const ChatContainer = () => {
   const composerOffset = keyboardInset + 22;
   const scrollBottomPadding = inputDockHeight + composerOffset + 24;
 
+  const handleAnalyzeFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const list = e.target.files;
+    if (!list || list.length === 0) return;
+    const files = Array.from(list);
+    setShowAnalyzePopup(false);
+    void handleSend('Summarize and extract insights', files);
+    e.target.value = '';
+  };
+
   return (
     <div className="flex h-[100dvh] overflow-hidden bg-background">
       <div className="aurora-bg" />
