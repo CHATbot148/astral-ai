@@ -371,7 +371,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
 
         <div
           className={cn(
-            'relative flex items-end gap-1.5 sm:gap-2 rounded-[26px] px-1.5 py-1.5 sm:px-2 sm:py-2',
+            'relative flex items-center gap-1.5 sm:gap-2 rounded-[26px] px-1.5 py-1.5 sm:px-2 sm:py-2',
             'bg-background/85 backdrop-blur-xl',
             'border border-border/60 shadow-[0_10px_40px_-12px_hsl(var(--xai-purple)/0.35)]',
             'transition-all duration-300 overflow-hidden min-h-[58px] sm:min-h-[62px]',
@@ -478,7 +478,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
               </div>
             </div>
           ) : (
-            <div className="flex-1 flex items-end min-h-[40px] px-1">
+            <div className="flex-1 flex items-center min-h-[40px] px-1">
               <textarea
                 ref={textareaRef}
                 value={message}

@@ -55,7 +55,7 @@ const EARLY_TTS_FLUSH_MS = 220;
 const EARLY_TTS_MIN_CHARS = 48;
 const INITIAL_SPEECH_WAIT_MS = 3200;
 const MAX_RECORDING_MS = 14000;
-const VOICE_ACTIVITY_THRESHOLD = 0.075;
+const VOICE_ACTIVITY_THRESHOLD = 0.045;
 const STT_TIMEOUT_MS = 12000;
 const TTS_TIMEOUT_MS = 15000;
 
@@ -640,11 +640,16 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
         throw new Error("Media devices are not available on this browser");
       }
 
-      const streamPromise = navigator.mediaDevices.getUserMedia({
+      // 1) Request mic FIRST while we're still inside the user gesture.
+      //    On iOS Safari this is the call that must originate from the tap,
+      //    otherwise the permission prompt is deferred for minutes.
+      setStartHint("Requesting microphone access…");
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
+      streamRef.current = stream;
 
-      // 1) Synchronously create + unlock AudioContext (iOS requirement)
+      // 2) Create + unlock AudioContext (iOS requirement)
       const Ctx: typeof AudioContext =
         (window as any).AudioContext || (window as any).webkitAudioContext;
       const ctx = new Ctx({ latencyHint: "interactive" });
@@ -652,7 +657,7 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
       setStartHint("Unlocking speaker…");
       try { await ctx.resume(); } catch {}
 
-      // 2) Synchronously create + unlock <audio> element by playing a silent buffer
+      // 3) Create + unlock <audio> element by playing a silent buffer
       let audioEl = audioElRef.current;
       if (!audioEl) {
         audioEl = document.createElement("audio");
@@ -668,11 +673,6 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
         audioElRef.current = audioEl;
       }
       try { await audioEl.play(); audioEl.pause(); audioEl.currentTime = 0; } catch {}
-
-      // 3) Mic
-      setStartHint("Starting microphone…");
-      const stream = await streamPromise;
-      streamRef.current = stream;
 
       // 4) Resolve recorder mime once
       recorderMimeRef.current = pickRecorderMime() || "audio/webm";
