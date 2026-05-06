@@ -176,16 +176,20 @@ export const ChatContainer = () => {
     return () => observer.disconnect();
   }, [showVoiceCall, editingMessageContent]);
 
-  // Always scroll to the latest message when opening a conversation
+  // Always scroll to the latest message when opening a conversation. iOS Safari
+  // has multiple late layout passes (fonts, images, virtual keyboard, safe-area
+  // insets), so we re-snap several times to make sure we land at the bottom.
   useEffect(() => {
     const viewport = viewportRef.current || (scrollRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null);
     if (!viewport) return;
     const snap = () => { viewport.scrollTop = viewport.scrollHeight; };
-    // Run twice to ensure layout has settled (images, fonts, etc.)
+    const timers: number[] = [];
     requestAnimationFrame(snap);
-    const t = setTimeout(snap, 150);
-    return () => clearTimeout(t);
-  }, [currentConversation?.id]);
+    [60, 180, 360, 700, 1200].forEach((ms) => {
+      timers.push(window.setTimeout(snap, ms));
+    });
+    return () => timers.forEach((t) => clearTimeout(t));
+  }, [currentConversation?.id, messages.length]);
 
   useEffect(() => { if (user) fetchProfile(); }, [user]);
 
