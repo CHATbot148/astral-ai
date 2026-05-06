@@ -972,9 +972,30 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
         <div className="w-full rounded-2xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-sm p-4">
           <div className="flex items-center justify-between text-xs uppercase tracking-[0.24em] text-white/45">
             <span>Realtime voice</span>
-            <span className="font-mono text-white/60">0.8s turn cutoff</span>
+            <button onClick={() => setShowDiagnostics((v) => !v)} className="font-mono text-[10px] text-white/55 hover:text-white tracking-normal normal-case px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/10">
+              {showDiagnostics ? "Hide diag" : "Diagnostics"}
+            </button>
           </div>
+          {showDiagnostics && (
+            <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] font-mono text-white/70">
+              <div className="col-span-2">
+                <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+                  <div className="h-full bg-emerald-400 transition-all" style={{ width: `${Math.min(100, audioLevel * 100)}%` }} />
+                </div>
+                <div className="flex justify-between mt-1 text-white/50">
+                  <span>mic level: {audioLevel.toFixed(3)}</span>
+                  <span>vad: {VOICE_ACTIVITY_THRESHOLD}</span>
+                </div>
+              </div>
+              <div className="text-white/55">permission: <span className="text-white">{permissionState}</span></div>
+              <div className="text-white/55">recorder: <span className="text-white">{recorderState}</span></div>
+              <div className="text-white/55">step: <span className="text-white">{diagStep}</span></div>
+              <div className="text-white/55">muted: <span className="text-white">{String(isMuted)}</span></div>
+              <div className="col-span-2 text-white/55">last error: <span className="text-rose-300 break-all">{lastError}</span></div>
+            </div>
+          )}
         </div>
+
 
         <div className="flex items-center gap-6">
           <Button
