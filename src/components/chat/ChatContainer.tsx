@@ -1023,7 +1023,7 @@ export const ChatContainer = () => {
     });
   }
 
-  const composerOffset = keyboardInset + 14;
+  const composerOffset = keyboardInset + 22;
   const scrollBottomPadding = inputDockHeight + composerOffset + 24;
 
   return (
