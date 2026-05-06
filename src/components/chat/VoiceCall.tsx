@@ -639,22 +639,32 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
     historyRef.current = [];
     setIsStarting(true);
     setStartHint("Requesting microphone access…");
+    setLastError("none");
+    setDiagStep("requesting-permission");
 
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("Media devices are not available on this browser");
       }
 
+      // Probe permission state if available (Chrome/Android)
+      try {
+        // @ts-expect-error - permissions.query 'microphone' supported on most browsers
+        const p = await navigator.permissions?.query?.({ name: "microphone" });
+        if (p?.state) setPermissionState(p.state);
+      } catch {}
+
       // 1) Request mic FIRST while we're still inside the user gesture.
-      //    On iOS Safari this is the call that must originate from the tap,
-      //    otherwise the permission prompt is deferred for minutes.
       setStartHint("Requesting microphone access…");
+      setDiagStep("getUserMedia");
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
       streamRef.current = stream;
+      setPermissionState("granted");
 
       // 2) Create + unlock AudioContext (iOS requirement)
+      setDiagStep("audio-context");
       const Ctx: typeof AudioContext =
         (window as any).AudioContext || (window as any).webkitAudioContext;
       const ctx = new Ctx({ latencyHint: "interactive" });
@@ -663,6 +673,7 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
       try { await ctx.resume(); } catch {}
 
       // 3) Create + unlock <audio> element by playing a silent buffer
+      setDiagStep("unlock-audio-el");
       let audioEl = audioElRef.current;
       if (!audioEl) {
         audioEl = document.createElement("audio");
@@ -671,7 +682,6 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
         audioEl.preload = "auto";
         audioEl.autoplay = false;
         audioEl.style.display = "none";
-        // a silent 1-frame WAV to unlock playback on iOS
         audioEl.src =
           "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
         document.body.appendChild(audioEl);
@@ -687,13 +697,16 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
       setIsConnected(true);
       setCallStart(Date.now());
       setStartHint(null);
+      setDiagStep("listening");
       startListening();
     } catch (error: any) {
       let errorMessage = "Could not access microphone";
-      if (error?.name === "NotAllowedError") errorMessage = "Microphone access denied. Check browser settings.";
+      if (error?.name === "NotAllowedError") { errorMessage = "Microphone access denied. Check browser settings."; setPermissionState("denied"); }
       else if (error?.name === "NotFoundError") errorMessage = "No microphone found on this device.";
       else if (error?.name === "NotReadableError") errorMessage = "Microphone is in use by another app.";
       else if (error?.message) errorMessage = error.message;
+      setLastError(`${error?.name ?? "Error"}: ${errorMessage}`);
+      setDiagStep(`failed:${error?.name ?? "error"}`);
       toast({ title: errorMessage, variant: "destructive" });
       setStartHint(errorMessage);
       setStatus("idle");
@@ -701,6 +714,72 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
       setIsStarting(false);
     }
   }, [isStarting, startListening, toast]);
+
+  // Auto-resume on iOS when the user backgrounds/foregrounds the app
+  // (this is the workaround the user discovered manually). Whenever we come
+  // back to visible, resume the AudioContext and kick listening again.
+  useEffect(() => {
+    if (!isConnected) return;
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      const ctx = audioContextRef.current;
+      if (ctx?.state === "suspended") ctx.resume().catch(() => {});
+      // Kick listening if we were idle
+      if (isActiveRef.current && !isMutedRef.current && !isSpeakingRef.current) {
+        try { startListeningRef.current(); } catch {}
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [isConnected]);
+
+  // Watchdog: if we're meant to be listening but no audio level has been seen
+  // for a while, the recorder/stream is dead — restart it automatically.
+  useEffect(() => {
+    if (!isConnected) return;
+    let lastLevelTs = Date.now();
+    const interval = setInterval(() => {
+      if (!isActiveRef.current || isMutedRef.current || isSpeakingRef.current) {
+        lastLevelTs = Date.now();
+        return;
+      }
+      const stream = streamRef.current;
+      const tracksLive = !!stream && stream.getAudioTracks().some((t) => t.readyState === "live" && !t.muted && t.enabled);
+      const recorder = recorderRef.current;
+      const recState = recorder?.state ?? "inactive";
+      setRecorderState(recState);
+      if (audioLevel > 0.005) lastLevelTs = Date.now();
+      const stale = Date.now() - lastLevelTs > 6000;
+      if (!tracksLive || (recState === "inactive" && status === "listening") || stale) {
+        log("Watchdog: restarting listener", { tracksLive, recState, stale });
+        setLastError("Watchdog restart (stalled mic)");
+        try { recorder?.stop?.(); } catch {}
+        // Reacquire stream if dead
+        (async () => {
+          if (!tracksLive) {
+            try {
+              if (stream) stream.getTracks().forEach((t) => t.stop());
+              const fresh = await navigator.mediaDevices.getUserMedia({
+                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+              });
+              streamRef.current = fresh;
+            } catch (e: any) {
+              setLastError(`reacquire failed: ${e?.message ?? e}`);
+              return;
+            }
+          }
+          startListeningRef.current();
+          lastLevelTs = Date.now();
+        })();
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [isConnected, audioLevel, status]);
+
 
   useEffect(() => {
     if (!open && isConnected) {
