@@ -649,8 +649,7 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
 
       // Probe permission state if available (Chrome/Android)
       try {
-        // @ts-expect-error - permissions.query 'microphone' supported on most browsers
-        const p = await navigator.permissions?.query?.({ name: "microphone" });
+        const p = await (navigator as any).permissions?.query?.({ name: "microphone" as PermissionName });
         if (p?.state) setPermissionState(p.state);
       } catch {}
 
