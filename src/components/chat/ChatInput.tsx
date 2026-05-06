@@ -374,7 +374,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
             'relative flex items-center gap-1.5 sm:gap-2 rounded-[26px] px-1.5 py-1.5 sm:px-2 sm:py-2',
             'bg-background/85 backdrop-blur-xl',
             'border border-border/60 shadow-[0_10px_40px_-12px_hsl(var(--xai-purple)/0.35)]',
-            'transition-all duration-300 overflow-hidden min-h-[58px] sm:min-h-[62px]',
+            'transition-all duration-300 min-h-[58px] sm:min-h-[62px]',
             isRecording && 'border-destructive/40'
           )}
         >
