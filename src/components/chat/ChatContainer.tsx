@@ -98,6 +98,11 @@ export const ChatContainer = () => {
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
   const [inputDockHeight, setInputDockHeight] = useState(116);
+  const [showVisualizePopup, setShowVisualizePopup] = useState(false);
+  const [showAnalyzePopup, setShowAnalyzePopup] = useState(false);
+  const analyzeFileInputRef = useRef<HTMLInputElement>(null);
+  const analyzeCameraInputRef = useRef<HTMLInputElement>(null);
+  const analyzeGalleryInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
