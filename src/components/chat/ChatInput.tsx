@@ -478,7 +478,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
               </div>
             </div>
           ) : (
-            <div className="flex-1 flex items-end min-h-[40px] px-1">
+            <div className="flex-1 flex items-center min-h-[40px] px-1">
               <textarea
                 ref={textareaRef}
                 value={message}
