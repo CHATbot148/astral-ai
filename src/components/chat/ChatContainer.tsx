@@ -1054,6 +1054,72 @@ export const ChatContainer = () => {
       <ImageGenerateDialog open={showImageDialog} onOpenChange={setShowImageDialog} onGenerate={handleImageGenerate} initialPrompt={imageDialogPrompt} />
       <VideoGenerateDialog open={showVideoDialog} onOpenChange={setShowVideoDialog} onGenerate={handleVideoGenerate} />
 
+      {/* Hidden inputs for Analyze documents flow */}
+      <input ref={analyzeGalleryInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleAnalyzeFiles} />
+      <input ref={analyzeCameraInputRef} type="file" accept="image/*,video/*" capture="environment" className="hidden" onChange={handleAnalyzeFiles} />
+      <input ref={analyzeFileInputRef} type="file" multiple className="hidden" onChange={handleAnalyzeFiles} accept="image/*,video/*,.pdf,.doc,.docx,.txt,.md,.csv,.xlsx,.pptx" />
+
+      {/* Analyze documents source picker */}
+      <AnimatePresence>
+        {showAnalyzePopup && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowAnalyzePopup(false)}>
+            <motion.div initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }} transition={{ type: 'spring', stiffness: 320, damping: 28 }} onClick={(e) => e.stopPropagation()} className="w-full sm:max-w-sm bg-popover/95 backdrop-blur-xl border border-border/70 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden">
+              <div className="px-5 pt-5 pb-3 text-center">
+                <h3 className="text-base font-semibold">Analyze documents</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Choose where to upload from</p>
+              </div>
+              <div className="px-2 pb-2">
+                <button onClick={() => analyzeGalleryInputRef.current?.click()} className="flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/70 w-full text-left text-sm rounded-xl transition-colors">
+                  <span className="text-xl">🖼️</span>
+                  <span className="font-medium">Gallery</span>
+                </button>
+                <button onClick={() => analyzeCameraInputRef.current?.click()} className="flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/70 w-full text-left text-sm rounded-xl transition-colors">
+                  <span className="text-xl">📷</span>
+                  <span className="font-medium">Take Photo or Video</span>
+                </button>
+                <button onClick={() => analyzeFileInputRef.current?.click()} className="flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/70 w-full text-left text-sm rounded-xl transition-colors">
+                  <span className="text-xl">📁</span>
+                  <span className="font-medium">Choose Files</span>
+                </button>
+              </div>
+              <button onClick={() => setShowAnalyzePopup(false)} className="w-full py-3 text-sm text-muted-foreground hover:text-foreground border-t border-border/50">Cancel</button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Visualize picker (image / video) */}
+      <AnimatePresence>
+        {showVisualizePopup && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowVisualizePopup(false)}>
+            <motion.div initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }} transition={{ type: 'spring', stiffness: 320, damping: 28 }} onClick={(e) => e.stopPropagation()} className="w-full sm:max-w-sm bg-popover/95 backdrop-blur-xl border border-border/70 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden">
+              <div className="px-5 pt-5 pb-3 text-center">
+                <h3 className="text-base font-semibold">Visualize</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Generate images or videos</p>
+              </div>
+              <div className="px-2 pb-2">
+                <button onClick={() => { setShowVisualizePopup(false); openImageDialog(); }} className="flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/70 w-full text-left text-sm rounded-xl transition-colors">
+                  <span className="text-xl">🎨</span>
+                  <div>
+                    <p className="font-medium">Generate Image</p>
+                    <p className="text-xs text-muted-foreground">Create AI images</p>
+                  </div>
+                </button>
+                <button onClick={() => { setShowVisualizePopup(false); openVideoDialog(); }} className="flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/70 w-full text-left text-sm rounded-xl transition-colors">
+                  <span className="text-xl">🎬</span>
+                  <div>
+                    <p className="font-medium">Generate Video</p>
+                    <p className="text-xs text-muted-foreground">Create AI videos</p>
+                  </div>
+                </button>
+              </div>
+              <button onClick={() => setShowVisualizePopup(false)} className="w-full py-3 text-sm text-muted-foreground hover:text-foreground border-t border-border/50">Cancel</button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+
       <Sidebar
         conversations={conversations}
         currentConversation={currentConversation}
