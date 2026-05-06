@@ -1,20 +1,21 @@
 import { memo } from 'react';
 import { motion } from 'framer-motion';
-import { Code, Brain, FileText, ImagePlus } from 'lucide-react';
+import { LineChart, Brain, FileText, Sparkles } from 'lucide-react';
 import astrazFullLogo from '@/assets/astraz-full-logo.png';
 import { useAuth } from '@/hooks/useAuth';
 
 interface WelcomeScreenProps {
   onSuggestionClick: (suggestion: string) => void;
-  onGenerateImage?: () => void;
+  onAnalyzeDocs?: () => void;
+  onVisualize?: () => void;
   profileName?: string | null;
 }
 
-const suggestions = [
-  { icon: Code, title: 'Write code', description: 'Help me write a React component' },
-  { icon: Brain, title: 'Brainstorm ideas', description: 'Generate creative ideas for my project' },
-  { icon: FileText, title: 'Analyze documents', description: 'Summarize and extract insights' },
-  { icon: ImagePlus, title: 'Generate Image', description: 'Create an AI-generated image', isImageAction: true },
+const PLOT_PROMPTS = [
+  'Plot a graph showing global smartphone shipments per quarter for the last 3 years.',
+  'Plot a bar chart comparing the top 5 most spoken languages by number of speakers.',
+  'Plot a line graph of average global temperature anomalies from 1980 to today.',
+  'Plot a chart showing the top 7 highest-grossing films of all time.',
 ];
 
 const getGreeting = () => {
@@ -24,10 +25,40 @@ const getGreeting = () => {
   return 'Good Evening';
 };
 
-export const WelcomeScreen = memo(({ onSuggestionClick, onGenerateImage, profileName }: WelcomeScreenProps) => {
+export const WelcomeScreen = memo(({ onSuggestionClick, onAnalyzeDocs, onVisualize, profileName }: WelcomeScreenProps) => {
   const { user } = useAuth();
   const displayName = profileName || user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || '';
   const greeting = getGreeting();
+
+  const suggestions = [
+    {
+      icon: Brain,
+      title: 'Brainstorm ideas',
+      description: 'Generate creative ideas for my project',
+      onClick: () => onSuggestionClick('Generate creative ideas for my project'),
+    },
+    {
+      icon: LineChart,
+      title: 'Plot graph',
+      description: 'Draw a graph from interesting data',
+      onClick: () => {
+        const prompt = PLOT_PROMPTS[Math.floor(Math.random() * PLOT_PROMPTS.length)];
+        onSuggestionClick(prompt);
+      },
+    },
+    {
+      icon: FileText,
+      title: 'Analyze documents',
+      description: 'Summarize and extract insights',
+      onClick: () => onAnalyzeDocs?.(),
+    },
+    {
+      icon: Sparkles,
+      title: 'Visualize',
+      description: 'Generate images and videos',
+      onClick: () => onVisualize?.(),
+    },
+  ];
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-4 py-8">
@@ -77,7 +108,7 @@ export const WelcomeScreen = memo(({ onSuggestionClick, onGenerateImage, profile
         {suggestions.map((suggestion, index) => (
           <button
             key={suggestion.title}
-            onClick={() => suggestion.isImageAction && onGenerateImage ? onGenerateImage() : onSuggestionClick(suggestion.description)}
+            onClick={suggestion.onClick}
             className="group p-4 rounded-2xl bg-card border border-border/60 hover:border-primary/30 hover:shadow-[0_2px_20px_-4px_hsl(var(--xai-purple)/0.15)] transition-all duration-200 text-left"
             style={{ animationDelay: `${index * 50}ms` }}
           >
