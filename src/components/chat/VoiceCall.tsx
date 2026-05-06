@@ -74,6 +74,11 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
   const [audioLevel, setAudioLevel] = useState(0);
   const [isStarting, setIsStarting] = useState(false);
   const [startHint, setStartHint] = useState<string | null>(null);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [permissionState, setPermissionState] = useState<string>("unknown");
+  const [lastError, setLastError] = useState<string>("none");
+  const [recorderState, setRecorderState] = useState<string>("inactive");
+  const [diagStep, setDiagStep] = useState<string>("idle");
 
   // Refs
   const isActiveRef = useRef(false);
@@ -634,22 +639,31 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
     historyRef.current = [];
     setIsStarting(true);
     setStartHint("Requesting microphone access…");
+    setLastError("none");
+    setDiagStep("requesting-permission");
 
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("Media devices are not available on this browser");
       }
 
+      // Probe permission state if available (Chrome/Android)
+      try {
+        const p = await (navigator as any).permissions?.query?.({ name: "microphone" as PermissionName });
+        if (p?.state) setPermissionState(p.state);
+      } catch {}
+
       // 1) Request mic FIRST while we're still inside the user gesture.
-      //    On iOS Safari this is the call that must originate from the tap,
-      //    otherwise the permission prompt is deferred for minutes.
       setStartHint("Requesting microphone access…");
+      setDiagStep("getUserMedia");
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
       streamRef.current = stream;
+      setPermissionState("granted");
 
       // 2) Create + unlock AudioContext (iOS requirement)
+      setDiagStep("audio-context");
       const Ctx: typeof AudioContext =
         (window as any).AudioContext || (window as any).webkitAudioContext;
       const ctx = new Ctx({ latencyHint: "interactive" });
@@ -658,6 +672,7 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
       try { await ctx.resume(); } catch {}
 
       // 3) Create + unlock <audio> element by playing a silent buffer
+      setDiagStep("unlock-audio-el");
       let audioEl = audioElRef.current;
       if (!audioEl) {
         audioEl = document.createElement("audio");
@@ -666,7 +681,6 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
         audioEl.preload = "auto";
         audioEl.autoplay = false;
         audioEl.style.display = "none";
-        // a silent 1-frame WAV to unlock playback on iOS
         audioEl.src =
           "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
         document.body.appendChild(audioEl);
@@ -682,13 +696,16 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
       setIsConnected(true);
       setCallStart(Date.now());
       setStartHint(null);
+      setDiagStep("listening");
       startListening();
     } catch (error: any) {
       let errorMessage = "Could not access microphone";
-      if (error?.name === "NotAllowedError") errorMessage = "Microphone access denied. Check browser settings.";
+      if (error?.name === "NotAllowedError") { errorMessage = "Microphone access denied. Check browser settings."; setPermissionState("denied"); }
       else if (error?.name === "NotFoundError") errorMessage = "No microphone found on this device.";
       else if (error?.name === "NotReadableError") errorMessage = "Microphone is in use by another app.";
       else if (error?.message) errorMessage = error.message;
+      setLastError(`${error?.name ?? "Error"}: ${errorMessage}`);
+      setDiagStep(`failed:${error?.name ?? "error"}`);
       toast({ title: errorMessage, variant: "destructive" });
       setStartHint(errorMessage);
       setStatus("idle");
@@ -696,6 +713,72 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
       setIsStarting(false);
     }
   }, [isStarting, startListening, toast]);
+
+  // Auto-resume on iOS when the user backgrounds/foregrounds the app
+  // (this is the workaround the user discovered manually). Whenever we come
+  // back to visible, resume the AudioContext and kick listening again.
+  useEffect(() => {
+    if (!isConnected) return;
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      const ctx = audioContextRef.current;
+      if (ctx?.state === "suspended") ctx.resume().catch(() => {});
+      // Kick listening if we were idle
+      if (isActiveRef.current && !isMutedRef.current && !isSpeakingRef.current) {
+        try { startListeningRef.current(); } catch {}
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [isConnected]);
+
+  // Watchdog: if we're meant to be listening but no audio level has been seen
+  // for a while, the recorder/stream is dead — restart it automatically.
+  useEffect(() => {
+    if (!isConnected) return;
+    let lastLevelTs = Date.now();
+    const interval = setInterval(() => {
+      if (!isActiveRef.current || isMutedRef.current || isSpeakingRef.current) {
+        lastLevelTs = Date.now();
+        return;
+      }
+      const stream = streamRef.current;
+      const tracksLive = !!stream && stream.getAudioTracks().some((t) => t.readyState === "live" && !t.muted && t.enabled);
+      const recorder = recorderRef.current;
+      const recState = recorder?.state ?? "inactive";
+      setRecorderState(recState);
+      if (audioLevel > 0.005) lastLevelTs = Date.now();
+      const stale = Date.now() - lastLevelTs > 6000;
+      if (!tracksLive || (recState === "inactive" && status === "listening") || stale) {
+        log("Watchdog: restarting listener", { tracksLive, recState, stale });
+        setLastError("Watchdog restart (stalled mic)");
+        try { recorder?.stop?.(); } catch {}
+        // Reacquire stream if dead
+        (async () => {
+          if (!tracksLive) {
+            try {
+              if (stream) stream.getTracks().forEach((t) => t.stop());
+              const fresh = await navigator.mediaDevices.getUserMedia({
+                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+              });
+              streamRef.current = fresh;
+            } catch (e: any) {
+              setLastError(`reacquire failed: ${e?.message ?? e}`);
+              return;
+            }
+          }
+          startListeningRef.current();
+          lastLevelTs = Date.now();
+        })();
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [isConnected, audioLevel, status]);
+
 
   useEffect(() => {
     if (!open && isConnected) {
@@ -889,9 +972,30 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
         <div className="w-full rounded-2xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-sm p-4">
           <div className="flex items-center justify-between text-xs uppercase tracking-[0.24em] text-white/45">
             <span>Realtime voice</span>
-            <span className="font-mono text-white/60">0.8s turn cutoff</span>
+            <button onClick={() => setShowDiagnostics((v) => !v)} className="font-mono text-[10px] text-white/55 hover:text-white tracking-normal normal-case px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/10">
+              {showDiagnostics ? "Hide diag" : "Diagnostics"}
+            </button>
           </div>
+          {showDiagnostics && (
+            <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] font-mono text-white/70">
+              <div className="col-span-2">
+                <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+                  <div className="h-full bg-emerald-400 transition-all" style={{ width: `${Math.min(100, audioLevel * 100)}%` }} />
+                </div>
+                <div className="flex justify-between mt-1 text-white/50">
+                  <span>mic level: {audioLevel.toFixed(3)}</span>
+                  <span>vad: {VOICE_ACTIVITY_THRESHOLD}</span>
+                </div>
+              </div>
+              <div className="text-white/55">permission: <span className="text-white">{permissionState}</span></div>
+              <div className="text-white/55">recorder: <span className="text-white">{recorderState}</span></div>
+              <div className="text-white/55">step: <span className="text-white">{diagStep}</span></div>
+              <div className="text-white/55">muted: <span className="text-white">{String(isMuted)}</span></div>
+              <div className="col-span-2 text-white/55">last error: <span className="text-rose-300 break-all">{lastError}</span></div>
+            </div>
+          )}
         </div>
+
 
         <div className="flex items-center gap-6">
           <Button
