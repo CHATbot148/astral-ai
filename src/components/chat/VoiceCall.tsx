@@ -74,6 +74,11 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
   const [audioLevel, setAudioLevel] = useState(0);
   const [isStarting, setIsStarting] = useState(false);
   const [startHint, setStartHint] = useState<string | null>(null);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [permissionState, setPermissionState] = useState<string>("unknown");
+  const [lastError, setLastError] = useState<string>("none");
+  const [recorderState, setRecorderState] = useState<string>("inactive");
+  const [diagStep, setDiagStep] = useState<string>("idle");
 
   // Refs
   const isActiveRef = useRef(false);
