@@ -1071,7 +1071,7 @@ export const ChatContainer = () => {
             <AnimatePresence mode="wait">
               {displayMessages.length === 0 ? (
                 <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pt-14 lg:pt-4">
-                  <WelcomeScreen onSuggestionClick={handleSend} onGenerateImage={() => openImageDialog()} profileName={profile?.full_name} />
+                  <WelcomeScreen onSuggestionClick={(s) => handleSend(s)} onAnalyzeDocs={() => setShowAnalyzePopup(true)} onVisualize={() => setShowVisualizePopup(true)} profileName={profile?.full_name} />
                 </motion.div>
               ) : (
                 <motion.div key="messages" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto pt-14 lg:pt-4">
