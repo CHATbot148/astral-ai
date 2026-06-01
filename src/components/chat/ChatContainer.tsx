@@ -734,14 +734,54 @@ export const ChatContainer = () => {
       const searchQuery = deriveSearchQueryLabel(content);
       const hasSearchQuery = searchQuery.length > 0;
       const isWebSearchState = (shouldWebSearch || imageIntent || videoIntent) && !hasUploadedVideoFiles && hasSearchQuery;
-      setTypingMode(isWebSearchState ? 'search' : 'typing');
-      setTypingLabel(
-        hasUploadedVideoFiles
-          ? 'Reviewing video…'
-          : isWebSearchState
-            ? `Searching for ${searchQuery}`
-            : undefined
-      );
+
+      // Google Maps intent detection
+      const mapsIntent = /\b(near(?:by| me)?|restaurant|cafe|coffee|hotel|gas station|pharmacy|store|directions?|route|distance|drive|walk|how (?:far|long) (?:from|to)|map of|address of|where is)\b/i.test(content);
+      let mapsContext = '';
+      if (mapsIntent) {
+        try {
+          const { data: connData } = await supabase
+            .from('user_connections')
+            .select('enabled')
+            .eq('user_id', user?.id || '')
+            .eq('provider', 'google_maps')
+            .maybeSingle();
+          if (connData?.enabled) {
+            setTypingMode('search');
+            setTypingLabel('Astraz is using Google Maps…');
+            const isDirections = /\b(directions?|route|how (?:far|long) (?:from|to)|distance from .+ to)\b/i.test(content);
+            const { data: mapsData } = await supabase.functions.invoke('connector-maps', {
+              body: isDirections
+                ? (() => {
+                    const m = content.match(/from\s+(.+?)\s+to\s+(.+?)(?:[.?!]|$)/i);
+                    return m ? { action: 'directions', origin: m[1].trim(), destination: m[2].trim() } : { action: 'search_places', query: content };
+                  })()
+                : { action: 'search_places', query: content.slice(0, 180) },
+            });
+            if (mapsData && !mapsData.error) {
+              mapsContext = `\n\n[Live Google Maps data]\n${JSON.stringify(mapsData).slice(0, 3500)}`;
+            }
+          }
+        } catch (e) { console.warn('[maps]', e); }
+      }
+
+      if (!mapsContext) {
+        setTypingMode(isWebSearchState ? 'search' : 'typing');
+        setTypingLabel(
+          hasUploadedVideoFiles
+            ? 'Reviewing video…'
+            : isWebSearchState
+              ? `Searching for ${searchQuery}`
+              : undefined
+        );
+      }
+
+      if (mapsContext) {
+        apiMessages[apiMessages.length - 1] = {
+          ...apiMessages[apiMessages.length - 1],
+          content: apiMessages[apiMessages.length - 1].content + mapsContext,
+        };
+      }
 
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
