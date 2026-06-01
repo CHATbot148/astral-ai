@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, PanInfo } from 'framer-motion';
-import { X, LogOut, Trash2, Camera, Sun, Moon, Monitor, Check, User, Loader2, Volume2, ChevronRight, ChevronLeft, BarChart3, Images, Download, ExternalLink, Bot, Brain, MessageSquare, Sparkles, Video, Play, Shield, Bell } from 'lucide-react';
+import { X, LogOut, Trash2, Camera, Sun, Moon, Monitor, Check, User, Loader2, Volume2, ChevronRight, ChevronLeft, BarChart3, Images, Download, ExternalLink, Bot, Brain, MessageSquare, Sparkles, Video, Play, Shield, Bell, Plug } from 'lucide-react';
+import { ConnectorsSection } from './ConnectorsSection';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,7 +31,7 @@ interface ProfilePopupProps {
   onProfileUpdate: () => void;
 }
 
-type Section = 'main' | 'account' | 'voice' | 'theme' | 'usage' | 'gallery' | 'ai_settings';
+type Section = 'main' | 'account' | 'voice' | 'theme' | 'usage' | 'gallery' | 'ai_settings' | 'connectors';
 
 interface GeneratedImage {
   id: string;
@@ -501,6 +502,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   const menuItems = [
     { id: 'account' as Section, icon: User, label: 'Account', desc: 'Profile, logout' },
     { id: 'ai_settings' as Section, icon: Bot, label: 'AI Settings', desc: 'Modes, memory, behavior' },
+    { id: 'connectors' as Section, icon: Plug, label: 'Connectors', desc: 'Maps, Gmail, Telegram & more' },
     { id: 'voice' as Section, icon: Volume2, label: 'Voice', desc: 'Text-to-speech voice' },
     { id: 'theme' as Section, icon: Sun, label: 'Theme', desc: 'Light, dark, or system' },
     { id: 'usage' as Section, icon: BarChart3, label: 'Usage', desc: 'Messages, images, videos' },
@@ -1125,6 +1127,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
     switch (activeSection) {
       case 'account': return renderAccountSection();
       case 'ai_settings': return renderAISettingsSection();
+      case 'connectors': return <ConnectorsSection />;
       case 'voice': return renderVoiceSection();
       case 'theme': return renderThemeSection();
       case 'usage': return renderUsageSection();
@@ -1137,6 +1140,7 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
     main: 'Settings',
     account: 'Account',
     ai_settings: 'AI Settings',
+    connectors: 'Connectors',
     voice: 'Voice',
     theme: 'Theme',
     usage: 'Usage',
