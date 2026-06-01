@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Globe, Sparkles } from 'lucide-react';
+import { Globe, Sparkles, MapPin } from 'lucide-react';
 
 interface TypingIndicatorProps {
   label?: string;
@@ -8,6 +8,8 @@ interface TypingIndicatorProps {
 
 export const TypingIndicator = ({ label, mode = 'typing' }: TypingIndicatorProps) => {
   const isSearch = mode === 'search';
+  const isMaps = !!label && /google maps/i.test(label);
+  const Icon = isMaps ? MapPin : Globe;
 
   return (
     <div className="w-full px-4 py-3 chat-message-enter">
@@ -16,9 +18,9 @@ export const TypingIndicator = ({ label, mode = 'typing' }: TypingIndicatorProps
           <motion.div
             animate={{ rotate: [0, 10, -10, 0] }}
             transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
-            className="text-accent flex-shrink-0"
+            className={isMaps ? 'text-emerald-500 flex-shrink-0' : 'text-accent flex-shrink-0'}
           >
-            <Globe className="h-4 w-4" />
+            <Icon className="h-4 w-4" />
           </motion.div>
           <div className="min-w-0 flex-1 text-sm font-medium leading-5 text-transparent bg-clip-text bg-[linear-gradient(90deg,hsl(var(--muted-foreground))_0%,hsl(var(--foreground))_45%,hsl(var(--muted-foreground))_100%)] bg-[length:220%_100%] animate-[shimmer_1.8s_linear_infinite] whitespace-normal break-words [overflow-wrap:anywhere]">
             {label || 'Searching the web…'}
