@@ -869,7 +869,7 @@ export const ChatContainer = () => {
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let fullContent = '';
+      let fullContent = mapEmbedToken || '';
       let buffer = '';
       const settings = getAISettings();
       const showTyping = settings.typingAnimation;
