@@ -738,6 +738,7 @@ export const ChatContainer = () => {
       // Google Maps intent detection
       const mapsIntent = /\b(near(?:by| me)?|restaurant|cafe|coffee|hotel|gas station|pharmacy|store|directions?|route|distance|drive|walk|how (?:far|long) (?:from|to)|map of|address of|where is)\b/i.test(content);
       let mapsContext = '';
+      let mapEmbedToken = '';
       if (mapsIntent) {
         try {
           const { data: connData } = await supabase
@@ -750,22 +751,71 @@ export const ChatContainer = () => {
             setTypingMode('search');
             setTypingLabel('Astraz is using Google Maps…');
             const isDirections = /\b(directions?|route|how (?:far|long) (?:from|to)|distance from .+ to)\b/i.test(content);
+            const dirMatch = content.match(/from\s+(.+?)\s+to\s+(.+?)(?:[.?!]|$)/i);
+            const placeQuery = content.replace(/\b(show me|find me|please|where is|map of|address of|directions?(?:\s+to)?|near\s*me|nearby)\b/gi, '').trim().slice(0, 180);
             const { data: mapsData } = await supabase.functions.invoke('connector-maps', {
-              body: isDirections
-                ? (() => {
-                    const m = content.match(/from\s+(.+?)\s+to\s+(.+?)(?:[.?!]|$)/i);
-                    return m ? { action: 'directions', origin: m[1].trim(), destination: m[2].trim() } : { action: 'search_places', query: content };
-                  })()
-                : { action: 'search_places', query: content.slice(0, 180) },
+              body: isDirections && dirMatch
+                ? { action: 'directions', origin: dirMatch[1].trim(), destination: dirMatch[2].trim() }
+                : { action: 'search_places', query: placeQuery || content.slice(0, 180) },
             });
             if (mapsData && !mapsData.error) {
               mapsContext = `\n\n[Live Google Maps data]\n${JSON.stringify(mapsData).slice(0, 3500)}`;
+              if (isDirections && dirMatch) {
+                const safe = (s: string) => s.replace(/"/g, "'");
+                mapEmbedToken = `[[MAP_DIRECTIONS origin="${safe(dirMatch[1].trim())}" destination="${safe(dirMatch[2].trim())}"]]\n\n`;
+              } else if (placeQuery) {
+                mapEmbedToken = `[[MAP_EMBED q="${placeQuery.replace(/"/g, "'")}"]]\n\n`;
+              }
             }
           }
         } catch (e) { console.warn('[maps]', e); }
       }
 
-      if (!mapsContext) {
+      // Other connector intents: Gmail, Calendar, Telegram, TikTok
+      let connectorContext = '';
+      const runConnector = async (provider: string, fn: string, body: any, label: string) => {
+        try {
+          const { data: connData } = await supabase
+            .from('user_connections').select('enabled')
+            .eq('user_id', user?.id || '').eq('provider', provider).maybeSingle();
+          if (!connData?.enabled) return;
+          setTypingMode('search');
+          setTypingLabel(label);
+          const { data } = await supabase.functions.invoke(fn, { body });
+          if (data && !data.error) {
+            connectorContext += `\n\n[${label}]\n${JSON.stringify(data).slice(0, 3000)}`;
+          }
+        } catch (e) { console.warn(`[${provider}]`, e); }
+      };
+
+      const gmailIntent = /\b(email|inbox|gmail|unread mail|send (?:an? )?mail|compose (?:an? )?mail|draft (?:an? )?(?:email|mail))\b/i.test(content);
+      if (gmailIntent) {
+        const sendMatch = content.match(/(?:send|email|mail)\s+(?:an?\s+email\s+to\s+)?([\w.+-]+@[\w-]+\.[\w.-]+)\s+(?:saying|with subject|about|that)\s+(.+)/i);
+        if (sendMatch) {
+          await runConnector('gmail', 'connector-gmail', { action: 'send', to: sendMatch[1], subject: 'Message from Astraz', body: sendMatch[2] }, 'Astraz is using Gmail…');
+        } else {
+          await runConnector('gmail', 'connector-gmail', { action: 'list', query: 'is:unread', maxResults: 8 }, 'Astraz is using Gmail…');
+        }
+      }
+
+      const calIntent = /\b(calendar|schedule|my (?:meetings?|events?)|upcoming (?:meetings?|events?)|book (?:a )?meeting|what(?:'s| is) on (?:my )?(?:schedule|calendar))\b/i.test(content);
+      if (calIntent) {
+        await runConnector('google_calendar', 'connector-calendar', { action: 'list_upcoming', maxResults: 10 }, 'Astraz is using Google Calendar…');
+      }
+
+      const tgIntent = /\b(telegram|tg\b|send (?:a )?telegram)\b/i.test(content);
+      if (tgIntent) {
+        await runConnector('telegram', 'connector-telegram', { action: 'get_me' }, 'Astraz is using Telegram…');
+      }
+
+      const ttIntent = /\b(tiktok|my tiktok|tiktok profile|tiktok videos?)\b/i.test(content);
+      if (ttIntent) {
+        await runConnector('tiktok', 'connector-tiktok', { action: 'profile' }, 'Astraz is using TikTok…');
+      }
+
+      const fullExtraContext = mapsContext + connectorContext;
+
+      if (!fullExtraContext) {
         setTypingMode(isWebSearchState ? 'search' : 'typing');
         setTypingLabel(
           hasUploadedVideoFiles
@@ -776,10 +826,10 @@ export const ChatContainer = () => {
         );
       }
 
-      if (mapsContext) {
+      if (fullExtraContext) {
         apiMessages[apiMessages.length - 1] = {
           ...apiMessages[apiMessages.length - 1],
-          content: apiMessages[apiMessages.length - 1].content + mapsContext,
+          content: apiMessages[apiMessages.length - 1].content + fullExtraContext,
         };
       }
 
@@ -819,7 +869,7 @@ export const ChatContainer = () => {
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let fullContent = '';
+      let fullContent = mapEmbedToken || '';
       let buffer = '';
       const settings = getAISettings();
       const showTyping = settings.typingAnimation;

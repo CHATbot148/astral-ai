@@ -9,6 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { AudioPlayer } from './AudioPlayer';
 import { ImagePreviewModal } from './ImagePreviewModal';
 import { MediaRenderer } from './MediaRenderer';
+import { MapEmbed } from './MapEmbed';
 import { GraphBlock } from './GraphBlock';
 import { resolveFileUrl } from '@/lib/storageRef';
 import { extractMediaFromMessage } from '@/utils/mediaDetector';
@@ -315,7 +316,7 @@ function parseMarkdownTable(lines: string[]): { headers: string[]; rows: string[
 // Split text into text parts and table parts
 function splitTextAndTables(
   text: string,
-  parts: Array<{ type: 'text' | 'code' | 'media' | 'table' | 'graph'; content: string; language?: string; open?: boolean; tableData?: { headers: string[]; rows: string[][] } }>
+  parts: Array<{ type: 'text' | 'code' | 'media' | 'table' | 'graph' | 'mapEmbed'; content: string; language?: string; open?: boolean; tableData?: { headers: string[]; rows: string[][] }; mapEmbed?: any }>
 ) {
   const lines = text.split('\n');
   let buffer: string[] = [];
@@ -692,12 +693,27 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
     sources.push(...sourcesMap.values());
 
     const parts: Array<{
-      type: 'text' | 'code' | 'media' | 'table' | 'graph';
+      type: 'text' | 'code' | 'media' | 'table' | 'graph' | 'mapEmbed';
       content: string;
       language?: string;
       open?: boolean;
       tableData?: { headers: string[]; rows: string[][] };
+      mapEmbed?: { mode: 'place' | 'directions'; query?: string; origin?: string; destination?: string; travelMode?: 'driving' | 'walking' | 'bicycling' | 'transit' };
     }> = [];
+
+    // Extract map embed tokens BEFORE other parsing so they always render as one block at the top.
+    // Tokens: [[MAP_EMBED q="..."]] or [[MAP_DIRECTIONS origin="..." destination="..." mode="..."]]
+    const mapTokens: typeof parts = [];
+    mainText = mainText.replace(/\[\[MAP_DIRECTIONS\s+origin="([^"]+)"\s+destination="([^"]+)"(?:\s+mode="([^"]+)")?\s*\]\]/g, (_m, o, d, mode) => {
+      mapTokens.push({ type: 'mapEmbed', content: '', mapEmbed: { mode: 'directions', origin: o, destination: d, travelMode: (mode || 'driving') as any } });
+      return '';
+    });
+    mainText = mainText.replace(/\[\[MAP_EMBED\s+q="([^"]+)"\s*\]\]/g, (_m, q) => {
+      mapTokens.push({ type: 'mapEmbed', content: '', mapEmbed: { mode: 'place', query: q } });
+      return '';
+    });
+    mainText = mainText.trim();
+    parts.push(...mapTokens);
 
     // Match closed fences first; then handle a single trailing unclosed fence so the
     // container shows up immediately while streaming.
@@ -1227,6 +1243,8 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
               <GraphBlock key={index} raw={part.content} isStreaming={!!part.open} />
             ) : part.type === 'table' && part.tableData ? (
               <TableBlock key={index} data={part.tableData} />
+            ) : part.type === 'mapEmbed' && part.mapEmbed ? (
+              <MapEmbed key={index} {...part.mapEmbed} />
             ) : isStreaming && (streamingStyle === 'line_fade' || streamingStyle === 'slide_down') ? (
               <AnimatedLines key={index} text={part.content} style={streamingStyle} formatText={formatText} />
             ) : (
