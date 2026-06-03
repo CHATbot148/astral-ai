@@ -99,6 +99,9 @@ const isAccessActive = (sub: Subscription | null): boolean => {
     return new Date(sub.access_until).getTime() > Date.now();
   }
   return false;
+};
+
+
 
 export interface DailyUsage {
   images_generated: number;
