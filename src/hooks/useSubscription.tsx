@@ -86,7 +86,19 @@ export interface Subscription {
   auto_renew: boolean;
   save_payment_method: boolean;
   agreed_to_privacy_policy: boolean;
+  cancellation_type?: string | null;
+  access_until?: string | null;
+  paystack_subscription_code?: string | null;
 }
+
+// Subscription is "effectively active" if status=active OR (cancelled with access until future)
+const isAccessActive = (sub: Subscription | null): boolean => {
+  if (!sub) return false;
+  if (sub.status === 'active') return true;
+  if (sub.cancellation_type === 'end_of_period' && sub.access_until) {
+    return new Date(sub.access_until).getTime() > Date.now();
+  }
+  return false;
 
 export interface DailyUsage {
   images_generated: number;
