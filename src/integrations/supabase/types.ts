@@ -371,13 +371,22 @@ export type Database = {
       }
       subscriptions: {
         Row: {
+          access_until: string | null
           agreed_to_privacy_policy: boolean
+          amount_paid_minor: number | null
           auto_renew: boolean
           billing_cycle: Database["public"]["Enums"]["billing_cycle"] | null
+          cancellation_type: string | null
           cancelled_at: string | null
+          country_code: string | null
           created_at: string
+          currency: string | null
           expires_at: string | null
           id: string
+          paystack_authorization_code: string | null
+          paystack_customer_code: string | null
+          paystack_email_token: string | null
+          paystack_subscription_code: string | null
           privacy_policy_agreed_at: string | null
           save_payment_method: boolean
           started_at: string
@@ -387,13 +396,22 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          access_until?: string | null
           agreed_to_privacy_policy?: boolean
+          amount_paid_minor?: number | null
           auto_renew?: boolean
           billing_cycle?: Database["public"]["Enums"]["billing_cycle"] | null
+          cancellation_type?: string | null
           cancelled_at?: string | null
+          country_code?: string | null
           created_at?: string
+          currency?: string | null
           expires_at?: string | null
           id?: string
+          paystack_authorization_code?: string | null
+          paystack_customer_code?: string | null
+          paystack_email_token?: string | null
+          paystack_subscription_code?: string | null
           privacy_policy_agreed_at?: string | null
           save_payment_method?: boolean
           started_at?: string
@@ -403,13 +421,22 @@ export type Database = {
           user_id: string
         }
         Update: {
+          access_until?: string | null
           agreed_to_privacy_policy?: boolean
+          amount_paid_minor?: number | null
           auto_renew?: boolean
           billing_cycle?: Database["public"]["Enums"]["billing_cycle"] | null
+          cancellation_type?: string | null
           cancelled_at?: string | null
+          country_code?: string | null
           created_at?: string
+          currency?: string | null
           expires_at?: string | null
           id?: string
+          paystack_authorization_code?: string | null
+          paystack_customer_code?: string | null
+          paystack_email_token?: string | null
+          paystack_subscription_code?: string | null
           privacy_policy_agreed_at?: string | null
           save_payment_method?: boolean
           started_at?: string
