@@ -4,16 +4,40 @@ import { useAuth } from '@/hooks/useAuth';
 import { ChatContainer } from '@/components/chat/ChatContainer';
 import { Loader2 } from 'lucide-react';
 import astrazLogo from '@/assets/astraz-logo.png';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 const Index = () => {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   useEffect(() => {
     if (!loading && !user) {
       navigate('/auth');
     }
   }, [user, loading, navigate]);
+
+  // Handle Paystack callback (?reference=... in URL after successful payment)
+  useEffect(() => {
+    if (!user) return;
+    const url = new URL(window.location.href);
+    const reference = url.searchParams.get('reference') || url.searchParams.get('trxref');
+    if (!reference) return;
+    url.searchParams.delete('reference');
+    url.searchParams.delete('trxref');
+    window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+    supabase.functions.invoke('paystack-verify', { body: { reference } }).then(({ data, error }) => {
+      if (error || (data as any)?.error) {
+        toast({ title: 'Payment verification failed', variant: 'destructive' });
+      } else {
+        toast({ title: '🎉 Subscription activated!', description: 'Your plan is now active.' });
+        // Force subscription refresh
+        setTimeout(() => window.location.reload(), 800);
+      }
+    });
+  }, [user, toast]);
+
 
   if (loading) {
     return (
