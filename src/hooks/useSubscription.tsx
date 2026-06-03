@@ -133,7 +133,7 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
   const [dailyUsage, setDailyUsage] = useState<DailyUsage>({ images_generated: 0, videos_generated: 0 });
   const [loading, setLoading] = useState(true);
 
-  const tier: SubscriptionTier = subscription?.status === 'active' ? (subscription.tier as SubscriptionTier) : 'free';
+  const tier: SubscriptionTier = isAccessActive(subscription) ? (subscription!.tier as SubscriptionTier) : 'free';
   const tierConfig = TIER_CONFIGS[tier];
 
   const remainingImages = Math.max(0, tierConfig.limits.imagesPerDay - dailyUsage.images_generated);
