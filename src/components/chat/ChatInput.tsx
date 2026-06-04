@@ -468,7 +468,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
           {isRecording ? (
             <div className="flex-1 flex items-center gap-2 min-h-[40px] px-2">
               <motion.div whileTap={{ scale: 0.92 }}>
-                <Button variant="ghost" size="icon" onClick={stopRecording} className="h-9 w-9 rounded-full text-destructive bg-destructive/10">
+                <Button variant="ghost" size="icon" onClick={stopRecording} aria-label="Stop recording" className="h-9 w-9 rounded-full text-destructive bg-destructive/10">
                   <MicOff className="h-4 w-4" />
                 </Button>
               </motion.div>
