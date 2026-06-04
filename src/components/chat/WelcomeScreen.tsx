@@ -70,7 +70,7 @@ export const WelcomeScreen = memo(({ onSuggestionClick, onAnalyzeDocs, onVisuali
       >
         <img
           src={astrazFullLogo}
-          alt="Astraz"
+          alt="Astraz AI Assistant Logo"
           className="w-28 h-28 rounded-full object-cover drop-shadow-[0_0_30px_hsl(270_80%_60%/0.35)]"
           style={{ background: '#0a0a1a' }}
         />
@@ -87,7 +87,10 @@ export const WelcomeScreen = memo(({ onSuggestionClick, onAnalyzeDocs, onVisuali
         transition={{ delay: 0.15 }}
         className="text-3xl md:text-4xl font-display font-bold mb-3 text-center"
       >
-        {greeting}, <span className="xai-gradient-text">{displayName}</span>
+        <span className="xai-gradient-text">Astraz AI Assistant</span>
+        <span className="block text-xl md:text-2xl font-medium text-foreground mt-2">
+          {greeting}{displayName ? `, ${displayName}` : ''}
+        </span>
       </motion.h1>
 
       <motion.p
@@ -117,9 +120,9 @@ export const WelcomeScreen = memo(({ onSuggestionClick, onAnalyzeDocs, onVisuali
                 <suggestion.icon className="h-4.5 w-4.5 text-primary" />
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
+                <h2 className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
                   {suggestion.title}
-                </h3>
+                </h2>
                 <p className="text-xs text-muted-foreground mt-0.5">{suggestion.description}</p>
               </div>
             </div>

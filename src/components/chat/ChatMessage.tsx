@@ -1118,6 +1118,7 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
                     <Button
                       variant="ghost"
                       size="sm"
+                      aria-label="Download video"
                       className="absolute top-1 right-1 h-7 w-7 p-0 bg-background/60 backdrop-blur-sm hover:bg-background/80 opacity-0 group-hover/img:opacity-100 transition-opacity"
                       onClick={async () => {
                         try {
@@ -1312,6 +1313,7 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
                 variant="ghost"
                 size="sm"
                 onClick={() => setShowReactions(!showReactions)}
+                aria-label={reaction ? `Change reaction (current: ${reaction})` : 'Add reaction'}
                 className={cn(
                   "h-7 px-2 text-xs",
                   reaction ? "text-xai-cyan" : "text-muted-foreground hover:text-foreground"
@@ -1344,6 +1346,7 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
                           whileHover={{ scale: 1.2 }}
                           whileTap={{ scale: 0.9 }}
                           onClick={() => toggleReaction(r)}
+                          aria-label={`React with ${r}`}
                           className={cn(
                             "p-1.5 rounded-full transition-colors",
                             reaction === r ? "bg-xai-cyan/20 text-xai-cyan" : "hover:bg-secondary text-muted-foreground"

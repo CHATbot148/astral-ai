@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Lock, User, ArrowRight, Loader2, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -278,7 +279,15 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row">
+    <main className="min-h-screen flex flex-col md:flex-row">
+      <Helmet>
+        <title>Sign In | Astraz AI Assistant</title>
+        <meta name="description" content="Sign in or create an Astraz account to chat with AI, generate images and videos, and access your conversations across devices." />
+        <link rel="canonical" href="https://astraz.lovable.app/auth" />
+        <meta property="og:title" content="Sign In | Astraz AI Assistant" />
+        <meta property="og:description" content="Sign in or create an Astraz account to chat with AI, generate images and videos, and access your conversations across devices." />
+        <meta property="og:url" content="https://astraz.lovable.app/auth" />
+      </Helmet>
       {/* Left side - Form */}
       <div className="order-1 w-full md:w-1/2 lg:w-1/3 flex items-center justify-center p-6 bg-card">
         <motion.div
@@ -294,7 +303,7 @@ const Auth = () => {
             transition={{ delay: 0.1, type: 'spring' }}
             className="flex items-center gap-4 mb-8"
           >
-            <img src={astrazLogo} alt="Astraz" className="w-24 h-24 object-contain drop-shadow-[0_0_16px_hsl(270_80%_60%/0.3)]" />
+            <img src={astrazLogo} alt="Astraz AI Assistant Logo" className="w-24 h-24 object-contain drop-shadow-[0_0_16px_hsl(270_80%_60%/0.3)]" />
             <span className="text-3xl font-display font-bold xai-gradient-text">Astraz</span>
           </motion.div>
 
@@ -720,7 +729,7 @@ const Auth = () => {
         </motion.a>
       </div>
 
-    </div>
+    </main>
   );
 };
 

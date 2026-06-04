@@ -1,5 +1,6 @@
 import { ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { Button } from '@/components/ui/button';
 
 const PrivacyPolicy = () => {
@@ -7,8 +8,16 @@ const PrivacyPolicy = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      <Helmet>
+        <title>Privacy Policy & Terms | Astraz</title>
+        <meta name="description" content="Astraz privacy policy, refund & cancellation rules, auto-renewal terms, and how we handle your data and generated content." />
+        <link rel="canonical" href="https://astraz.lovable.app/privacy-policy" />
+        <meta property="og:title" content="Privacy Policy & Terms | Astraz" />
+        <meta property="og:description" content="Astraz privacy policy, refund & cancellation rules, auto-renewal terms, and how we handle your data." />
+        <meta property="og:url" content="https://astraz.lovable.app/privacy-policy" />
+      </Helmet>
       <div className="aurora-bg" />
-      <div className="max-w-3xl mx-auto px-6 py-12">
+      <main className="max-w-3xl mx-auto px-6 py-12">
         <Button variant="ghost" className="mb-6 gap-2" onClick={() => navigate(-1)}>
           <ArrowLeft className="h-4 w-4" /> Back
         </Button>
@@ -102,7 +111,7 @@ const PrivacyPolicy = () => {
             </p>
           </section>
         </div>
-      </div>
+      </main>
     </div>
   );
 };

@@ -108,7 +108,7 @@ export const Sidebar = memo(({
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-sidebar-border">
           <div className="flex items-center gap-2.5">
-            <img src={astrazLogo} alt="Astraz" className="w-24 h-24 object-contain drop-shadow-[0_0_12px_hsl(270_80%_60%/0.3)]" />
+            <img src={astrazLogo} alt="Astraz AI Assistant Logo" className="w-24 h-24 object-contain drop-shadow-[0_0_12px_hsl(270_80%_60%/0.3)]" />
             <span className="font-display font-semibold text-lg xai-gradient-text">Astraz</span>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose} className="lg:hidden h-8 w-8" aria-label="Close sidebar">
@@ -170,10 +170,10 @@ export const Sidebar = memo(({
                 </div>
                 {!editingId && (
                   <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity">
-                    <button onClick={(e) => startEditing(conv, e)} className="p-1 rounded-lg hover:bg-secondary/80 transition-colors" title="Rename">
+                    <button onClick={(e) => startEditing(conv, e)} className="p-1 rounded-lg hover:bg-secondary/80 transition-colors" title="Rename" aria-label="Rename conversation">
                       <Pencil className="h-3 w-3 text-muted-foreground" />
                     </button>
-                    <button onClick={(e) => handleDelete(conv.id, e)} className="p-1 rounded-lg hover:bg-destructive/15 transition-colors" title="Delete">
+                    <button onClick={(e) => handleDelete(conv.id, e)} className="p-1 rounded-lg hover:bg-destructive/15 transition-colors" title="Delete" aria-label="Delete conversation">
                       <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
                     </button>
                   </div>

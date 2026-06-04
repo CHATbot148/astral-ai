@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { useAuth } from '@/hooks/useAuth';
 import { ChatContainer } from '@/components/chat/ChatContainer';
 import { Loader2 } from 'lucide-react';
@@ -44,7 +45,7 @@ const Index = () => {
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="aurora-bg" />
         <div className="flex flex-col items-center gap-4">
-          <img src={astrazLogo} alt="Astraz" className="w-44 h-44 object-contain xai-pulse drop-shadow-[0_0_20px_hsl(270_80%_60%/0.3)]" />
+          <img src={astrazLogo} alt="Astraz AI Assistant Logo" className="w-44 h-44 object-contain xai-pulse drop-shadow-[0_0_20px_hsl(270_80%_60%/0.3)]" />
           <Loader2 className="h-5 w-5 animate-spin text-primary" />
           <p className="text-xs text-muted-foreground animate-pulse">Loading Astraz…</p>
         </div>
@@ -54,7 +55,19 @@ const Index = () => {
 
   if (!user) return null;
 
-  return <ChatContainer />;
+  return (
+    <>
+      <Helmet>
+        <title>Astraz AI | Your Ultimate Productivity Machine</title>
+        <meta name="description" content="Chat with Astraz AI — generate images, search the web, plan, plot graphs, and get work done in one intelligent assistant." />
+        <link rel="canonical" href="https://astraz.lovable.app/" />
+        <meta property="og:title" content="Astraz AI | Your Ultimate Productivity Machine" />
+        <meta property="og:description" content="Chat with Astraz AI — generate images, search the web, plan, plot graphs, and get work done in one intelligent assistant." />
+        <meta property="og:url" content="https://astraz.lovable.app/" />
+      </Helmet>
+      <main><ChatContainer /></main>
+    </>
+  );
 };
 
 export default Index;
