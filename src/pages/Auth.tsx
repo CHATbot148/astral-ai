@@ -729,7 +729,7 @@ const Auth = () => {
         </motion.a>
       </div>
 
-    </div>
+    </main>
   );
 };
 
