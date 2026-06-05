@@ -106,7 +106,7 @@ export const WelcomeScreen = memo(({ onAnalyzeDocs, onVisualize, profileName }: 
   return (
     <div
       className="flex flex-col items-center justify-center relative w-full min-w-0 px-4 overflow-hidden"
-      style={{ minHeight: `calc(100dvh - 14rem)` }}
+      style={{ minHeight: `calc(100dvh - 18rem)` }}
     >
       {/* Particle field */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -115,7 +115,7 @@ export const WelcomeScreen = memo(({ onAnalyzeDocs, onVisualize, profileName }: 
 
       {/* Greeting block - centered, shifts up when keyboard opens */}
       <motion.div
-        animate={{ y: keyboardOpen ? '-20%' : 0 }}
+        animate={{ y: keyboardOpen ? '-18%' : '-7%' }}
         transition={{ type: 'spring', stiffness: 220, damping: 26 }}
         className="flex flex-col items-center justify-center text-center relative z-10 w-full min-w-0"
       >

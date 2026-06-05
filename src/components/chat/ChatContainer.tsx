@@ -1198,8 +1198,9 @@ export const ChatContainer = () => {
     });
   }
 
-  const composerOffset = keyboardInset + 22;
-  const scrollBottomPadding = inputDockHeight + composerOffset + 24;
+  const composerBaseOffset = keyboardInset > 0 ? 8 : 38;
+  const composerOffset = keyboardInset + composerBaseOffset;
+  const scrollBottomPadding = inputDockHeight + composerOffset + (keyboardInset > 0 ? 8 : 18);
 
   const handleAnalyzeFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const list = e.target.files;
@@ -1317,7 +1318,7 @@ export const ChatContainer = () => {
         </div>
 
 
-        <ScrollArea ref={scrollRef} className="flex-1 min-w-0">
+        <ScrollArea ref={scrollRef} className="flex-1 min-w-0 overscroll-none">
           <div className="w-full min-w-0 max-w-full overflow-x-hidden" style={{ paddingBottom: `${scrollBottomPadding}px` }}>
             <AnimatePresence mode="wait">
               {displayMessages.length === 0 ? (
