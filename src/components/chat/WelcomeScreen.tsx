@@ -135,7 +135,11 @@ export const WelcomeScreen = memo(({ onAnalyzeDocs, onVisualize, profileName }: 
           transition={{ delay: 0.1 }}
           className="text-[1.5rem] sm:text-2xl md:text-3xl font-display font-medium text-foreground/95 leading-tight max-w-[min(78vw,22rem)] break-words"
         >
-          {greeting}
+          {typedGreeting}
+          <span
+            aria-hidden
+            className={`inline-block w-[2px] h-[1em] align-[-0.15em] ml-[2px] bg-foreground/70 ${typedDone ? 'opacity-0' : 'animate-pulse'}`}
+          />
         </motion.h1>
       </motion.div>
     </div>
