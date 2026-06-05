@@ -289,23 +289,34 @@ const Auth = () => {
         <meta property="og:url" content="https://astraz.lovable.app/auth" />
       </Helmet>
       {/* Left side - Form */}
-      <div className="order-1 w-full md:w-1/2 lg:w-1/3 flex items-center justify-center p-6 bg-card">
+      <div className="order-1 w-full md:w-1/2 lg:w-1/3 flex items-center justify-center p-6 bg-card relative overflow-hidden">
+        {/* Mobile-only animated aurora orbs */}
+        <div className="md:hidden absolute inset-0 pointer-events-none">
+          <div className="absolute -top-24 -left-24 w-72 h-72 rounded-full bg-xai-purple/25 blur-3xl animate-pulse" />
+          <div className="absolute -bottom-32 -right-24 w-80 h-80 rounded-full bg-xai-cyan/20 blur-3xl animate-pulse" style={{ animationDelay: '1.5s' }} />
+          <div className="absolute top-1/3 right-1/4 w-40 h-40 rounded-full bg-primary/15 blur-2xl" />
+        </div>
+
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.5 }}
-          className="w-full max-w-md"
+          className="w-full max-w-md relative z-10"
         >
           {/* Logo */}
           <motion.div
             initial={{ opacity: 0, scale: 0.5 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.1, type: 'spring' }}
-            className="flex items-center gap-4 mb-8"
+            className="flex items-center justify-center md:justify-start gap-4 mb-8"
           >
-            <img src={astrazLogo} alt="Astraz AI Assistant Logo" className="w-24 h-24 object-contain drop-shadow-[0_0_16px_hsl(270_80%_60%/0.3)]" />
+            <div className="relative">
+              <div className="absolute inset-0 bg-gradient-to-br from-xai-purple to-xai-cyan rounded-full blur-2xl opacity-40 md:hidden" />
+              <img src={astrazLogo} alt="Astraz AI Assistant Logo" className="relative w-24 h-24 object-contain drop-shadow-[0_0_16px_hsl(270_80%_60%/0.45)]" />
+            </div>
             <span className="text-3xl font-display font-bold xai-gradient-text">Astraz</span>
           </motion.div>
+
 
           <AnimatePresence mode="wait">
             {step === 'credentials' ? (
