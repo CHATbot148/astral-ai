@@ -1307,8 +1307,11 @@ export const ChatContainer = () => {
           </Button>
           <div className="flex-1 min-w-0 flex justify-center">
             <ChatHeader
-            onTempChat={() => { startNewChat(); toast({ title: 'Temporary chat started', description: 'Messages in this chat will not be saved.' }); }}
+            onTempChat={toggleTempChat}
+            showTempChat={!currentConversation && displayMessages.length === 0}
+            tempActive={tempChatMode}
             />
+
           </div>
           <div className="w-8 sm:w-10" />
         </div>
