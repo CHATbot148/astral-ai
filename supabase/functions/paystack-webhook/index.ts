@@ -62,8 +62,24 @@ serve(async (req) => {
       case "subscription.disable":
       case "subscription.not_renew": {
         if (data.subscription_code) {
+          const { data: sub } = await supabase.from("subscriptions")
+            .select("user_id, tier, expires_at")
+            .eq("paystack_subscription_code", data.subscription_code).maybeSingle();
           await supabase.from("subscriptions").update({ auto_renew: false })
             .eq("paystack_subscription_code", data.subscription_code);
+          if (sub?.user_id) {
+            try {
+              await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/subscription-email`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}` },
+                body: JSON.stringify({
+                  user_id: sub.user_id, type: "cancellation",
+                  period_key: `webhook-${new Date().toISOString().slice(0, 10)}`,
+                  data: { tier: sub.tier, access_until: sub.expires_at },
+                }),
+              });
+            } catch (e) { console.error("cancellation email failed:", e); }
+          }
         }
         break;
       }

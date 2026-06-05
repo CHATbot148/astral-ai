@@ -18,6 +18,9 @@ verify_jwt = false
 [functions.paystack-webhook]
 verify_jwt = false
 
+[functions.google-oauth-callback]
+verify_jwt = false
+
 [functions.gemini-live-proxy]
 verify_jwt = false
 

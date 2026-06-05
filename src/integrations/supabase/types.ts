@@ -369,6 +369,30 @@ export type Database = {
         }
         Relationships: []
       }
+      subscription_email_log: {
+        Row: {
+          email_type: string
+          id: string
+          period_key: string
+          sent_at: string
+          user_id: string
+        }
+        Insert: {
+          email_type: string
+          id?: string
+          period_key: string
+          sent_at?: string
+          user_id: string
+        }
+        Update: {
+          email_type?: string
+          id?: string
+          period_key?: string
+          sent_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       subscriptions: {
         Row: {
           access_until: string | null
@@ -391,6 +415,7 @@ export type Database = {
           pro_messages_used: number
           pro_reset_at: string | null
           save_payment_method: boolean
+          source: string | null
           started_at: string
           status: Database["public"]["Enums"]["subscription_status"]
           tier: Database["public"]["Enums"]["subscription_tier"]
@@ -418,6 +443,7 @@ export type Database = {
           pro_messages_used?: number
           pro_reset_at?: string | null
           save_payment_method?: boolean
+          source?: string | null
           started_at?: string
           status?: Database["public"]["Enums"]["subscription_status"]
           tier?: Database["public"]["Enums"]["subscription_tier"]
@@ -445,6 +471,7 @@ export type Database = {
           pro_messages_used?: number
           pro_reset_at?: string | null
           save_payment_method?: boolean
+          source?: string | null
           started_at?: string
           status?: Database["public"]["Enums"]["subscription_status"]
           tier?: Database["public"]["Enums"]["subscription_tier"]

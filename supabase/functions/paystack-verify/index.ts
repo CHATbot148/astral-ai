@@ -89,6 +89,19 @@ serve(async (req) => {
       await supabase.from("subscriptions").insert(subData);
     }
 
+    // Fire-and-forget success email
+    try {
+      await fetch(`${supabaseUrl}/functions/v1/subscription-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+        body: JSON.stringify({
+          user_id: user.id, type: "payment_success",
+          period_key: `${tier}-${expires.toISOString().slice(0, 10)}`,
+          data: { tier, cycle, expires_at: expires.toISOString(), source: "paystack" },
+        }),
+      });
+    } catch (e) { console.error("payment_success email failed:", e); }
+
     return new Response(JSON.stringify({ success: true, tier, cycle }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -211,11 +211,17 @@ export const PaymentPage = ({ selectedTier, billingCycle, reason = 'general' }: 
       }
 
       const tierFromCode = data.tier as SubscriptionTier;
-      await subscribe(tierFromCode, 'monthly', false, false, data.duration_days ?? 30);
+      const days = data.duration_days ?? 30;
+      await subscribe(tierFromCode, 'monthly', false, false, days);
+      // Fire-and-forget success email
+      const expires = new Date(Date.now() + days * 24 * 3600 * 1000).toISOString();
+      supabase.functions.invoke('subscription-email', {
+        body: { user_id: user.id, type: 'payment_success', period_key: `promo-${expires.slice(0, 10)}`, data: { tier: tierFromCode, cycle: 'promo', expires_at: expires, source: 'promo' } },
+      }).catch(() => {});
       setPromoApplied(true);
       setAppliedTier(tierFromCode);
       setPaymentComplete(true);
-      toast({ title: `${TIER_CONFIGS[tierFromCode].name} activated for ${data.duration_days ?? 30} days` });
+      toast({ title: `${TIER_CONFIGS[tierFromCode].name} activated for ${days} days` });
     } catch (error) {
       toast({ title: await getFunctionErrorMessage(error, 'Failed to redeem code'), variant: 'destructive' });
     } finally {

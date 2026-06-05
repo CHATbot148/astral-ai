@@ -57,60 +57,35 @@ serve(async (req) => {
       throw new Error("Failed to store OTP");
     }
 
-    const subject = isPasswordReset ? "Reset Your X-AI Password" : "Your X-AI Verification Code";
+    const subject = isPasswordReset ? "Reset Your Astraz Password" : "Your Astraz Verification Code";
     const heading = isPasswordReset ? "Reset Your Password" : "Verify Your Email";
-    const description = isPasswordReset 
-      ? "Enter this code to reset your password:" 
+    const description = isPasswordReset
+      ? "Enter this code to reset your password:"
       : "Enter this code to complete your sign up:";
 
-    // Send email via Brevo
     const emailResponse = await fetch("https://api.brevo.com/v3/smtp/email", {
       method: "POST",
-      headers: {
-        "api-key": BREVO_API_KEY,
-        "Content-Type": "application/json",
-      },
+      headers: { "api-key": BREVO_API_KEY, "Content-Type": "application/json" },
       body: JSON.stringify({
-        sender: {
-          name: "X-AI",
-          email: "xtechnly@gmail.com",
-        },
+        sender: { name: "Astraz", email: "xtechnly@gmail.com" },
         to: [{ email, name: name || email }],
         subject,
         htmlContent: `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <style>
-              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #ffffff; padding: 40px; }
-              .container { max-width: 500px; margin: 0 auto; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border-radius: 16px; padding: 40px; border: 1px solid rgba(0, 212, 255, 0.2); }
-              .logo { text-align: center; margin-bottom: 24px; }
-              .logo-text { font-size: 28px; font-weight: bold; background: linear-gradient(90deg, #00d4ff, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-              h1 { font-size: 24px; margin-bottom: 16px; text-align: center; }
-              .otp-box { background: rgba(0, 212, 255, 0.1); border: 2px solid #00d4ff; border-radius: 12px; padding: 20px; text-align: center; margin: 24px 0; }
-              .otp-code { font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #00d4ff; }
-              .expire-text { color: #888; font-size: 14px; text-align: center; margin-top: 16px; }
-              .footer { text-align: center; margin-top: 32px; color: #666; font-size: 12px; }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <div class="logo">
-                <span class="logo-text">X-AI</span>
+          <!DOCTYPE html><html><body style="margin:0;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#fff;padding:40px 16px">
+            <div style="max-width:500px;margin:0 auto;background:linear-gradient(135deg,#1a1a2e,#16213e);border-radius:16px;padding:40px;border:1px solid rgba(0,212,255,0.2)">
+              <div style="text-align:center;margin-bottom:24px"><span style="font-size:28px;font-weight:800;background:linear-gradient(90deg,#00d4ff,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Astraz</span></div>
+              <h1 style="font-size:24px;margin:0 0 16px;text-align:center">${heading}</h1>
+              <p style="text-align:center;color:#aaa">${description}</p>
+              <div style="background:rgba(0,212,255,0.1);border:2px solid #00d4ff;border-radius:12px;padding:20px;text-align:center;margin:24px 0">
+                <div style="font-size:36px;font-weight:bold;letter-spacing:8px;color:#00d4ff">${otp}</div>
               </div>
-              <h1>${heading}</h1>
-              <p style="text-align: center; color: #aaa;">${description}</p>
-              <div class="otp-box">
-                <div class="otp-code">${otp}</div>
-              </div>
-              <p class="expire-text">This code expires in 10 minutes</p>
-              <div class="footer">
-                <p>Made by X-Tech</p>
+              <p style="color:#888;font-size:14px;text-align:center;margin-top:16px">This code expires in 10 minutes</p>
+              <div style="text-align:center;margin-top:32px;color:#666;font-size:12px">
+                <p>Made by Astrinique · <a href="https://astraz.online" style="color:#00d4ff;text-decoration:none">astraz.online</a></p>
                 <p>If you didn't request this code, you can safely ignore this email.</p>
               </div>
             </div>
-          </body>
-          </html>
+          </body></html>
         `,
       }),
     });

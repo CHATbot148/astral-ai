@@ -64,13 +64,23 @@ serve(async (req) => {
 
     const now = new Date();
     if (mode === "end_of_period") {
-      // Keep access until expires_at; only flip auto_renew off and mark cancelled date
       await supabase.from("subscriptions").update({
         cancelled_at: now.toISOString(),
         cancellation_type: "end_of_period",
         auto_renew: false,
-        // status stays 'active' until expires_at (frontend treats access_until as truth)
       }).eq("user_id", user.id);
+
+      try {
+        await fetch(`${supabaseUrl}/functions/v1/subscription-email`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+          body: JSON.stringify({
+            user_id: user.id, type: "cancellation",
+            period_key: `cancel-${now.toISOString().slice(0, 10)}-eop`,
+            data: { tier: sub.tier, access_until: sub.expires_at },
+          }),
+        });
+      } catch (e) { console.error("cancellation email failed:", e); }
 
       return new Response(JSON.stringify({
         success: true, mode, access_until: sub.expires_at, fee_ngn: 0,
@@ -111,6 +121,19 @@ serve(async (req) => {
       access_until: now.toISOString(),
       expires_at: now.toISOString(),
     }).eq("user_id", user.id);
+
+    // Fire-and-forget cancellation email
+    try {
+      await fetch(`${supabaseUrl}/functions/v1/subscription-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+        body: JSON.stringify({
+          user_id: user.id, type: "cancellation",
+          period_key: `cancel-${now.toISOString().slice(0, 10)}-${mode}`,
+          data: { tier: sub.tier, access_until: mode === "immediate_refund" ? now.toISOString() : sub.expires_at },
+        }),
+      });
+    } catch (e) { console.error("cancellation email failed:", e); }
 
     return new Response(JSON.stringify({
       success: true, mode, fee_ngn: 5000, refund: refundResult,
