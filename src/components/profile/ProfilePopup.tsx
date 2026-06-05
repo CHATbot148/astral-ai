@@ -502,7 +502,8 @@ export const ProfilePopup = ({ isOpen, onClose, profile, onProfileUpdate }: Prof
   const menuItems = [
     { id: 'account' as Section, icon: User, label: 'Account', desc: 'Profile, logout' },
     { id: 'ai_settings' as Section, icon: Bot, label: 'AI Settings', desc: 'Modes, memory, behavior' },
-    { id: 'connectors' as Section, icon: Plug, label: 'Connectors', desc: 'Maps, Gmail, Telegram & more' },
+    // Connectors temporarily disabled
+    // { id: 'connectors' as Section, icon: Plug, label: 'Connectors', desc: 'Maps, Gmail, Telegram & more' },
     { id: 'voice' as Section, icon: Volume2, label: 'Voice', desc: 'Text-to-speech voice' },
     { id: 'theme' as Section, icon: Sun, label: 'Theme', desc: 'Light, dark, or system' },
     { id: 'usage' as Section, icon: BarChart3, label: 'Usage', desc: 'Messages, images, videos' },
