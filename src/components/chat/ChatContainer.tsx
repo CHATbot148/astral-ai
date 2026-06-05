@@ -886,7 +886,7 @@ export const ChatContainer = () => {
           hasUploadedVideoFiles
             ? 'Reviewing video…'
             : isWebSearchState
-              ? `Searching for ${searchQuery}`
+              ? `Searching the web`
               : undefined
         );
       }
