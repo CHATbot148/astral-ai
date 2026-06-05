@@ -110,6 +110,7 @@ Deno.serve(async (req) => {
 
   socket.onclose = () => {
     console.log("[gemini-live-proxy] client disconnected");
+    if (keepaliveInterval) { clearInterval(keepaliveInterval); keepaliveInterval = null; }
     try { session?.close?.(); } catch {}
   };
 
