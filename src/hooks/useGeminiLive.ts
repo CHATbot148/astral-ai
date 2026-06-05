@@ -198,7 +198,8 @@ export function useGeminiLive() {
         return;
       }
 
-      const wsUrl = SUPABASE_URL.replace(/^http/, 'ws') + `/functions/v1/gemini-live-proxy?token=${encodeURIComponent(token)}`;
+      const apikey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+      const wsUrl = SUPABASE_URL.replace(/^http/, 'ws') + `/functions/v1/gemini-live-proxy?token=${encodeURIComponent(token)}&apikey=${encodeURIComponent(apikey)}`;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
