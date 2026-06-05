@@ -15,7 +15,7 @@ interface VoiceCallProps {
 }
 
 export interface VoiceCallHandle {
-  startFromTrigger: () => void;
+  startFromTrigger: () => Promise<void>;
 }
 
 const buildSystem = () => {
@@ -31,8 +31,9 @@ CRITICAL: If the user requests to end the call, hang up, stop, exit, or close th
 };
 
 export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, onClose }, ref) => {
-  const { status, transcripts, isMuted, toggleMute, userVolume, modelVolume, error, connect, disconnect } = useGeminiLive();
+  const { status, transcripts, isMuted, toggleMute, userVolume, modelVolume, error, connect, disconnect, requestMicrophoneAccess } = useGeminiLive();
   const [activeStatus, setActiveStatus] = useState<'idle' | 'connecting' | 'connected' | 'exiting' | 'error'>('idle');
+  const [localError, setLocalError] = useState<string | null>(null);
   const startedRef = useRef(false);
 
   const handleEndCall = () => {
@@ -50,11 +51,30 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
   const handleStartCall = async () => {
     if (startedRef.current) return;
     startedRef.current = true;
+    setLocalError(null);
     setActiveStatus('connecting');
+    let stream: MediaStream | undefined;
+    try {
+      stream = await requestMicrophoneAccess();
+    } catch (err: any) {
+      startedRef.current = false;
+      setLocalError(err?.name === 'NotAllowedError'
+        ? 'Please allow microphone access in your browser settings.'
+        : err?.message || 'Microphone access error');
+      console.error('Voice call microphone error:', err);
+      setActiveStatus('error');
+      return;
+    }
+    if (!stream) {
+      startedRef.current = false;
+      setActiveStatus('error');
+      return;
+    }
     await connect({
       systemInstruction: buildSystem(),
       voiceName: 'Puck',
       onTerminationTriggered: handleEndCall,
+      stream,
     });
   };
 
@@ -64,9 +84,7 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
     else if (status === 'error') setActiveStatus('error');
   }, [status]);
 
-  // Auto-start on open
   useEffect(() => {
-    if (open && !startedRef.current) handleStartCall();
     if (!open && startedRef.current) {
       disconnect();
       startedRef.current = false;
@@ -95,10 +113,10 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
   const statusLabel =
     activeStatus === 'connecting' ? 'Connecting…' :
     activeStatus === 'exiting' ? 'Ending call…' :
-    activeStatus === 'error' ? (error || 'Error') :
+    activeStatus === 'error' ? (localError || error || 'Error') :
     modelVolume > 0.05 ? 'Speaking…' :
     userVolume > 0.05 ? 'Listening…' :
-    'Tap to talk';
+    'Ready';
 
   return (
     <motion.div

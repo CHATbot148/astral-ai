@@ -25,7 +25,7 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
   const [promoCode, setPromoCode] = useState('');
   const [isRedeeming, setIsRedeeming] = useState(false);
   const [promoApplied, setPromoApplied] = useState(false);
-  const [promoDiscount, setPromoDiscount] = useState<{ tier: string; free: boolean } | null>(null);
+  const [promoDiscount, setPromoDiscount] = useState<{ tier: string; free: boolean; durationDays: number } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [locale, setLocale] = useState<LocaleInfo>(getCachedLocale());
 
@@ -48,7 +48,7 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
         return;
       }
       setPromoApplied(true);
-      setPromoDiscount({ tier: data.tier, free: true });
+      setPromoDiscount({ tier: data.tier, free: true, durationDays: data.duration_days ?? 30 });
     } catch {
       toast({ title: 'Failed to validate code', variant: 'destructive' });
     } finally { setIsRedeeming(false); }
@@ -65,7 +65,7 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
         toast({ title: data?.error || 'Promo no longer valid', variant: 'destructive' });
         setPromoApplied(false); setPromoDiscount(null); setIsProcessing(false); return;
       }
-      await subscribe(tierToSubscribe, 'monthly', false, false, 32);
+      await subscribe(tierToSubscribe, 'monthly', false, false, promoDiscount?.durationDays ?? data.duration_days ?? 30);
       toast({ title: `🎉 ${TIER_CONFIGS[tierToSubscribe].name} activated!` });
       onClose();
     } catch {
@@ -149,7 +149,7 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
                   </Button>
                 </div>
                 {promoApplied && (
-                  <p className="text-xs text-green-500 mt-1">✓ {TIER_CONFIGS[promoDiscount?.tier as SubscriptionTier]?.name} free for 30 days</p>
+                  <p className="text-xs text-green-500 mt-1">✓ {TIER_CONFIGS[promoDiscount?.tier as SubscriptionTier]?.name} free for {promoDiscount?.durationDays ?? 30} days</p>
                 )}
                 {tierSwitched && (
                   <p className="text-xs text-amber-500 mt-1">⚠ This code is for the {TIER_CONFIGS[promoDiscount?.tier as SubscriptionTier]?.name} plan instead.</p>
