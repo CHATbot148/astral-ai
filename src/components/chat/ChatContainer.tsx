@@ -856,6 +856,8 @@ export const ChatContainer = () => {
           aiMode: getAISettings().mode,
           customPrompt: getAISettings().customPrompt,
           followUpQuestions: getAISettings().followUpQuestions,
+          model: (typeof window !== 'undefined' ? localStorage.getItem('astraz_selected_model') : null) === 'astraz-pro' ? 'astraz-pro' : 'astraz',
+
         }),
         signal: abortControllerRef.current?.signal,
       });
