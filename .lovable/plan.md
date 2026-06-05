@@ -1,71 +1,67 @@
-# Plan: Voice Call Rebuild + New Chat UI + Astraz Pro Model
+# Mega-fix plan
 
-This is a big change. Before I touch any files, please approve so I don't burn credits on the wrong thing.
+Doing all four workstreams in this single batch. No partial drops.
 
-## Prerequisites
-- I need a **GEMINI_API_KEY** secret added. I'll prompt for it after you approve.
+## 1. Attachments + media popups (highest priority)
 
----
+**Pill-style attachment chip** (replaces current ugly preview)
+- New `AttachmentChip.tsx`: rectangular pill, ~280px max wide. Left = type icon (image/video/audio/PDF/doc) with colored gradient square. Right = filename truncated to 10 chars + extension (`Quarterl…pdf`), file size below. For images/videos, swap the icon square for a real thumbnail. Used in ChatInput preview and in sent ChatMessage attachments.
+- Astraz actually reading files: in `ChatInput.tsx`, upload files to `chat-files` bucket and send their public URL + filename to `chat` function in a new `attachments` array. In `supabase/functions/chat/index.ts`, accept `attachments[]`. For images, pass directly to the vision-capable model. For PDFs/docs, fetch the URL server-side, extract text via a lightweight parser (pdf for PDF, plain decode for text/csv/json/md), inject as system context. Tell user when format is unsupported.
 
-## Task 1 — Replace the entire Voice Call feature
+**Dedicated MediaViewer modal** (`MediaViewer.tsx`) — replaces ImagePreviewModal entirely. Routes by media type:
+- **Video / AI-generated video**: full HTML5 `<video controls>`, dark backdrop, top bar with close + Download. Blob-fetch download for cross-origin.
+- **User image attachment**: image canvas with overlay drawing tool — user can free-draw circles/arrows; on "Send to Astraz" the annotated image is sent back into chat with prompt "I'm referring to the circled area".
+- **AI-generated image**: Download + Edit buttons. Edit opens brush-mask overlay with adjustable brush size, opacity, undo, clear. Prompt input + optional reference upload. Submits to existing `generate-image` edge function with mask + prompt (Leonardo inpainting).
+- **Document (PDF)**: render via `<iframe src={url}>` or react-pdf for multi-page scroll; native PDF viewer is fine fallback. Top bar with Download.
+- **Generic file**: just download.
 
-Source: your `Astraz-Voice` repo (Gemini Live API with WebSocket proxy + animated Three.js/Canvas VoiceOrb).
+## 2. Visualization rework
 
-### Backend
-- Create new edge function `gemini-live-proxy` (Supabase Edge Function with WebSocket support) that brokers between browser ↔ Gemini Live API using `GEMINI_API_KEY`. Mirrors `server.ts` from your repo (token ephemeral session or direct ws proxy).
-- Delete/retire old voice-call backend bits (the existing `text-to-speech`/`speech-to-text` are still used for non-call TTS reading — I'll keep those untouched).
+Rebuild `VizBlock.tsx` as a **big rich preview card** (not a tiny "Open" button):
+- Card with gradient header showing viz title (extracted from HTML `<title>` or first heading), dim screenshot-style placeholder (rendered from a hidden iframe captured to canvas, or a static "Interactive Visualization" mesh-gradient art), "Interactive" badge.
+- Single tap = expand inline to full-width interactive iframe with floating control bar (restart, fullscreen, copy code). No "Show me the visualization" gate text.
+- Better iframe defaults: `allow-scripts allow-same-origin allow-pointer-lock`, responsive height (min 400, max 600 normal / 100vh fullscreen).
 
-### Frontend
-- Replace `src/components/chat/VoiceCall.tsx` end-to-end with the architecture from your repo's `App.tsx` + `useGeminiLive.ts` + `audio-utils.ts` + `soundEffects.ts` + `intent.ts`.
-- Replace `src/components/chat/VoiceOrb.tsx` with your repo's 636-line Three.js animated orb (port deps: `three`, `@types/three`, `motion`).
-- Keep the existing entry point (`VoiceCall` opened from ChatInput) so nothing else breaks.
-- Voice call stays **unlimited for all tiers** (including free).
+## 3. Models + Call quality
 
-### Dependencies to add
-`@google/genai`, `three`, `@types/three`, `motion` (motion is the new framer-motion; we already have framer-motion — I'll use existing one to avoid duplication unless your code needs `motion/react` specifically).
+- **Astraz Pro chat model**: in `supabase/functions/chat/index.ts`, swap pro path from current Gemini to `google/gemini-3.1-pro-preview` (top-tier reasoning).
+- **Voice Call**: in `supabase/functions/gemini-live-proxy/index.ts`, swap model from `gemini-3.1-flash-live-preview` to `gemini-3.1-pro-live-preview` (or latest live-preview pro variant; falls back to flash if pro unavailable).
+- **Call audio breakup**: in `useGeminiLive.ts` add (a) PCM jitter buffer that queues incoming audio chunks and plays them with a 120ms lead-in, (b) larger send chunk size (40ms → 100ms) to reduce packet rate, (c) auto-reconnect on `onclose` with exponential backoff if call still active, (d) WS keepalive ping every 15s.
 
----
+## 4. Security fixes (non-breaking only)
 
-## Task 2 — New WelcomeScreen UI + Astraz Pro model
+SQL migration:
+- `daily_usage`: drop user INSERT/UPDATE policies; only service role writes (edge functions already use service role for usage counts).
+- `subscriptions`: drop user INSERT/UPDATE; service role only (paystack-verify already uses service role).
+- `promo_codes`: tighten SELECT to authenticated only AND remove `code` column from selectable (create `promo_codes_public` view with id/tier/description but no code; redeem uses RPC which already row-locks).
+- `realtime.messages`: add RLS policy scoping channels by `conversation_id` ownership.
+- `push_subscriptions`: revoke client SELECT (only service-role read for send-push).
+- `user_connections`: drop client SELECT on `oauth_tokens` via a public view that omits the column.
+- `scheduled_notifications`: restrict UPDATE to non-status columns via column grants.
+- `has_role`/`redeem_promo_code` SECURITY DEFINER: keep but `REVOKE EXECUTE FROM anon, authenticated` where not needed; redeem stays callable by authenticated.
+- `chat-files` bucket: keep public read for object URLs but remove broad list policy (add SELECT policy WHERE name LIKE auth.uid()||'/%' for listing).
 
-### UI changes (only `WelcomeScreen.tsx` + small header tweak)
-Mobile-first redesign to match your screenshots:
-- **Top bar**: left = sidebar toggle (current button), center = **model dropdown** ("Astraz" / "Astraz Pro – Smartest"), right = **Temporary Chat** button (new).
-- **Center**: Astraz icon (replaces standalone logo) + time-based greeting ("Good morning, {name}" etc. — already exists).
-- **Particle animation**: subtle dotted-halftone particles fading in/out every ~2s above the input area (CSS/canvas, mobile-safe, `pointer-events-none`).
-- **Suggestion chips**: convert to **horizontal scroll** row, positioned just above input. Uses `overflow-x-auto` with `touch-action: pan-x` to prevent vertical layout break.
-- **Keyboard handling**: use `visualViewport` API so greeting+icon shift up just enough when keyboard opens (no overflow).
+Skip if it'd break: anything that breaks existing edge functions' service-role writes is fine since they bypass RLS.
 
-### Temporary Chat feature
-- New button creates an in-memory only conversation, labeled "Temporary Chat" in sidebar with a distinct ghost icon.
-- Cleared on: app leave, refresh, switch chat, new chat, or sign-out.
-- Not persisted to DB. Stored in React state only.
+## 5. Typewriter greeting
 
-### Astraz Pro (Gemini) model
-- Add `astraz-pro` model option backed by **`google/gemini-3-flash-preview`** (latest available via Lovable AI gateway) — wait, you said "via Gemini API direct". I'll use **your Gemini API key directly** with `gemini-2.5-pro` (latest stable). Confirm if you want a specific model name.
-- New table column `subscriptions.pro_messages_used` + `pro_reset_at` for quota tracking.
-- Quotas enforced server-side in `chat` edge function:
-  - Free → no access (upsell)
-  - Basic → 15 msgs / 8h rolling reset
-  - Pro → 25 msgs / 5h rolling reset
-  - Ultimate → unlimited
-- When quota hit → fallback to Mistral + toast "Astraz Pro limit reached, resets in Xh".
-- System prompts and AI modes (custom modes) continue to apply identically to both models.
-- Update `UpgradeDialog.tsx` to advertise Astraz Pro per tier.
+In `WelcomeScreen.tsx`, animate the greeting + name with a 35ms-per-char typewriter (custom hook `useTypewriter`). Only on fresh sessions (no animation when re-entering a thread). Cursor blink while typing.
 
 ---
 
-## Files touched (estimate)
-**New**: `supabase/functions/gemini-live-proxy/index.ts`, `src/hooks/useGeminiLive.ts`, `src/lib/audio-utils.ts`, `src/lib/soundEffects.ts`, `src/components/chat/ParticleField.tsx`, migration for pro quota columns.
-**Rewritten**: `VoiceCall.tsx`, `VoiceOrb.tsx`, `WelcomeScreen.tsx`, `ChatContainer.tsx` (model selector + temp chat state), `Sidebar.tsx` (temp chat label), `UpgradeDialog.tsx`, `chat/index.ts` edge fn (model routing + quota).
-**Untouched**: TTS, STT, reminders, payments, connectors, auth.
+## Files touched
+- New: `src/components/chat/AttachmentChip.tsx`, `src/components/chat/MediaViewer.tsx`, `src/components/chat/ImageAnnotator.tsx`, `src/components/chat/ImageMaskEditor.tsx`, `src/components/chat/DocumentViewer.tsx`, `src/hooks/useTypewriter.ts`
+- Edited: `ChatInput.tsx`, `ChatMessage.tsx`, `ChatContainer.tsx`, `MediaRenderer.tsx`, `VizBlock.tsx`, `WelcomeScreen.tsx`, `useGeminiLive.ts`, `supabase/functions/chat/index.ts`, `supabase/functions/gemini-live-proxy/index.ts`, `supabase/functions/generate-image/index.ts` (mask support)
+- Deleted: `ImagePreviewModal.tsx`
+- 1 SQL migration for security fixes
 
----
+## Order of execution
+1. Security migration (independent, fast)
+2. Edge function model swaps + call quality
+3. Attachment chip + file upload pipeline
+4. MediaViewer with all four routes
+5. Viz rework
+6. Typewriter greeting
+7. Verify build
 
-## Questions before I start
-1. **Gemini model for Astraz Pro chat**: `gemini-2.5-pro` (smartest, slower) or `gemini-2.5-flash` (fast+smart)? You said "latest Gemini" — I'll use **`gemini-2.5-pro`** unless you say otherwise.
-2. **Gemini Live model for calls**: your repo uses `gemini-2.0-flash-exp` typically. Keep that, or use newer `gemini-2.5-flash-preview-native-audio-dialog`?
-3. The repo uses Express WebSocket server. Supabase edge functions support WebSockets via Deno — I'll port it. OK?
-4. Temporary chat: should the **model selector** be visible in temp chats too? (assuming yes)
-
-Reply with answers or just "go" and I'll use the defaults above.
+Confirm and I'll ship.
