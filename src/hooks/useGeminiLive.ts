@@ -35,6 +35,16 @@ export function useGeminiLive() {
   const shouldReconnectRef = useRef(false);
 
   const requestMicrophoneAccess = useCallback(async () => {
+    if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioContextClass) {
+        audioCtxRef.current = new AudioContextClass({ sampleRate: 24000 });
+      }
+    }
+    if (audioCtxRef.current?.state === 'suspended') {
+      await audioCtxRef.current.resume();
+    }
+
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
@@ -101,8 +111,9 @@ export function useGeminiLive() {
 
   const startAudioCapture = useCallback(async (existingStream?: MediaStream) => {
     try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      const audioCtx = audioCtxRef.current ?? new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       audioCtxRef.current = audioCtx;
+      if (audioCtx.state === 'suspended') await audioCtx.resume();
 
       const stream = existingStream ?? await requestMicrophoneAccess();
       streamRef.current = stream;
