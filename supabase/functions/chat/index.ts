@@ -267,7 +267,7 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, fileContext, timeZone, clientTimeISO, aiMode, customPrompt, followUpQuestions, isVoiceMode, noStream, forceWebSearch, webSearchQuery } = await req.json();
+    const { messages, fileContext, timeZone, clientTimeISO, aiMode, customPrompt, followUpQuestions, isVoiceMode, noStream, forceWebSearch, webSearchQuery, model: requestedModel } = await req.json();
     const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -917,9 +917,70 @@ IMPORTANT RESPONSE GUIDELINES:
       });
     }
 
+    // === ASTRAZ PRO (Gemini via Lovable AI gateway) ===
+    if (requestedModel === "astraz-pro" && userId && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY && LOVABLE_API_KEY) {
+      const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      const { data: sub } = await admin
+        .from("subscriptions")
+        .select("tier, status, pro_messages_used, pro_reset_at")
+        .eq("user_id", userId)
+        .maybeSingle();
+      const tier = sub?.status === "active" ? (sub?.tier || "free") : "free";
+      const QUOTA: Record<string, { limit: number; hours: number }> = {
+        basic: { limit: 15, hours: 8 },
+        pro: { limit: 25, hours: 5 },
+        ultimate: { limit: Infinity, hours: 0 },
+      };
+      const q = QUOTA[tier];
+      if (!q) {
+        return new Response(JSON.stringify({ error: "Astraz Pro requires a paid plan.", code: "pro_requires_paid" }),
+          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const now = new Date();
+      let used = sub?.pro_messages_used || 0;
+      let resetAt = sub?.pro_reset_at ? new Date(sub.pro_reset_at) : null;
+      if (!resetAt || resetAt <= now) {
+        used = 0;
+        resetAt = q.hours > 0 ? new Date(now.getTime() + q.hours * 3600_000) : null;
+      }
+      if (q.limit !== Infinity && used >= q.limit) {
+        return new Response(JSON.stringify({
+          error: `Astraz Pro limit reached. Resets at ${resetAt?.toISOString()}`,
+          code: "pro_quota_exhausted",
+          resetAt: resetAt?.toISOString(),
+        }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      await admin.from("subscriptions")
+        .update({ pro_messages_used: used + 1, pro_reset_at: resetAt?.toISOString() ?? null })
+        .eq("user_id", userId);
+
+      const geminiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-pro",
+          messages: [{ role: "system", content: systemContent }, ...formattedMessages],
+          stream: true,
+        }),
+      });
+      if (!geminiRes.ok) {
+        const t = await geminiRes.text();
+        console.error("Astraz Pro gateway error:", geminiRes.status, t);
+        if (geminiRes.status === 429 || geminiRes.status === 402) {
+          return new Response(JSON.stringify({ error: "Astraz Pro is busy. Please try again." }),
+            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        // fallthrough to Mistral on hard failure
+      } else {
+        const finalBody = rawVideoCards ? appendToStream(geminiRes.body!, rawVideoCards) : geminiRes.body!;
+        return new Response(finalBody, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
+      }
+    }
+
     if (!MISTRAL_API_KEY) {
       throw new Error("MISTRAL_API_KEY is not configured");
     }
+
 
     // Voice mode: use faster model for near-instant responses
     const useStream = isVoiceMode ? true : !noStream;

@@ -10,6 +10,8 @@ import { WelcomeScreen } from './WelcomeScreen';
 import { Sidebar } from './Sidebar';
 import { TypingIndicator } from './TypingIndicator';
 import { VoiceCall, type VoiceCallHandle } from './VoiceCall';
+import { ChatHeader } from './ChatHeader';
+
 import { ImageGenerateDialog, ImageGenOptions } from './ImageGenerateDialog';
 import { VideoGenerateDialog, VideoGenOptions } from './VideoGenerateDialog';
 import { useConversations } from '@/hooks/useConversations';
@@ -856,6 +858,8 @@ export const ChatContainer = () => {
           aiMode: getAISettings().mode,
           customPrompt: getAISettings().customPrompt,
           followUpQuestions: getAISettings().followUpQuestions,
+          model: (typeof window !== 'undefined' ? localStorage.getItem('astraz_selected_model') : null) === 'astraz-pro' ? 'astraz-pro' : 'astraz',
+
         }),
         signal: abortControllerRef.current?.signal,
       });
@@ -1224,12 +1228,17 @@ export const ChatContainer = () => {
       />
 
       <main className="flex-1 flex flex-col min-w-0 relative">
-        <div className="absolute top-3 left-3 z-20">
+        <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-none">
           <Button variant="secondary" size="icon" onClick={() => setSidebarOpen(true)}
-            className={cn("rounded-full", sidebarOpen ? 'lg:hidden' : '')} aria-label="Open sidebar">
+            className={cn("rounded-full pointer-events-auto", sidebarOpen ? 'lg:hidden' : '')} aria-label="Open sidebar">
             <PanelLeft className="h-5 w-5" />
           </Button>
+          <ChatHeader
+            onTempChat={() => { startNewChat(); toast({ title: 'Temporary chat started', description: 'Messages in this chat will not be saved.' }); }}
+          />
+          <div className="w-9" />
         </div>
+
 
         <ScrollArea ref={scrollRef} className="flex-1">
           <div style={{ paddingBottom: `${scrollBottomPadding}px` }}>

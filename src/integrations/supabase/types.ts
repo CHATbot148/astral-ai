@@ -388,6 +388,8 @@ export type Database = {
           paystack_email_token: string | null
           paystack_subscription_code: string | null
           privacy_policy_agreed_at: string | null
+          pro_messages_used: number
+          pro_reset_at: string | null
           save_payment_method: boolean
           started_at: string
           status: Database["public"]["Enums"]["subscription_status"]
@@ -413,6 +415,8 @@ export type Database = {
           paystack_email_token?: string | null
           paystack_subscription_code?: string | null
           privacy_policy_agreed_at?: string | null
+          pro_messages_used?: number
+          pro_reset_at?: string | null
           save_payment_method?: boolean
           started_at?: string
           status?: Database["public"]["Enums"]["subscription_status"]
@@ -438,6 +442,8 @@ export type Database = {
           paystack_email_token?: string | null
           paystack_subscription_code?: string | null
           privacy_policy_agreed_at?: string | null
+          pro_messages_used?: number
+          pro_reset_at?: string | null
           save_payment_method?: boolean
           started_at?: string
           status?: Database["public"]["Enums"]["subscription_status"]
