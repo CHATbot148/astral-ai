@@ -35,10 +35,10 @@ export const ChatHeader = ({ onTempChat, onUpgrade }: Props) => {
   };
 
   return (
-    <div className="pointer-events-auto flex items-center gap-1 px-2 py-1 rounded-full bg-card/70 border border-border/60 backdrop-blur-md max-w-full min-w-0">
+    <div className="pointer-events-auto flex items-center gap-1 px-1.5 py-1 rounded-full bg-card/70 border border-border/60 backdrop-blur-md max-w-full min-w-0 sm:px-2">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-1.5 px-2.5 py-1 rounded-full hover:bg-muted/60 transition-colors text-sm font-medium min-w-0 max-w-[44vw] sm:max-w-none">
+          <button className="flex items-center gap-1 px-2 py-1 rounded-full hover:bg-muted/60 transition-colors text-sm font-medium min-w-0 max-w-[38vw] sm:max-w-none sm:gap-1.5 sm:px-2.5">
             <span className="text-foreground truncate">Astraz</span>
             <span className="text-muted-foreground">{model === 'astraz-pro' ? 'Pro' : ''}</span>
             <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
@@ -66,7 +66,7 @@ export const ChatHeader = ({ onTempChat, onUpgrade }: Props) => {
       <Button
         variant="ghost"
         size="icon"
-        className="h-8 w-8 rounded-full"
+        className="h-7 w-7 rounded-full sm:h-8 sm:w-8"
         aria-label="Start temporary chat"
         onClick={onTempChat}
       >
