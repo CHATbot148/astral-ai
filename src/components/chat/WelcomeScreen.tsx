@@ -105,7 +105,7 @@ export const WelcomeScreen = memo(({ onSuggestionClick, onAnalyzeDocs, onVisuali
   ];
 
   return (
-    <div className="flex-1 flex flex-col items-center relative px-4 pb-2 min-h-[58vh] sm:min-h-[70vh] overflow-hidden">
+    <div className="flex-1 flex flex-col items-center relative px-4 pb-2 min-h-[52vh] sm:min-h-[70vh] overflow-hidden">
       {/* Particle field */}
       <div className="absolute inset-x-0 bottom-0 h-1/2 overflow-hidden">
         <ParticleField />
@@ -113,9 +113,9 @@ export const WelcomeScreen = memo(({ onSuggestionClick, onAnalyzeDocs, onVisuali
 
       {/* Greeting block - elevates when keyboard opens */}
       <motion.div
-        animate={{ y: keyboardOpen ? -28 : 0 }}
+        animate={{ y: keyboardOpen ? -24 : 0 }}
         transition={{ type: 'spring', stiffness: 220, damping: 26 }}
-        className="flex-1 flex flex-col items-center justify-center text-center relative z-10 w-full pt-12 sm:pt-16"
+        className="flex-1 flex flex-col items-center justify-center text-center relative z-10 w-full pt-8 sm:pt-16"
       >
         <motion.img
           src={astrazLogo}
@@ -123,13 +123,13 @@ export const WelcomeScreen = memo(({ onSuggestionClick, onAnalyzeDocs, onVisuali
           initial={{ opacity: 0, scale: 0.85 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5, type: 'spring', stiffness: 200 }}
-          className="w-14 h-14 object-contain mb-5 drop-shadow-[0_0_24px_hsl(270_80%_60%/0.45)]"
+          className="w-12 h-12 sm:w-14 sm:h-14 object-contain mb-4 sm:mb-5"
         />
         <motion.h1
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="text-xl sm:text-2xl md:text-3xl font-display font-medium text-foreground/95 leading-tight max-w-[min(82vw,22rem)] break-words"
+          className="text-[1.65rem] sm:text-2xl md:text-3xl font-display font-medium text-foreground/95 leading-tight max-w-[min(80vw,22rem)] break-words"
         >
           {greeting}
         </motion.h1>
@@ -141,7 +141,7 @@ export const WelcomeScreen = memo(({ onSuggestionClick, onAnalyzeDocs, onVisuali
         style={{ touchAction: 'pan-x' }}
       >
         <div className="overflow-x-auto overflow-y-hidden no-scrollbar -mx-4 px-4">
-          <div className="flex gap-2 pb-2 min-w-min">
+          <div className="flex gap-2 pb-2 min-w-min pt-1">
             {suggestions.map((s) => (
               <button
                 key={s.title}
