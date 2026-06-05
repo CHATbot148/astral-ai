@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { LineChart, Brain, FileText, Sparkles } from 'lucide-react';
+import { useTypewriter } from '@/hooks/useTypewriter';
 import astrazLogo from '@/assets/astraz-logo.png';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -102,6 +103,7 @@ export const WelcomeScreen = memo(({ onAnalyzeDocs, onVisualize, profileName }: 
   }, []);
 
   const greeting = getGreeting(firstName);
+  const { displayed: typedGreeting, done: typedDone } = useTypewriter(greeting, 32, true);
 
   return (
     <div
@@ -133,7 +135,11 @@ export const WelcomeScreen = memo(({ onAnalyzeDocs, onVisualize, profileName }: 
           transition={{ delay: 0.1 }}
           className="text-[1.5rem] sm:text-2xl md:text-3xl font-display font-medium text-foreground/95 leading-tight max-w-[min(78vw,22rem)] break-words"
         >
-          {greeting}
+          {typedGreeting}
+          <span
+            aria-hidden
+            className={`inline-block w-[2px] h-[1em] align-[-0.15em] ml-[2px] bg-foreground/70 ${typedDone ? 'opacity-0' : 'animate-pulse'}`}
+          />
         </motion.h1>
       </motion.div>
     </div>

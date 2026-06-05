@@ -180,7 +180,8 @@ export function useGeminiLive() {
     source.connect(modelAnalyserRef.current);
 
     const now = audioCtx.currentTime;
-    const safety = 0.05;
+    // Larger jitter buffer (~140ms lead-in) — eliminates audio breakup on flaky links.
+    const safety = 0.14;
     if (nextStartTimeRef.current < now + safety) nextStartTimeRef.current = now + safety;
     source.start(nextStartTimeRef.current);
     nextStartTimeRef.current += buffer.duration;
