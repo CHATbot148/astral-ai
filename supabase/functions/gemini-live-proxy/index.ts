@@ -44,11 +44,15 @@ Deno.serve(async (req) => {
   socket.onmessage = async (event) => {
     try {
       const msg = JSON.parse(event.data);
+      if (msg.type === "pong") return;
 
       if (msg.type === "setup") {
         try {
-          session = await ai.live.connect({
-            model: "models/gemini-3.1-flash-live-preview",
+          // Prefer pro live preview for higher fidelity; fall back to flash if unavailable.
+          const preferredModel = "models/gemini-3.1-pro-live-preview";
+          const fallbackModel = "models/gemini-3.1-flash-live-preview";
+          const tryConnect = (model: string) => ai.live.connect({
+            model,
             callbacks: {
               onmessage: (m: LiveServerMessage) => {
                 if (socket.readyState === WebSocket.OPEN) {
