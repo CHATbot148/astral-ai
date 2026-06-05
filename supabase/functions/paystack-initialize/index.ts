@@ -75,7 +75,7 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { tier, cycle, autoRenew, callbackUrl } = body || {};
+    const { tier, cycle, autoRenew, callbackUrl, channel } = body || {};
     if (!["basic", "pro", "ultimate"].includes(tier) || !["monthly", "yearly"].includes(cycle)) {
       return new Response(JSON.stringify({ error: "Invalid tier or cycle" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -90,11 +90,19 @@ serve(async (req) => {
       amount: amountKobo,
       currency: "NGN",
       callback_url: callbackUrl,
+      channels: channel === "apple_pay"
+        ? ["apple_pay"]
+        : channel === "bank_transfer"
+          ? ["bank_transfer"]
+          : channel === "card"
+            ? ["card"]
+            : undefined,
       metadata: {
         user_id: user.id,
         tier,
         cycle,
         auto_renew: !!autoRenew,
+        channel: channel || null,
       },
     };
 
