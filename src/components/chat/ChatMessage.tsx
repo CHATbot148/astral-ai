@@ -1140,17 +1140,77 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
                       <Download className="h-3.5 w-3.5" />
                     </Button>
                   </div>
-                ) : (
-                  <a 
-                    href={url} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-secondary border border-border hover:bg-secondary/80 transition-colors"
-                  >
-                    <FileText className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm">View Attachment</span>
-                  </a>
-                )}
+                ) : (() => {
+                  // Document / generic file card with name, type icon, open + download
+                  let filename = 'Attachment';
+                  let ext = '';
+                  try {
+                    const u = new URL(url);
+                    const pathname = decodeURIComponent(u.pathname);
+                    filename = pathname.split('/').pop() || 'Attachment';
+                    ext = (filename.split('.').pop() || '').toLowerCase();
+                  } catch { /* ignore */ }
+                  const isPdf = ext === 'pdf';
+                  const isDoc = ['doc', 'docx', 'odt', 'rtf'].includes(ext);
+                  const isSheet = ['xls', 'xlsx', 'csv', 'ods'].includes(ext);
+                  const isText = ['txt', 'md', 'log', 'json', 'xml', 'yml', 'yaml'].includes(ext);
+                  const typeLabel = isPdf ? 'PDF Document'
+                    : isDoc ? 'Word Document'
+                    : isSheet ? 'Spreadsheet'
+                    : isText ? 'Text File'
+                    : ext ? `${ext.toUpperCase()} File`
+                    : 'File';
+                  const iconBg = isPdf ? 'from-red-500/20 to-rose-500/10 text-red-500'
+                    : isDoc ? 'from-blue-500/20 to-sky-500/10 text-blue-500'
+                    : isSheet ? 'from-green-500/20 to-emerald-500/10 text-green-500'
+                    : 'from-xai-purple/20 to-xai-cyan/10 text-xai-cyan';
+                  return (
+                    <div className="flex items-center gap-3 px-3 py-2.5 rounded-2xl bg-gradient-to-br from-secondary/80 to-secondary/40 border border-border/60 backdrop-blur-sm hover:border-xai-cyan/40 hover:shadow-[0_4px_20px_hsl(var(--xai-purple)/0.15)] transition-all max-w-[280px]">
+                      <div className={cn("relative flex-shrink-0 w-11 h-11 rounded-xl bg-gradient-to-br flex items-center justify-center", iconBg)}>
+                        <FileText className="h-5 w-5" />
+                      </div>
+                      <div className="flex-1 min-w-0 text-left">
+                        <p className="text-sm font-medium truncate" title={filename}>{filename}</p>
+                        <p className="text-[11px] text-muted-foreground">{typeLabel}</p>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <a
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-gradient-to-r from-xai-purple/20 to-xai-cyan/20 hover:from-xai-purple/30 hover:to-xai-cyan/30 text-foreground transition-colors"
+                          title="Open file"
+                        >
+                          Open
+                        </a>
+                        <button
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            try {
+                              const response = await fetch(url);
+                              const blob = await response.blob();
+                              const blobUrl = URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = blobUrl;
+                              a.download = filename;
+                              document.body.appendChild(a);
+                              a.click();
+                              document.body.removeChild(a);
+                              URL.revokeObjectURL(blobUrl);
+                            } catch {
+                              toast({ title: 'Failed to download', variant: 'destructive' });
+                            }
+                          }}
+                          className="p-1.5 rounded-lg hover:bg-secondary transition-colors"
+                          title="Download"
+                          aria-label="Download file"
+                        >
+                          <Download className="h-3.5 w-3.5 text-muted-foreground" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
               </motion.div>
             ))}
           </motion.div>
