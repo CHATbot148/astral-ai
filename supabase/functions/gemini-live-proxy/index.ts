@@ -29,9 +29,16 @@ Deno.serve(async (req) => {
   const { socket, response } = Deno.upgradeWebSocket(req);
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
   let session: any = null;
+  let keepaliveInterval: number | null = null;
 
   socket.onopen = () => {
     console.log("[gemini-live-proxy] client connected user=", userData.user.id);
+    // WebSocket keepalive — many intermediaries drop idle connections
+    keepaliveInterval = setInterval(() => {
+      if (socket.readyState === WebSocket.OPEN) {
+        try { socket.send(JSON.stringify({ type: "ping" })); } catch {}
+      }
+    }, 15000) as unknown as number;
   };
 
   socket.onmessage = async (event) => {
