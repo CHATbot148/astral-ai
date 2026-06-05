@@ -15,7 +15,7 @@ interface VoiceCallProps {
 }
 
 export interface VoiceCallHandle {
-  startFromTrigger: () => Promise<void>;
+  startFromTrigger: (stream?: MediaStream) => Promise<void>;
 }
 
 const buildSystem = () => {
@@ -48,14 +48,16 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
     }, 1800);
   };
 
-  const handleStartCall = async () => {
+  const handleStartCall = async (initialStream?: MediaStream) => {
     if (startedRef.current) return;
     startedRef.current = true;
     setLocalError(null);
     setActiveStatus('connecting');
-    let stream: MediaStream | undefined;
+    let stream: MediaStream | undefined = initialStream;
     try {
-      stream = await requestMicrophoneAccess();
+      if (!stream) {
+        stream = await requestMicrophoneAccess();
+      }
     } catch (err: any) {
       startedRef.current = false;
       setLocalError(err?.name === 'NotAllowedError'
@@ -81,7 +83,10 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
   useEffect(() => {
     if (status === 'connecting') setActiveStatus('connecting');
     else if (status === 'connected') setActiveStatus('connected');
-    else if (status === 'error') setActiveStatus('error');
+    else if (status === 'error') {
+      startedRef.current = false;
+      setActiveStatus('error');
+    }
   }, [status]);
 
   useEffect(() => {
@@ -103,7 +108,7 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
   }, [transcripts, activeStatus]);
 
   useImperativeHandle(ref, () => ({
-    startFromTrigger: () => handleStartCall(),
+    startFromTrigger: (stream?: MediaStream) => handleStartCall(stream),
   }));
 
   if (!open) return null;
