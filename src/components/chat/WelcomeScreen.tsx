@@ -1,7 +1,7 @@
-import { memo } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { LineChart, Brain, FileText, Sparkles } from 'lucide-react';
-import astrazFullLogo from '@/assets/astraz-full-logo.png';
+import astrazLogo from '@/assets/astraz-logo.png';
 import { useAuth } from '@/hooks/useAuth';
 
 interface WelcomeScreenProps {
@@ -18,117 +18,143 @@ const PLOT_PROMPTS = [
   'Plot a chart showing the top 7 highest-grossing films of all time.',
 ];
 
-const getGreeting = () => {
+const getGreeting = (name?: string | null) => {
   const hour = new Date().getHours();
-  if (hour < 12) return 'Good Morning';
-  if (hour < 18) return 'Good Afternoon';
-  return 'Good Evening';
+  const part = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+  const n = name ? `, ${name}` : '';
+  if (hour < 12) return `Good morning${n}`;
+  if (hour < 18) return `Hi${n}, what's the move?`;
+  return `Good evening${n}`;
 };
+
+/** Subtle halftone particle field that fades in/out every ~2s. */
+const ParticleField = memo(() => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let w = 0, h = 0, raf = 0;
+    const resize = () => {
+      w = canvas.clientWidth;
+      h = canvas.clientHeight;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    resize();
+    window.addEventListener('resize', resize);
+    const start = performance.now();
+    const draw = (t: number) => {
+      ctx.clearRect(0, 0, w, h);
+      const elapsed = (t - start) / 1000;
+      // 2s cycle fade
+      const cycle = (elapsed % 4) / 4; // 0..1
+      const alpha = cycle < 0.5 ? cycle * 2 : (1 - cycle) * 2;
+      const spacing = 14;
+      const cx = w / 2;
+      const cy = h * 0.55;
+      for (let y = 0; y < h; y += spacing) {
+        for (let x = 0; x < w; x += spacing) {
+          const dx = x - cx, dy = y - cy;
+          const d = Math.sqrt(dx * dx + dy * dy);
+          const falloff = Math.max(0, 1 - d / (Math.min(w, h) * 0.55));
+          if (falloff <= 0) continue;
+          const a = falloff * alpha * 0.55;
+          const r = 1.1 + falloff * 0.6;
+          ctx.fillStyle = `hsla(270, 80%, 65%, ${a})`;
+          ctx.beginPath();
+          ctx.arc(x + (Math.sin(elapsed + x) * 0.5), y + (Math.cos(elapsed + y) * 0.5), r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); };
+  }, []);
+  return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" aria-hidden />;
+});
+ParticleField.displayName = 'ParticleField';
 
 export const WelcomeScreen = memo(({ onSuggestionClick, onAnalyzeDocs, onVisualize, profileName }: WelcomeScreenProps) => {
   const { user } = useAuth();
   const displayName = profileName || user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || '';
-  const greeting = getGreeting();
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+
+  // Detect keyboard via visualViewport — lift content slightly when open
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => setKeyboardOpen(window.innerHeight - vv.height > 100);
+    vv.addEventListener('resize', update);
+    update();
+    return () => vv.removeEventListener('resize', update);
+  }, []);
+
+  const greeting = getGreeting(displayName);
 
   const suggestions = [
-    {
-      icon: Brain,
-      title: 'Brainstorm ideas',
-      description: 'Generate creative ideas for my project',
-      onClick: () => onSuggestionClick('Generate creative ideas for my project'),
-    },
-    {
-      icon: LineChart,
-      title: 'Plot graph',
-      description: 'Draw a graph from interesting data',
-      onClick: () => {
-        const prompt = PLOT_PROMPTS[Math.floor(Math.random() * PLOT_PROMPTS.length)];
-        onSuggestionClick(prompt);
-      },
-    },
-    {
-      icon: FileText,
-      title: 'Analyze documents',
-      description: 'Summarize and extract insights',
-      onClick: () => onAnalyzeDocs?.(),
-    },
-    {
-      icon: Sparkles,
-      title: 'Visualize',
-      description: 'Generate images and videos',
-      onClick: () => onVisualize?.(),
-    },
+    { icon: Brain, title: 'Brainstorm ideas', onClick: () => onSuggestionClick('Generate creative ideas for my project') },
+    { icon: LineChart, title: 'Plot graph', onClick: () => onSuggestionClick(PLOT_PROMPTS[Math.floor(Math.random() * PLOT_PROMPTS.length)]) },
+    { icon: FileText, title: 'Analyze documents', onClick: () => onAnalyzeDocs?.() },
+    { icon: Sparkles, title: 'Visualize', onClick: () => onVisualize?.() },
   ];
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center px-4 py-8">
+    <div className="flex-1 flex flex-col items-center relative px-4 pb-2 min-h-[70vh]">
+      {/* Particle field */}
+      <div className="absolute inset-x-0 bottom-0 h-1/2 overflow-hidden">
+        <ParticleField />
+      </div>
+
+      {/* Greeting block - elevates when keyboard opens */}
       <motion.div
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.4, type: 'spring', stiffness: 200 }}
-        className="mb-6 relative"
+        animate={{ y: keyboardOpen ? -40 : 0 }}
+        transition={{ type: 'spring', stiffness: 220, damping: 26 }}
+        className="flex-1 flex flex-col items-center justify-center text-center relative z-10 w-full"
       >
-        <img
-          src={astrazFullLogo}
+        <motion.img
+          src={astrazLogo}
           alt="Astraz AI Assistant Logo"
-          className="w-28 h-28 rounded-full object-cover drop-shadow-[0_0_30px_hsl(270_80%_60%/0.35)]"
+          initial={{ opacity: 0, scale: 0.85 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.5, type: 'spring', stiffness: 200 }}
+          className="w-14 h-14 rounded-full object-cover mb-5 drop-shadow-[0_0_24px_hsl(270_80%_60%/0.45)]"
           style={{ background: '#0a0a1a' }}
         />
-        <motion.div
-          className="absolute -inset-6 rounded-full bg-gradient-to-br from-xai-purple/15 to-xai-cyan/15 blur-2xl -z-10"
-          animate={{ scale: [1, 1.08, 1], opacity: [0.5, 0.7, 0.5] }}
-          transition={{ duration: 4, repeat: Infinity }}
-        />
+        <motion.h1
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="text-2xl md:text-3xl font-display font-medium text-foreground/95 leading-tight max-w-sm"
+        >
+          {greeting}
+        </motion.h1>
       </motion.div>
 
-      <motion.h1
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.15 }}
-        className="text-3xl md:text-4xl font-display font-bold mb-3 text-center"
+      {/* Horizontal-scroll suggestion chips above input */}
+      <div
+        className="relative z-10 w-full -mb-1"
+        style={{ touchAction: 'pan-x' }}
       >
-        <span className="xai-gradient-text">Astraz AI Assistant</span>
-        <span className="block text-xl md:text-2xl font-medium text-foreground mt-2">
-          {greeting}{displayName ? `, ${displayName}` : ''}
-        </span>
-      </motion.h1>
-
-      <motion.p
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.25 }}
-        className="text-base text-muted-foreground text-center max-w-md mb-10"
-      >
-        Your intelligent AI assistant. How can I help you today?
-      </motion.p>
-
-      <motion.div
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.35 }}
-        className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-xl"
-      >
-        {suggestions.map((suggestion, index) => (
-          <button
-            key={suggestion.title}
-            onClick={suggestion.onClick}
-            className="group p-4 rounded-2xl bg-card border border-border/60 hover:border-primary/30 hover:shadow-[0_2px_20px_-4px_hsl(var(--xai-purple)/0.15)] transition-all duration-200 text-left"
-            style={{ animationDelay: `${index * 50}ms` }}
-          >
-            <div className="flex items-start gap-3">
-              <div className="p-2 rounded-xl bg-gradient-to-br from-xai-purple/12 to-xai-cyan/12 group-hover:from-xai-purple/20 group-hover:to-xai-cyan/20 transition-colors">
-                <suggestion.icon className="h-4.5 w-4.5 text-primary" />
-              </div>
-              <div>
-                <h2 className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
-                  {suggestion.title}
-                </h2>
-                <p className="text-xs text-muted-foreground mt-0.5">{suggestion.description}</p>
-              </div>
-            </div>
-          </button>
-        ))}
-      </motion.div>
+        <div className="overflow-x-auto overflow-y-hidden no-scrollbar -mx-4 px-4">
+          <div className="flex gap-2 pb-2 min-w-min">
+            {suggestions.map((s) => (
+              <button
+                key={s.title}
+                onClick={s.onClick}
+                className="flex items-center gap-2 shrink-0 px-3.5 py-2 rounded-full bg-card/80 border border-border/60 hover:border-primary/40 backdrop-blur-sm transition-colors text-sm whitespace-nowrap"
+              >
+                <s.icon className="h-4 w-4 text-primary" />
+                <span className="text-foreground/90">{s.title}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 });
