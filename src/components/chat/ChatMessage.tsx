@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { AudioPlayer } from './AudioPlayer';
-import { ImagePreviewModal } from './ImagePreviewModal';
+import { MediaViewer } from './MediaViewer';
 import { MediaRenderer } from './MediaRenderer';
 import { MapEmbed } from './MapEmbed';
 import { GraphBlock } from './GraphBlock';
