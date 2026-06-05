@@ -317,7 +317,7 @@ function parseMarkdownTable(lines: string[]): { headers: string[]; rows: string[
 // Split text into text parts and table parts
 function splitTextAndTables(
   text: string,
-  parts: Array<{ type: 'text' | 'code' | 'media' | 'table' | 'graph' | 'mapEmbed'; content: string; language?: string; open?: boolean; tableData?: { headers: string[]; rows: string[][] }; mapEmbed?: any }>
+  parts: Array<{ type: 'text' | 'code' | 'media' | 'table' | 'graph' | 'mapEmbed' | 'viz'; content: string; language?: string; open?: boolean; tableData?: { headers: string[]; rows: string[][] }; mapEmbed?: any }>
 ) {
   const lines = text.split('\n');
   let buffer: string[] = [];
