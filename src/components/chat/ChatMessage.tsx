@@ -1107,19 +1107,20 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
                     }}
                   />
                 ) : isVideoLike(url) ? (
-                  <div className="relative rounded-lg overflow-hidden border border-border max-w-[280px]">
+                  <div className="relative rounded-2xl overflow-hidden border border-border/60 bg-black shadow-[0_10px_40px_-12px_hsl(var(--xai-purple)/0.45)] w-[min(82vw,360px)]">
                     <video
                       src={url}
                       controls
+                      controlsList="nodownload"
                       preload="metadata"
                       playsInline
-                      className="w-full rounded-lg"
+                      className="block w-full h-auto max-h-[70vh] object-contain bg-black"
                     />
                     <Button
                       variant="ghost"
                       size="sm"
                       aria-label="Download video"
-                      className="absolute top-1 right-1 h-7 w-7 p-0 bg-background/60 backdrop-blur-sm hover:bg-background/80 opacity-0 group-hover/img:opacity-100 transition-opacity"
+                      className="absolute top-2 right-2 h-8 w-8 p-0 rounded-full bg-background/50 backdrop-blur-md hover:bg-background/70 opacity-0 group-hover/img:opacity-100 transition-opacity"
                       onClick={async () => {
                         try {
                           const response = await fetch(url);
