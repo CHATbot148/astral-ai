@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { LineChart, Brain, FileText, Sparkles } from 'lucide-react';
+import { useTypewriter } from '@/hooks/useTypewriter';
 import astrazLogo from '@/assets/astraz-logo.png';
 import { useAuth } from '@/hooks/useAuth';
 
