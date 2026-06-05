@@ -566,9 +566,26 @@ export const ChatContainer = () => {
     if (!user) return [];
     const refs: string[] = [];
     for (const file of files) {
-      const fileName = `${user.id}/${Date.now()}-${file.name}`;
-      const { error } = await supabase.storage.from('chat-files').upload(fileName, file);
-      if (!error) refs.push(makeStorageRef('chat-files', fileName));
+      // Sanitize filename: storage rejects spaces, parentheses, and many unicode chars
+      const safeName = file.name
+        .normalize('NFKD')
+        .replace(/[^\w.\-]+/g, '_')
+        .replace(/_+/g, '_')
+        .slice(-120);
+      const fileName = `${user.id}/${Date.now()}-${safeName || 'file'}`;
+      const { error } = await supabase.storage
+        .from('chat-files')
+        .upload(fileName, file, { contentType: file.type || 'application/octet-stream', upsert: false });
+      if (error) {
+        console.error('Upload failed:', error, file.name);
+        toast({
+          title: 'Upload failed',
+          description: `${file.name}: ${error.message}`,
+          variant: 'destructive',
+        });
+        continue;
+      }
+      refs.push(makeStorageRef('chat-files', fileName));
     }
     return refs;
   };
