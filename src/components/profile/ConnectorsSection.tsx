@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { MapPin, Mail, Send, Calendar, Music2, Loader2, Check } from 'lucide-react';
+import { Loader2, Check, ExternalLink } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { cn } from '@/lib/utils';
+import { BRAND_ICON } from '@/components/icons/BrandIcons';
 
 type Provider = 'google_maps' | 'telegram' | 'gmail' | 'google_calendar' | 'tiktok';
 
@@ -12,85 +12,158 @@ interface ConnectorDef {
   id: Provider;
   name: string;
   desc: string;
-  icon: React.ComponentType<{ className?: string }>;
-  iconColor: string;
+  oauth: 'google' | null; // requires per-user OAuth
 }
 
 const CONNECTORS: ConnectorDef[] = [
-  { id: 'google_maps', name: 'Google Maps', desc: 'Places, directions & interactive maps in chat', icon: MapPin, iconColor: 'text-emerald-500' },
-  { id: 'gmail', name: 'Gmail', desc: 'Read, send, compose & draft emails', icon: Mail, iconColor: 'text-red-500' },
-  { id: 'google_calendar', name: 'Google Calendar', desc: 'Read events & schedule new ones', icon: Calendar, iconColor: 'text-blue-500' },
-  { id: 'telegram', name: 'Telegram', desc: 'Send Telegram messages from chat', icon: Send, iconColor: 'text-sky-500' },
-  { id: 'tiktok', name: 'TikTok', desc: 'Access your TikTok profile & videos', icon: Music2, iconColor: 'text-pink-500' },
+  { id: 'gmail', name: 'Gmail', desc: 'Connect your Gmail to read, send, compose & draft emails', oauth: 'google' },
+  { id: 'google_calendar', name: 'Google Calendar', desc: 'Connect your calendar to read events & schedule new ones', oauth: 'google' },
+  { id: 'google_maps', name: 'Google Maps', desc: 'Places, directions & interactive maps in chat', oauth: null },
+  { id: 'telegram', name: 'Telegram', desc: 'Send Telegram messages from chat', oauth: null },
+  { id: 'tiktok', name: 'TikTok', desc: 'Access your TikTok profile & videos', oauth: null },
 ];
 
 export const ConnectorsSection = () => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [enabled, setEnabled] = useState<Record<Provider, boolean>>({} as any);
+  const [rows, setRows] = useState<Record<Provider, { enabled: boolean; email?: string; hasTokens: boolean }>>({} as any);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<Provider | null>(null);
 
-  useEffect(() => {
+  const load = async () => {
     if (!user) return;
-    (async () => {
-      const { data } = await supabase.from('user_connections').select('provider, enabled').eq('user_id', user.id);
-      const map: any = {};
-      (data || []).forEach((r: any) => { map[r.provider] = r.enabled; });
-      setEnabled(map);
-      setLoading(false);
-    })();
-  }, [user]);
+    const { data } = await supabase
+      .from('user_connections')
+      .select('provider, enabled, oauth_tokens, metadata')
+      .eq('user_id', user.id);
+    const map: any = {};
+    (data || []).forEach((r: any) => {
+      map[r.provider] = {
+        enabled: r.enabled,
+        email: r.metadata?.email,
+        hasTokens: !!r.oauth_tokens?.access_token,
+      };
+    });
+    setRows(map);
+    setLoading(false);
+  };
 
-  const toggle = async (provider: Provider, value: boolean) => {
-    if (!user) return;
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [user]);
+
+  // Listen for OAuth-callback message to refresh
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === 'google-oauth-connected') load();
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+    // eslint-disable-next-line
+  }, []);
+
+  const startGoogleOAuth = async (provider: Provider) => {
     setUpdating(provider);
+    try {
+      const { data, error } = await supabase.functions.invoke('google-oauth-start', {
+        body: { provider, returnTo: window.location.href },
+      });
+      if (error || !data?.url) throw new Error(error?.message || 'Failed to start OAuth');
+      const popup = window.open(data.url, 'google-oauth', 'width=520,height=640');
+      if (!popup) window.location.href = data.url;
+    } catch (e: any) {
+      toast({ title: 'Failed to start Google sign-in', description: e?.message, variant: 'destructive' });
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  const toggle = async (c: ConnectorDef, value: boolean) => {
+    if (!user) return;
+    // Google OAuth providers: turning ON without tokens → start OAuth flow
+    if (value && c.oauth === 'google' && !rows[c.id]?.hasTokens) {
+      await startGoogleOAuth(c.id);
+      return;
+    }
+    setUpdating(c.id);
     const { error } = await supabase.from('user_connections')
-      .upsert({ user_id: user.id, provider, enabled: value }, { onConflict: 'user_id,provider' });
+      .upsert({ user_id: user.id, provider: c.id, enabled: value }, { onConflict: 'user_id,provider' });
     setUpdating(null);
     if (error) {
       toast({ title: 'Failed to update connector', variant: 'destructive' });
       return;
     }
-    setEnabled((prev) => ({ ...prev, [provider]: value }));
+    setRows((prev) => ({ ...prev, [c.id]: { ...(prev[c.id] || { hasTokens: false }), enabled: value } }));
+  };
+
+  const disconnect = async (provider: Provider) => {
+    if (!user) return;
+    setUpdating(provider);
+    const { error } = await supabase.from('user_connections')
+      .update({ enabled: false, oauth_tokens: null })
+      .eq('user_id', user.id).eq('provider', provider);
+    setUpdating(null);
+    if (error) {
+      toast({ title: 'Failed to disconnect', variant: 'destructive' });
+      return;
+    }
+    setRows((prev) => ({ ...prev, [provider]: { enabled: false, hasTokens: false } }));
   };
 
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        Connect external services so Astraz can take actions on your behalf.
+        Connect external services to your own account so Astraz can act on your behalf.
       </p>
       {loading ? (
         <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
       ) : (
         <div className="space-y-2">
           {CONNECTORS.map((c) => {
-            const Icon = c.icon;
-            const isOn = !!enabled[c.id];
+            const Icon = BRAND_ICON[c.id];
+            const r = rows[c.id] || { enabled: false, hasTokens: false };
+            const isOn = r.enabled && (c.oauth !== 'google' || r.hasTokens);
             return (
-              <div
-                key={c.id}
-                className="flex items-start gap-3 p-3 rounded-lg border border-border bg-secondary/40 transition-colors"
-              >
-                <div className={cn('p-2 rounded-lg bg-background/60 flex-shrink-0', c.iconColor)}>
-                  <Icon className="h-5 w-5" />
+              <div key={c.id} className="flex items-start gap-3 p-3 rounded-lg border border-border bg-secondary/40 transition-colors">
+                <div className="p-1.5 rounded-lg bg-background/60 flex-shrink-0">
+                  {Icon ? <Icon className="h-6 w-6" /> : null}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-medium">{c.name}</p>
                     {isOn && (
                       <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-500">
-                        <Check className="h-3 w-3" /> Active
+                        <Check className="h-3 w-3" /> Connected
                       </span>
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5">{c.desc}</p>
+                  {c.oauth === 'google' && r.email && (
+                    <p className="text-[11px] text-muted-foreground/80 mt-1 truncate">{r.email}</p>
+                  )}
+                  {c.oauth === 'google' && isOn && (
+                    <button
+                      onClick={() => disconnect(c.id)}
+                      className="text-[11px] text-destructive hover:underline mt-1"
+                    >
+                      Disconnect
+                    </button>
+                  )}
                 </div>
-                <Switch
-                  checked={isOn}
-                  disabled={updating === c.id}
-                  onCheckedChange={(v) => toggle(c.id, v)}
-                />
+                {c.oauth === 'google' && !r.hasTokens ? (
+                  <button
+                    onClick={() => startGoogleOAuth(c.id)}
+                    disabled={updating === c.id}
+                    className="text-xs font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 flex items-center gap-1 disabled:opacity-50"
+                  >
+                    {updating === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <ExternalLink className="h-3 w-3" />}
+                    Connect
+                  </button>
+                ) : (
+                  <Switch
+                    checked={isOn}
+                    disabled={updating === c.id}
+                    onCheckedChange={(v) => toggle(c, v)}
+                  />
+                )}
               </div>
             );
           })}
