@@ -715,9 +715,9 @@ const Auth = () => {
           style={{ background: 'transparent', border: 'none' }}
         />
 
-        {/* Made by X-Tech */}
+        {/* Made by Astrinique */}
         <motion.a
-          href="https://xtechnology.vercel.app"
+          href="https://astrinique.vercel.app"
           target="_blank"
           rel="noopener noreferrer"
           initial={{ opacity: 0, y: 20 }}
@@ -725,7 +725,7 @@ const Auth = () => {
           transition={{ delay: 0.5 }}
           className="absolute top-[62%] left-1/2 -translate-x-1/2 z-10 inline-flex items-center rounded-full border border-border/50 bg-background/35 px-6 py-3 text-sm md:text-base lg:text-lg font-display font-semibold tracking-[0.18em] text-foreground/90 backdrop-blur-md shadow-[0_12px_40px_hsl(var(--background)/0.35)] hover:bg-background/45 transition-all"
         >
-          Made by <span className="ml-2 xai-gradient-text">X-Tech</span>
+          Made by <span className="ml-2 xai-gradient-text">Astrinique</span>
         </motion.a>
       </div>
 
