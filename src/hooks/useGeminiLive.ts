@@ -204,6 +204,9 @@ export function useGeminiLive() {
       setModelVolume(0);
       setStatus('connecting');
       shouldReconnectRef.current = true;
+      if (config.stream) {
+        streamRef.current = config.stream;
+      }
 
       // Get JWT for auth via query param (WebSocket can't set headers in browsers)
       const { data: { session: authSession } } = await supabase.auth.getSession();
