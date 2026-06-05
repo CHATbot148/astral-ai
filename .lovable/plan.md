@@ -1,100 +1,71 @@
+# Plan: Voice Call Rebuild + New Chat UI + Astraz Pro Model
 
+This is a big change. Before I touch any files, please approve so I don't burn credits on the wrong thing.
 
-## Scheduled Reminders - Full Implementation
+## Prerequisites
+- I need a **GEMINI_API_KEY** secret added. I'll prompt for it after you approve.
 
-### What This Does
+---
 
-When a user says something like "Remind me to drink water at 3pm" or "Remind me to call mom in 30 minutes", Astraz will:
+## Task 1 — Replace the entire Voice Call feature
 
-1. Detect the reminder intent automatically
-2. Show a red "Reminder Set" text in the chat (not a normal AI response)
-3. Display a toast confirmation
-4. At the scheduled time: insert the reminder message into the chat AND send a push notification
+Source: your `Astraz-Voice` repo (Gemini Live API with WebSocket proxy + animated Three.js/Canvas VoiceOrb).
 
-### How It Works
+### Backend
+- Create new edge function `gemini-live-proxy` (Supabase Edge Function with WebSocket support) that brokers between browser ↔ Gemini Live API using `GEMINI_API_KEY`. Mirrors `server.ts` from your repo (token ephemeral session or direct ws proxy).
+- Delete/retire old voice-call backend bits (the existing `text-to-speech`/`speech-to-text` are still used for non-call TTS reading — I'll keep those untouched).
 
-```text
-User sends message
-       |
-       v
-  Detect reminder intent?
-  (client-side regex)
-       |
-   Yes |         No
-       v          v
-  Parse time     Normal AI flow
-  (absolute/relative)
-       |
-       v
-  Call schedule-notification
-  edge function
-       |
-       v
-  Show red "Reminder Set" text
-  in chat + toast
-       |
-       v
-  [Later, at scheduled time]
-       |
-       v
-  Cron job (pg_cron) calls
-  process-reminders edge function
-       |
-       v
-  - Inserts reminder message into
-    the conversation as assistant msg
-  - Sends push notification via
-    web Push API / service worker
-  - Updates status to "sent"
-```
+### Frontend
+- Replace `src/components/chat/VoiceCall.tsx` end-to-end with the architecture from your repo's `App.tsx` + `useGeminiLive.ts` + `audio-utils.ts` + `soundEffects.ts` + `intent.ts`.
+- Replace `src/components/chat/VoiceOrb.tsx` with your repo's 636-line Three.js animated orb (port deps: `three`, `@types/three`, `motion`).
+- Keep the existing entry point (`VoiceCall` opened from ChatInput) so nothing else breaks.
+- Voice call stays **unlimited for all tiers** (including free).
 
-### Technical Details
+### Dependencies to add
+`@google/genai`, `three`, `@types/three`, `motion` (motion is the new framer-motion; we already have framer-motion — I'll use existing one to avoid duplication unless your code needs `motion/react` specifically).
 
-**1. Enhanced Reminder Parsing (ChatContainer.tsx)**
-- Expand `parseReminderRequest` to support:
-  - Relative: "in 30 minutes", "in 2 hours", "in 1 day"
-  - Absolute: "at 3pm", "at 10:30am", "at 15:00"
-  - Natural: "tomorrow at 9am", "tonight at 8pm"
-- Use the user's timezone (already available via `Intl.DateTimeFormat`) to compute correct UTC times
+---
 
-**2. Red "Reminder Set" Indicator (ChatContainer.tsx + ChatMessage.tsx)**
-- When a reminder is detected, instead of calling the AI, add a special message with a marker like `[REMINDER_SET]` 
-- In ChatMessage, detect this marker and render red styled text: "Reminder Set" with the scheduled time
-- Show a toast: "Reminder set for [time]"
+## Task 2 — New WelcomeScreen UI + Astraz Pro model
 
-**3. New Edge Function: `process-reminders`**
-- A cron-triggered function that runs every minute
-- Queries `scheduled_notifications` for rows where `status = 'pending'` and `scheduled_for <= now()`
-- For each due reminder:
-  - Inserts a message into the `messages` table in the user's conversation (red-styled reminder text)
-  - Sends a push notification via Web Push if the user has a subscription stored
-  - Updates the notification status to `"sent"`
+### UI changes (only `WelcomeScreen.tsx` + small header tweak)
+Mobile-first redesign to match your screenshots:
+- **Top bar**: left = sidebar toggle (current button), center = **model dropdown** ("Astraz" / "Astraz Pro – Smartest"), right = **Temporary Chat** button (new).
+- **Center**: Astraz icon (replaces standalone logo) + time-based greeting ("Good morning, {name}" etc. — already exists).
+- **Particle animation**: subtle dotted-halftone particles fading in/out every ~2s above the input area (CSS/canvas, mobile-safe, `pointer-events-none`).
+- **Suggestion chips**: convert to **horizontal scroll** row, positioned just above input. Uses `overflow-x-auto` with `touch-action: pan-x` to prevent vertical layout break.
+- **Keyboard handling**: use `visualViewport` API so greeting+icon shift up just enough when keyboard opens (no overflow).
 
-**4. Push Notification Support**
-- Add a `push_subscriptions` table to store user push subscription endpoints
-- Update `sw.js` to handle push events and show notifications
-- Add subscription logic in `ProfilePopup.tsx` or when notifications are enabled
-- When a reminder fires, the `process-reminders` function sends a web push to the user's device
+### Temporary Chat feature
+- New button creates an in-memory only conversation, labeled "Temporary Chat" in sidebar with a distinct ghost icon.
+- Cleared on: app leave, refresh, switch chat, new chat, or sign-out.
+- Not persisted to DB. Stored in React state only.
 
-**5. Database Changes**
-- Create `push_subscriptions` table: `id`, `user_id`, `endpoint`, `p256dh`, `auth`, `created_at`
-- RLS: users can only manage their own subscriptions
-- Set up pg_cron job to call `process-reminders` every minute
+### Astraz Pro (Gemini) model
+- Add `astraz-pro` model option backed by **`google/gemini-3-flash-preview`** (latest available via Lovable AI gateway) — wait, you said "via Gemini API direct". I'll use **your Gemini API key directly** with `gemini-2.5-pro` (latest stable). Confirm if you want a specific model name.
+- New table column `subscriptions.pro_messages_used` + `pro_reset_at` for quota tracking.
+- Quotas enforced server-side in `chat` edge function:
+  - Free → no access (upsell)
+  - Basic → 15 msgs / 8h rolling reset
+  - Pro → 25 msgs / 5h rolling reset
+  - Ultimate → unlimited
+- When quota hit → fallback to Mistral + toast "Astraz Pro limit reached, resets in Xh".
+- System prompts and AI modes (custom modes) continue to apply identically to both models.
+- Update `UpgradeDialog.tsx` to advertise Astraz Pro per tier.
 
-**6. Chat Function Update (chat/index.ts)**
-- Add reminder detection patterns to the system prompt so the AI knows NOT to respond when a reminder is being set
-- This is already handled client-side (returns early), so minimal changes needed here
+---
 
-### Files to Create/Modify
+## Files touched (estimate)
+**New**: `supabase/functions/gemini-live-proxy/index.ts`, `src/hooks/useGeminiLive.ts`, `src/lib/audio-utils.ts`, `src/lib/soundEffects.ts`, `src/components/chat/ParticleField.tsx`, migration for pro quota columns.
+**Rewritten**: `VoiceCall.tsx`, `VoiceOrb.tsx`, `WelcomeScreen.tsx`, `ChatContainer.tsx` (model selector + temp chat state), `Sidebar.tsx` (temp chat label), `UpgradeDialog.tsx`, `chat/index.ts` edge fn (model routing + quota).
+**Untouched**: TTS, STT, reminders, payments, connectors, auth.
 
-| File | Action |
-|------|--------|
-| `src/components/chat/ChatContainer.tsx` | Enhanced reminder parsing, red "Reminder Set" message, push subscription |
-| `src/components/chat/ChatMessage.tsx` | Render `[REMINDER_SET]` marker as red styled text |
-| `src/lib/reminderParser.ts` | New - dedicated reminder parsing with absolute/relative time support |
-| `supabase/functions/process-reminders/index.ts` | New - cron worker to deliver due reminders |
-| `public/sw.js` | Add push notification event handler |
-| `supabase/functions/schedule-notification/index.ts` | Minor update to also store push notification data |
-| Database migration | `push_subscriptions` table + RLS policies |
-| SQL (insert tool) | pg_cron job to trigger process-reminders every minute |
+---
 
+## Questions before I start
+1. **Gemini model for Astraz Pro chat**: `gemini-2.5-pro` (smartest, slower) or `gemini-2.5-flash` (fast+smart)? You said "latest Gemini" — I'll use **`gemini-2.5-pro`** unless you say otherwise.
+2. **Gemini Live model for calls**: your repo uses `gemini-2.0-flash-exp` typically. Keep that, or use newer `gemini-2.5-flash-preview-native-audio-dialog`?
+3. The repo uses Express WebSocket server. Supabase edge functions support WebSockets via Deno — I'll port it. OK?
+4. Temporary chat: should the **model selector** be visible in temp chats too? (assuming yes)
+
+Reply with answers or just "go" and I'll use the defaults above.
