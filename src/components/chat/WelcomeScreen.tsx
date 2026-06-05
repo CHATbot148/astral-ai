@@ -103,6 +103,7 @@ export const WelcomeScreen = memo(({ onAnalyzeDocs, onVisualize, profileName }: 
   }, []);
 
   const greeting = getGreeting(firstName);
+  const { displayed: typedGreeting, done: typedDone } = useTypewriter(greeting, 32, true);
 
   return (
     <div
