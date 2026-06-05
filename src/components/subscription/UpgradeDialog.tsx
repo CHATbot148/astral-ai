@@ -1,9 +1,9 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Zap, Crown, Sparkles, Brain } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useSubscription, SubscriptionTier, BillingCycle, TIER_CONFIGS } from '@/hooks/useSubscription';
-import { PaymentPage } from './PaymentPage';
 
 interface UpgradeDialogProps {
   isOpen: boolean;
@@ -21,10 +21,10 @@ const tierIcons: Record<SubscriptionTier, React.ReactNode> = {
 const formatNGN = (amount: number) => `₦${amount.toLocaleString()}`;
 
 export const UpgradeDialog = ({ isOpen, onClose, reason = 'general' }: UpgradeDialogProps) => {
+  const navigate = useNavigate();
   const { tier: currentTier } = useSubscription();
   const [selectedTier, setSelectedTier] = useState<SubscriptionTier>('pro');
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
-  const [showPaymentPage, setShowPaymentPage] = useState(false);
 
   const reasonText = reason === 'image_limit'
     ? "You've reached your daily image generation limit."
@@ -115,7 +115,10 @@ export const UpgradeDialog = ({ isOpen, onClose, reason = 'general' }: UpgradeDi
               <Button
                 variant="xai"
                 className="w-full h-12"
-                onClick={() => setShowPaymentPage(true)}
+                onClick={() => {
+                  onClose();
+                  navigate(`/payment?tier=${selectedTier}&cycle=${billingCycle}&reason=${reason}`);
+                }}
               >
                 Continue to Payment — {formatNGN(billingCycle === 'monthly' ? TIER_CONFIGS[selectedTier].price.monthly : TIER_CONFIGS[selectedTier].price.yearly)}
               </Button>
@@ -124,12 +127,6 @@ export const UpgradeDialog = ({ isOpen, onClose, reason = 'general' }: UpgradeDi
         </motion.div>
       </div>
 
-      <PaymentPage
-        isOpen={showPaymentPage}
-        onClose={() => { setShowPaymentPage(false); onClose(); }}
-        selectedTier={selectedTier}
-        billingCycle={billingCycle}
-      />
     </AnimatePresence>
   );
 };
