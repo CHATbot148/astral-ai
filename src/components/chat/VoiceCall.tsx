@@ -56,6 +56,20 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
       stream = await requestMicrophoneAccess();
     } catch (err: any) {
       startedRef.current = false;
+      const message = err?.name === 'NotAllowedError'
+        ? 'Please allow microphone access in your browser settings.'
+        : err?.message || 'Microphone access error';
+      console.error('Voice call microphone error:', err);
+      setActiveStatus('error');
+      await connect({
+        systemInstruction: buildSystem(),
+        voiceName: 'Puck',
+        onTerminationTriggered: handleEndCall,
+      }).catch(() => undefined);
+      return;
+    }
+    if (!stream) {
+      startedRef.current = false;
       setActiveStatus('error');
       return;
     }
