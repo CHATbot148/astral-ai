@@ -15,7 +15,7 @@ interface VoiceCallProps {
 }
 
 export interface VoiceCallHandle {
-  startFromTrigger: () => void;
+  startFromTrigger: () => Promise<void>;
 }
 
 const buildSystem = () => {
@@ -31,7 +31,7 @@ CRITICAL: If the user requests to end the call, hang up, stop, exit, or close th
 };
 
 export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, onClose }, ref) => {
-  const { status, transcripts, isMuted, toggleMute, userVolume, modelVolume, error, connect, disconnect } = useGeminiLive();
+  const { status, transcripts, isMuted, toggleMute, userVolume, modelVolume, error, connect, disconnect, requestMicrophoneAccess } = useGeminiLive();
   const [activeStatus, setActiveStatus] = useState<'idle' | 'connecting' | 'connected' | 'exiting' | 'error'>('idle');
   const startedRef = useRef(false);
 
@@ -51,10 +51,19 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
     if (startedRef.current) return;
     startedRef.current = true;
     setActiveStatus('connecting');
+    let stream: MediaStream | undefined;
+    try {
+      stream = await requestMicrophoneAccess();
+    } catch (err: any) {
+      startedRef.current = false;
+      setActiveStatus('error');
+      return;
+    }
     await connect({
       systemInstruction: buildSystem(),
       voiceName: 'Puck',
       onTerminationTriggered: handleEndCall,
+      stream,
     });
   };
 
@@ -64,9 +73,7 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
     else if (status === 'error') setActiveStatus('error');
   }, [status]);
 
-  // Auto-start on open
   useEffect(() => {
-    if (open && !startedRef.current) handleStartCall();
     if (!open && startedRef.current) {
       disconnect();
       startedRef.current = false;
@@ -98,7 +105,7 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
     activeStatus === 'error' ? (error || 'Error') :
     modelVolume > 0.05 ? 'Speaking…' :
     userVolume > 0.05 ? 'Listening…' :
-    'Tap to talk';
+    'Ready';
 
   return (
     <motion.div
