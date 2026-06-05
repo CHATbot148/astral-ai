@@ -1,15 +1,41 @@
 /**
  * Converts Float32Array PCM to Base64 encoded Int16 PCM.
  */
-export function pcmToBase64(float32Array: Float32Array): string {
-  const int16Array = new Int16Array(float32Array.length);
-  for (let i = 0; i < float32Array.length; i++) {
+export function pcmToBase64(
+  float32Array: Float32Array,
+  inputSampleRate = 16000,
+  outputSampleRate = inputSampleRate,
+): string {
+  const source = inputSampleRate === outputSampleRate
+    ? float32Array
+    : resampleFloat32(float32Array, inputSampleRate, outputSampleRate);
+
+  const int16Array = new Int16Array(source.length);
+  for (let i = 0; i < source.length; i++) {
     // Clamp to [-1, 1] then scale to Int16
-    const s = Math.max(-1, Math.min(1, float32Array[i]));
+    const s = Math.max(-1, Math.min(1, source[i]));
     int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
   }
   const buffer = int16Array.buffer;
   return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+}
+
+function resampleFloat32(input: Float32Array, inputRate: number, outputRate: number) {
+  if (!input.length || inputRate === outputRate) return input;
+
+  const ratio = inputRate / outputRate;
+  const outputLength = Math.max(1, Math.round(input.length / ratio));
+  const output = new Float32Array(outputLength);
+
+  for (let i = 0; i < outputLength; i++) {
+    const sourceIndex = i * ratio;
+    const index = Math.floor(sourceIndex);
+    const nextIndex = Math.min(index + 1, input.length - 1);
+    const weight = sourceIndex - index;
+    output[i] = input[index] * (1 - weight) + input[nextIndex] * weight;
+  }
+
+  return output;
 }
 
 /**
