@@ -38,6 +38,22 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle }: Pay
   const priceNGN = billingCycle === 'monthly' ? config.price.monthly : config.price.yearly;
   const tierSwitched = promoApplied && appliedTier && appliedTier !== selectedTier;
 
+  const getFunctionErrorMessage = async (error: unknown, fallback: string) => {
+    if (!(error instanceof Error) || !("context" in error)) return error instanceof Error ? error.message : fallback;
+
+    try {
+      const context = (error as { context?: { json?: () => Promise<{ error?: string }> } }).context;
+      if (context?.json) {
+        const body = await context.json();
+        if (body?.error) return body.error;
+      }
+    } catch {
+      // ignore body parsing failures
+    }
+
+    return error.message || fallback;
+  };
+
   // Promo: validate + redeem + activate in one click
   const handleRedeemCode = async () => {
     if (!promoCode.trim() || !user) return;
@@ -51,7 +67,7 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle }: Pay
         body: { code: promoCode.trim().toUpperCase(), action: 'redeem' },
       });
       if (error || data?.error || !data?.success) {
-        const msg = data?.error || (error as any)?.message || 'Invalid or already-used code';
+        const msg = data?.error || await getFunctionErrorMessage(error, 'Invalid or already-used code');
         toast({ title: msg, variant: 'destructive' });
         return;
       }
@@ -63,7 +79,7 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle }: Pay
       toast({ title: `🎉 ${TIER_CONFIGS[tierFromCode].name} activated for 30 days` });
       setTimeout(onClose, 900);
     } catch (e) {
-      toast({ title: 'Failed to redeem code', variant: 'destructive' });
+      toast({ title: await getFunctionErrorMessage(e, 'Failed to redeem code'), variant: 'destructive' });
     } finally {
       setIsRedeeming(false);
     }
