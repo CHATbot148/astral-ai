@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
-import { WelcomeScreen } from './WelcomeScreen';
+import { WelcomeScreen, WELCOME_SHORTCUTS } from './WelcomeScreen';
 import { Sidebar } from './Sidebar';
 import { TypingIndicator } from './TypingIndicator';
 import { VoiceCall, type VoiceCallHandle } from './VoiceCall';
@@ -1251,15 +1251,15 @@ export const ChatContainer = () => {
         </div>
 
 
-        <ScrollArea ref={scrollRef} className="flex-1">
-          <div style={{ paddingBottom: `${scrollBottomPadding}px` }}>
+        <ScrollArea ref={scrollRef} className="flex-1 min-w-0">
+          <div className="w-full min-w-0 max-w-full overflow-x-hidden" style={{ paddingBottom: `${scrollBottomPadding}px` }}>
             <AnimatePresence mode="wait">
               {displayMessages.length === 0 ? (
-                <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pt-12 sm:pt-16 lg:pt-4">
-                  <WelcomeScreen onSuggestionClick={(s) => handleSend(s)} onAnalyzeDocs={() => setShowAnalyzePopup(true)} onVisualize={() => setShowVisualizePopup(true)} profileName={profile?.full_name} />
+                <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pt-[calc(env(safe-area-inset-top,0px)+4.5rem)] sm:pt-20 lg:pt-6">
+                  <WelcomeScreen onAnalyzeDocs={() => setShowAnalyzePopup(true)} onVisualize={() => setShowVisualizePopup(true)} profileName={profile?.full_name} />
                 </motion.div>
               ) : (
-                <motion.div key="messages" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto pt-14 lg:pt-4">
+                <motion.div key="messages" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto pt-[calc(env(safe-area-inset-top,0px)+4.25rem)] lg:pt-6 min-w-0 overflow-x-hidden">
                   {displayMessages.map((msg, msgIndex) => {
                   const userMessages = displayMessages.filter(m => m.role === 'user');
                   const userMsgIndex = userMessages.findIndex(m => m.id === msg.id);
@@ -1317,6 +1317,41 @@ export const ChatContainer = () => {
         <div className="absolute left-0 right-0 z-20 pointer-events-none" style={{ bottom: `calc(env(safe-area-inset-bottom, 0px) + ${composerOffset}px)` }}>
           <div className="pointer-events-none absolute inset-x-0 -bottom-8 h-36 bg-gradient-to-t from-background via-background/78 to-transparent" />
           <div ref={inputDockRef} className="pointer-events-auto relative">
+            {displayMessages.length === 0 && (
+              <div className="w-full max-w-3xl mx-auto px-2 sm:px-4 mb-2 sm:mb-3 min-w-0">
+                <div
+                  className="overflow-x-auto overflow-y-hidden no-scrollbar scroll-smooth min-w-0 max-w-full"
+                  style={{ touchAction: 'pan-x', WebkitOverflowScrolling: 'touch' }}
+                >
+                  <div className="flex w-max min-w-full gap-2 pb-1 pr-2">
+                    {WELCOME_SHORTCUTS.map((shortcut) => (
+                      <button
+                        key={shortcut.title}
+                        type="button"
+                        onClick={() => {
+                          const value = shortcut.getValue();
+                          if (shortcut.type === 'prompt') {
+                            void handleSend(value);
+                            return;
+                          }
+
+                          if (value === 'analyze') {
+                            setShowAnalyzePopup(true);
+                            return;
+                          }
+
+                          setShowVisualizePopup(true);
+                        }}
+                        className="flex shrink-0 items-center gap-2 rounded-full border border-border/60 bg-card/80 px-3.5 py-2 text-sm whitespace-nowrap backdrop-blur-sm transition-colors hover:border-primary/40"
+                      >
+                        <shortcut.icon className="h-4 w-4 text-primary" />
+                        <span className="text-foreground/90">{shortcut.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
             <ChatInput
               onSend={handleSend}
               isLoading={isLoading}

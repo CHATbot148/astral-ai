@@ -5,7 +5,6 @@ import astrazLogo from '@/assets/astraz-logo.png';
 import { useAuth } from '@/hooks/useAuth';
 
 interface WelcomeScreenProps {
-  onSuggestionClick: (suggestion: string) => void;
   onAnalyzeDocs?: () => void;
   onVisualize?: () => void;
   profileName?: string | null;
@@ -79,7 +78,14 @@ const ParticleField = memo(() => {
 });
 ParticleField.displayName = 'ParticleField';
 
-export const WelcomeScreen = memo(({ onSuggestionClick, onAnalyzeDocs, onVisualize, profileName }: WelcomeScreenProps) => {
+export const WELCOME_SHORTCUTS = [
+  { icon: Brain, title: 'Brainstorm ideas', type: 'prompt' as const, getValue: () => 'Generate creative ideas for my project' },
+  { icon: LineChart, title: 'Plot graph', type: 'prompt' as const, getValue: () => PLOT_PROMPTS[Math.floor(Math.random() * PLOT_PROMPTS.length)] },
+  { icon: FileText, title: 'Analyze documents', type: 'action' as const, getValue: () => 'analyze' },
+  { icon: Sparkles, title: 'Visualize', type: 'action' as const, getValue: () => 'visualize' },
+];
+
+export const WelcomeScreen = memo(({ onAnalyzeDocs, onVisualize, profileName }: WelcomeScreenProps) => {
   const { user } = useAuth();
   const displayName = profileName || user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || '';
   const [keyboardOpen, setKeyboardOpen] = useState(false);
@@ -97,15 +103,8 @@ export const WelcomeScreen = memo(({ onSuggestionClick, onAnalyzeDocs, onVisuali
 
   const greeting = getGreeting(firstName);
 
-  const suggestions = [
-    { icon: Brain, title: 'Brainstorm ideas', onClick: () => onSuggestionClick('Generate creative ideas for my project') },
-    { icon: LineChart, title: 'Plot graph', onClick: () => onSuggestionClick(PLOT_PROMPTS[Math.floor(Math.random() * PLOT_PROMPTS.length)]) },
-    { icon: FileText, title: 'Analyze documents', onClick: () => onAnalyzeDocs?.() },
-    { icon: Sparkles, title: 'Visualize', onClick: () => onVisualize?.() },
-  ];
-
   return (
-    <div className="flex-1 flex flex-col items-center justify-end relative px-4 pb-2 min-h-[52vh] sm:min-h-[70vh] overflow-hidden">
+    <div className="flex-1 flex flex-col items-center justify-end relative w-full min-w-0 px-4 pb-0 min-h-[48vh] sm:min-h-[64vh] overflow-hidden">
       {/* Particle field */}
       <div className="absolute inset-x-0 bottom-0 h-1/2 overflow-hidden pointer-events-none">
         <ParticleField />
@@ -115,7 +114,7 @@ export const WelcomeScreen = memo(({ onSuggestionClick, onAnalyzeDocs, onVisuali
       <motion.div
         animate={{ y: keyboardOpen ? -16 : 0 }}
         transition={{ type: 'spring', stiffness: 220, damping: 26 }}
-        className="flex flex-col items-center justify-center text-center relative z-10 w-full mt-auto mb-6 sm:mb-8"
+        className="flex flex-col items-center justify-center text-center relative z-10 w-full min-w-0 mt-auto mb-0 sm:mb-2"
       >
         <motion.img
           src={astrazLogo}
@@ -129,32 +128,11 @@ export const WelcomeScreen = memo(({ onSuggestionClick, onAnalyzeDocs, onVisuali
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="text-[1.5rem] sm:text-2xl md:text-3xl font-display font-medium text-foreground/95 leading-tight max-w-[min(80vw,22rem)] break-words"
+          className="text-[1.5rem] sm:text-2xl md:text-3xl font-display font-medium text-foreground/95 leading-tight max-w-[min(78vw,22rem)] break-words"
         >
           {greeting}
         </motion.h1>
       </motion.div>
-
-      {/* Horizontal-scroll suggestion chips, sitting just above the input */}
-      <div className="relative z-10 w-full mt-1 mb-1">
-        <div
-          className="overflow-x-auto overflow-y-hidden no-scrollbar -mx-4 px-4 scroll-smooth"
-          style={{ touchAction: 'pan-x', WebkitOverflowScrolling: 'touch' }}
-        >
-          <div className="flex gap-2 pb-1 w-max">
-            {suggestions.map((s) => (
-              <button
-                key={s.title}
-                onClick={s.onClick}
-                className="flex items-center gap-2 shrink-0 px-3.5 py-2 rounded-full bg-card/80 border border-border/60 hover:border-primary/40 backdrop-blur-sm transition-colors text-sm whitespace-nowrap"
-              >
-                <s.icon className="h-4 w-4 text-primary" />
-                <span className="text-foreground/90">{s.title}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
     </div>
   );
 });
