@@ -105,17 +105,17 @@ export const WelcomeScreen = memo(({ onSuggestionClick, onAnalyzeDocs, onVisuali
   ];
 
   return (
-    <div className="flex-1 flex flex-col items-center relative px-4 pb-2 min-h-[52vh] sm:min-h-[70vh] overflow-hidden">
+    <div className="flex-1 flex flex-col items-center justify-end relative px-4 pb-2 min-h-[52vh] sm:min-h-[70vh] overflow-hidden">
       {/* Particle field */}
-      <div className="absolute inset-x-0 bottom-0 h-1/2 overflow-hidden">
+      <div className="absolute inset-x-0 bottom-0 h-1/2 overflow-hidden pointer-events-none">
         <ParticleField />
       </div>
 
       {/* Greeting block - elevates when keyboard opens */}
       <motion.div
-        animate={{ y: keyboardOpen ? -24 : 0 }}
+        animate={{ y: keyboardOpen ? -16 : 0 }}
         transition={{ type: 'spring', stiffness: 220, damping: 26 }}
-        className="flex-1 flex flex-col items-center justify-center text-center relative z-10 w-full pt-8 sm:pt-16"
+        className="flex flex-col items-center justify-center text-center relative z-10 w-full mt-auto mb-6 sm:mb-8"
       >
         <motion.img
           src={astrazLogo}
@@ -123,25 +123,25 @@ export const WelcomeScreen = memo(({ onSuggestionClick, onAnalyzeDocs, onVisuali
           initial={{ opacity: 0, scale: 0.85 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5, type: 'spring', stiffness: 200 }}
-          className="w-12 h-12 sm:w-14 sm:h-14 object-contain mb-4 sm:mb-5"
+          className="w-12 h-12 sm:w-14 sm:h-14 object-contain mb-3 sm:mb-4"
         />
         <motion.h1
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="text-[1.65rem] sm:text-2xl md:text-3xl font-display font-medium text-foreground/95 leading-tight max-w-[min(80vw,22rem)] break-words"
+          className="text-[1.5rem] sm:text-2xl md:text-3xl font-display font-medium text-foreground/95 leading-tight max-w-[min(80vw,22rem)] break-words"
         >
           {greeting}
         </motion.h1>
       </motion.div>
 
-      {/* Horizontal-scroll suggestion chips above input */}
-      <div
-        className="relative z-10 w-full -mb-1 mt-auto"
-        style={{ touchAction: 'pan-x' }}
-      >
-        <div className="overflow-x-auto overflow-y-hidden no-scrollbar -mx-4 px-4">
-          <div className="flex gap-2 pb-2 min-w-min pt-1">
+      {/* Horizontal-scroll suggestion chips, sitting just above the input */}
+      <div className="relative z-10 w-full mt-1 mb-1">
+        <div
+          className="overflow-x-auto overflow-y-hidden no-scrollbar -mx-4 px-4 scroll-smooth"
+          style={{ touchAction: 'pan-x', WebkitOverflowScrolling: 'touch' }}
+        >
+          <div className="flex gap-2 pb-1 w-max">
             {suggestions.map((s) => (
               <button
                 key={s.title}
