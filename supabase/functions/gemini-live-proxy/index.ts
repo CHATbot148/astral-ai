@@ -41,7 +41,7 @@ Deno.serve(async (req) => {
       if (msg.type === "setup") {
         try {
           session = await ai.live.connect({
-            model: "models/gemini-2.0-flash-exp",
+            model: "models/gemini-3.1-flash-live-preview",
             callbacks: {
               onmessage: (m: LiveServerMessage) => {
                 if (socket.readyState === WebSocket.OPEN) {
@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
 
       if (session && msg.audio) {
         session.sendRealtimeInput({
-          audio: { mimeType: "audio/pcm;rate=24000", data: msg.audio },
+          audio: { mimeType: "audio/pcm;rate=16000", data: msg.audio },
         });
       }
     } catch (err) {

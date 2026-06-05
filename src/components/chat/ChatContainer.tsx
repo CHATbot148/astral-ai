@@ -1110,8 +1110,17 @@ export const ChatContainer = () => {
   };
 
   const handleStartVoiceCall = async () => {
+    let primedStream: MediaStream | undefined;
+    try {
+      primedStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+    } catch {
+      primedStream = undefined;
+    }
+
     flushSync(() => setShowVoiceCall(true));
-    await voiceCallRef.current?.startFromTrigger();
+    await voiceCallRef.current?.startFromTrigger(primedStream);
   };
 
   const displayMessages = [...messages];
@@ -1228,9 +1237,9 @@ export const ChatContainer = () => {
       />
 
       <main className="flex-1 flex flex-col min-w-0 relative">
-        <div className="absolute top-3 left-3 right-3 z-20 flex items-center gap-2 pointer-events-none min-w-0">
+        <div className="absolute top-2 left-2 right-2 z-20 flex items-center gap-1.5 pointer-events-none min-w-0 sm:top-3 sm:left-3 sm:right-3 sm:gap-2">
           <Button variant="secondary" size="icon" onClick={() => setSidebarOpen(true)}
-            className={cn("rounded-full pointer-events-auto", sidebarOpen ? 'lg:hidden' : '')} aria-label="Open sidebar">
+            className={cn("rounded-full pointer-events-auto h-8 w-8 sm:h-10 sm:w-10", sidebarOpen ? 'lg:hidden' : '')} aria-label="Open sidebar">
             <PanelLeft className="h-5 w-5" />
           </Button>
           <div className="flex-1 min-w-0 flex justify-center">
@@ -1238,7 +1247,7 @@ export const ChatContainer = () => {
             onTempChat={() => { startNewChat(); toast({ title: 'Temporary chat started', description: 'Messages in this chat will not be saved.' }); }}
             />
           </div>
-          <div className="w-9" />
+          <div className="w-8 sm:w-10" />
         </div>
 
 
@@ -1246,7 +1255,7 @@ export const ChatContainer = () => {
           <div style={{ paddingBottom: `${scrollBottomPadding}px` }}>
             <AnimatePresence mode="wait">
               {displayMessages.length === 0 ? (
-                <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pt-16 lg:pt-4">
+                <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pt-12 sm:pt-16 lg:pt-4">
                   <WelcomeScreen onSuggestionClick={(s) => handleSend(s)} onAnalyzeDocs={() => setShowAnalyzePopup(true)} onVisualize={() => setShowVisualizePopup(true)} profileName={profile?.full_name} />
                 </motion.div>
               ) : (

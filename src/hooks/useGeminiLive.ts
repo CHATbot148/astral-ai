@@ -13,6 +13,8 @@ export interface Transcript {
 }
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const LIVE_INPUT_SAMPLE_RATE = 16000;
+const LIVE_OUTPUT_SAMPLE_RATE = 24000;
 
 export function useGeminiLive() {
   const [status, setStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
@@ -33,12 +35,13 @@ export function useGeminiLive() {
   const userAnalyserRef = useRef<AnalyserNode | null>(null);
   const audioSourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const shouldReconnectRef = useRef(false);
+  const connectAbortRef = useRef<AbortController | null>(null);
 
   const requestMicrophoneAccess = useCallback(async () => {
     if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioContextClass) {
-        audioCtxRef.current = new AudioContextClass({ sampleRate: 24000 });
+        audioCtxRef.current = new AudioContextClass({ sampleRate: LIVE_OUTPUT_SAMPLE_RATE });
       }
     }
     if (audioCtxRef.current?.state === 'suspended') {
@@ -76,14 +79,19 @@ export function useGeminiLive() {
     }
     if (processorRef.current) {
       try { processorRef.current.disconnect(); } catch {}
+      processorRef.current.onaudioprocess = null;
       processorRef.current = null;
     }
+    userAnalyserRef.current = null;
+    modelAnalyserRef.current = null;
     if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
       try { audioCtxRef.current.close(); } catch {}
     }
     audioCtxRef.current = null;
     nextStartTimeRef.current = 0;
     audioSourcesRef.current = [];
+    connectAbortRef.current?.abort();
+    connectAbortRef.current = null;
   }, []);
 
   const stopAllPlayback = useCallback(() => {
@@ -111,7 +119,7 @@ export function useGeminiLive() {
 
   const startAudioCapture = useCallback(async (existingStream?: MediaStream) => {
     try {
-      const audioCtx = audioCtxRef.current ?? new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      const audioCtx = audioCtxRef.current ?? new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: LIVE_OUTPUT_SAMPLE_RATE });
       audioCtxRef.current = audioCtx;
       if (audioCtx.state === 'suspended') await audioCtx.resume();
 
@@ -144,7 +152,7 @@ export function useGeminiLive() {
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
         const inputData = e.inputBuffer.getChannelData(0);
-        const base64 = pcmToBase64(inputData);
+        const base64 = pcmToBase64(inputData, audioCtx.sampleRate, LIVE_INPUT_SAMPLE_RATE);
         wsRef.current.send(JSON.stringify({ audio: base64 }));
       };
 
@@ -164,7 +172,7 @@ export function useGeminiLive() {
     if (audioCtx.state === 'suspended') audioCtx.resume();
 
     const data = base64ToFloat32(base64);
-    const buffer = audioCtx.createBuffer(1, data.length, 24000);
+    const buffer = audioCtx.createBuffer(1, data.length, LIVE_OUTPUT_SAMPLE_RATE);
     buffer.getChannelData(0).set(data);
 
     const source = audioCtx.createBufferSource();
@@ -204,6 +212,8 @@ export function useGeminiLive() {
       setModelVolume(0);
       setStatus('connecting');
       shouldReconnectRef.current = true;
+      const connectAbort = new AbortController();
+      connectAbortRef.current = connectAbort;
       if (config.stream) {
         streamRef.current = config.stream;
       }
@@ -222,6 +232,13 @@ export function useGeminiLive() {
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
+      const connectTimeout = window.setTimeout(() => {
+        if (connectAbort.signal.aborted) return;
+        setError('Voice call timed out while connecting.');
+        setStatus('error');
+        try { ws.close(); } catch {}
+      }, 12000);
+
       ws.onopen = () => {
         ws.send(JSON.stringify({
           type: 'setup',
@@ -233,12 +250,14 @@ export function useGeminiLive() {
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
         if (msg.type === 'connected') {
+          window.clearTimeout(connectTimeout);
           setStatus('connected');
           startAudioCapture(config.stream);
           playInitiatedSound();
           return;
         }
         if (msg.type === 'error') {
+          window.clearTimeout(connectTimeout);
           console.error('Gemini Live Error:', msg.message);
           setError(msg.message);
           setStatus('error');
@@ -274,17 +293,25 @@ export function useGeminiLive() {
       };
 
       ws.onclose = () => {
+        window.clearTimeout(connectTimeout);
         if (!shouldReconnectRef.current) return;
-        setStatus('idle');
+        if (status !== 'connected') {
+          setError((prev) => prev || 'Voice call disconnected before it became active.');
+          setStatus('error');
+        } else {
+          setStatus('idle');
+        }
         cleanup();
       };
 
       ws.onerror = (err) => {
+        window.clearTimeout(connectTimeout);
         console.error('WebSocket error:', err);
         setError('Connection error');
+        setStatus('error');
       };
     },
-    [cleanup, startAudioCapture, playAudioChunk, stopAllPlayback]
+    [cleanup, startAudioCapture, playAudioChunk, status, stopAllPlayback]
   );
 
   const disconnect = useCallback(() => {
