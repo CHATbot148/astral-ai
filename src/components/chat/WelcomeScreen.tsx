@@ -104,17 +104,20 @@ export const WelcomeScreen = memo(({ onAnalyzeDocs, onVisualize, profileName }: 
   const greeting = getGreeting(firstName);
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-end relative w-full min-w-0 px-4 pb-0 min-h-[48vh] sm:min-h-[64vh] overflow-hidden">
+    <div
+      className="flex flex-col items-center justify-center relative w-full min-w-0 px-4 overflow-hidden"
+      style={{ minHeight: `calc(100dvh - 14rem)` }}
+    >
       {/* Particle field */}
-      <div className="absolute inset-x-0 bottom-0 h-1/2 overflow-hidden pointer-events-none">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <ParticleField />
       </div>
 
-      {/* Greeting block - elevates when keyboard opens */}
+      {/* Greeting block - centered, shifts up when keyboard opens */}
       <motion.div
-        animate={{ y: keyboardOpen ? -16 : 0 }}
+        animate={{ y: keyboardOpen ? '-20%' : 0 }}
         transition={{ type: 'spring', stiffness: 220, damping: 26 }}
-        className="flex flex-col items-center justify-center text-center relative z-10 w-full min-w-0 mt-auto mb-0 sm:mb-2"
+        className="flex flex-col items-center justify-center text-center relative z-10 w-full min-w-0"
       >
         <motion.img
           src={astrazLogo}
@@ -122,7 +125,7 @@ export const WelcomeScreen = memo(({ onAnalyzeDocs, onVisualize, profileName }: 
           initial={{ opacity: 0, scale: 0.85 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5, type: 'spring', stiffness: 200 }}
-          className="w-12 h-12 sm:w-14 sm:h-14 object-contain mb-3 sm:mb-4"
+          className="w-14 h-14 sm:w-16 sm:h-16 object-contain mb-3 sm:mb-4"
         />
         <motion.h1
           initial={{ opacity: 0, y: 8 }}

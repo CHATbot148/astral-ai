@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Gift, Loader2, Check, Repeat } from 'lucide-react';
+import { X, Gift, Loader2, Check, Repeat, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useSubscription, SubscriptionTier, BillingCycle, TIER_CONFIGS } from '@/hooks/useSubscription';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -14,66 +15,65 @@ interface PaymentPageProps {
   onClose: () => void;
   selectedTier: SubscriptionTier;
   billingCycle: BillingCycle;
-  autoRenew: boolean;
-  savePayment: boolean;
 }
 
-export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoRenew }: PaymentPageProps) => {
+export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle }: PaymentPageProps) => {
   const { subscribe } = useSubscription();
   const { user } = useAuth();
   const { toast } = useToast();
   const [promoCode, setPromoCode] = useState('');
   const [isRedeeming, setIsRedeeming] = useState(false);
   const [promoApplied, setPromoApplied] = useState(false);
-  const [promoDiscount, setPromoDiscount] = useState<{ tier: string; free: boolean; durationDays: number } | null>(null);
+  const [appliedTier, setAppliedTier] = useState<SubscriptionTier | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [locale, setLocale] = useState<LocaleInfo>(getCachedLocale());
+  const [autoRenew, setAutoRenew] = useState(true);
+  const [savePayment, setSavePayment] = useState(false);
+  const [agreedToPolicy, setAgreedToPolicy] = useState(false);
 
   useEffect(() => { if (isOpen) detectLocale().then(setLocale); }, [isOpen]);
 
-  const activeTier = promoApplied && promoDiscount?.tier ? (promoDiscount.tier as SubscriptionTier) : selectedTier;
+  const activeTier = promoApplied && appliedTier ? appliedTier : selectedTier;
   const config = TIER_CONFIGS[activeTier];
   const priceNGN = billingCycle === 'monthly' ? config.price.monthly : config.price.yearly;
-  const tierSwitched = promoApplied && promoDiscount?.tier && promoDiscount.tier !== selectedTier;
+  const tierSwitched = promoApplied && appliedTier && appliedTier !== selectedTier;
 
+  // Promo: validate + redeem + activate in one click
   const handleRedeemCode = async () => {
     if (!promoCode.trim() || !user) return;
+    if (!agreedToPolicy) {
+      toast({ title: 'Please agree to the Privacy Policy & Terms', variant: 'destructive' });
+      return;
+    }
     setIsRedeeming(true);
     try {
       const { data, error } = await supabase.functions.invoke('redeem-promo', {
-        body: { code: promoCode.trim().toUpperCase(), action: 'validate' },
-      });
-      if (error || data?.error) {
-        toast({ title: data?.error || 'Invalid promo code', variant: 'destructive' });
-        return;
-      }
-      setPromoApplied(true);
-      setPromoDiscount({ tier: data.tier, free: true, durationDays: data.duration_days ?? 30 });
-    } catch {
-      toast({ title: 'Failed to validate code', variant: 'destructive' });
-    } finally { setIsRedeeming(false); }
-  };
-
-  const handlePromoActivate = async () => {
-    setIsProcessing(true);
-    try {
-      const tierToSubscribe = promoDiscount?.tier as SubscriptionTier;
-      const { data, error } = await supabase.functions.invoke('redeem-promo', {
         body: { code: promoCode.trim().toUpperCase(), action: 'redeem' },
       });
-      if (error || data?.error) {
-        toast({ title: data?.error || 'Promo no longer valid', variant: 'destructive' });
-        setPromoApplied(false); setPromoDiscount(null); setIsProcessing(false); return;
+      if (error || data?.error || !data?.success) {
+        const msg = data?.error || (error as any)?.message || 'Invalid or already-used code';
+        toast({ title: msg, variant: 'destructive' });
+        return;
       }
-      await subscribe(tierToSubscribe, 'monthly', false, false, promoDiscount?.durationDays ?? data.duration_days ?? 30);
-      toast({ title: `🎉 ${TIER_CONFIGS[tierToSubscribe].name} activated!` });
-      onClose();
-    } catch {
-      toast({ title: 'Activation failed', variant: 'destructive' });
-    } finally { setIsProcessing(false); }
+      const tierFromCode = data.tier as SubscriptionTier;
+      // All coupons grant 1 month, no auto-renew.
+      await subscribe(tierFromCode, 'monthly', false, false, 30);
+      setPromoApplied(true);
+      setAppliedTier(tierFromCode);
+      toast({ title: `🎉 ${TIER_CONFIGS[tierFromCode].name} activated for 30 days` });
+      setTimeout(onClose, 900);
+    } catch (e) {
+      toast({ title: 'Failed to redeem code', variant: 'destructive' });
+    } finally {
+      setIsRedeeming(false);
+    }
   };
 
   const handlePaystackPay = async () => {
+    if (!agreedToPolicy) {
+      toast({ title: 'Please agree to the Privacy Policy & Terms', variant: 'destructive' });
+      return;
+    }
     setIsProcessing(true);
     try {
       const callbackUrl = `${window.location.origin}/`;
@@ -112,7 +112,7 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium">{config.name} Plan</p>
-                    <p className="text-xs text-muted-foreground">{billingCycle === 'monthly' ? 'Monthly' : 'Yearly'} billing</p>
+                    <p className="text-xs text-muted-foreground">{promoApplied ? 'Coupon · 30 days' : (billingCycle === 'monthly' ? 'Monthly' : 'Yearly')} billing</p>
                   </div>
                   <div className="text-right">
                     {promoApplied ? (
@@ -140,7 +140,7 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
                   <div className="relative flex-1">
                     <Gift className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input value={promoCode} onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
-                      placeholder="ASTRAZ-P-XXXXXX" className="pl-9 uppercase" disabled={promoApplied} />
+                      placeholder="ASTRAZ-P-XXXXXX" className="pl-9 uppercase" disabled={promoApplied || isRedeeming} />
                   </div>
                   <Button variant={promoApplied ? 'outline' : 'xai'} onClick={handleRedeemCode}
                     disabled={isRedeeming || promoApplied || !promoCode.trim()} className="shrink-0">
@@ -148,21 +148,53 @@ export const PaymentPage = ({ isOpen, onClose, selectedTier, billingCycle, autoR
                       promoApplied ? <Check className="h-4 w-4 text-green-500" /> : 'Apply'}
                   </Button>
                 </div>
-                {promoApplied && (
-                  <p className="text-xs text-green-500 mt-1">✓ {TIER_CONFIGS[promoDiscount?.tier as SubscriptionTier]?.name} free for {promoDiscount?.durationDays ?? 30} days</p>
+                {promoApplied && appliedTier && (
+                  <p className="text-xs text-green-500 mt-1">✓ {TIER_CONFIGS[appliedTier].name} activated free for 30 days</p>
                 )}
                 {tierSwitched && (
-                  <p className="text-xs text-amber-500 mt-1">⚠ This code is for the {TIER_CONFIGS[promoDiscount?.tier as SubscriptionTier]?.name} plan instead.</p>
+                  <p className="text-xs text-amber-500 mt-1">⚠ This code activated {TIER_CONFIGS[appliedTier!].name} instead.</p>
                 )}
+                <p className="text-[10px] text-muted-foreground mt-1">All coupons are 30 days, single-use, and don't auto-renew.</p>
               </div>
 
-              {promoApplied ? (
-                <Button variant="xai" className="w-full h-12" onClick={handlePromoActivate} disabled={isProcessing}>
-                  {isProcessing ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Activating…</> :
-                    `Activate ${TIER_CONFIGS[activeTier]?.name} — Free`}
-                </Button>
-              ) : (
-                <Button variant="xai" className="w-full h-12" onClick={handlePaystackPay} disabled={isProcessing}>
+              {/* Refund policy warning */}
+              {!promoApplied && (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 mb-4">
+                  <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-muted-foreground">
+                    {billingCycle === 'monthly'
+                      ? 'Full refund within 72 hours of purchase. After 72 hours, a 20% cancellation fee applies.'
+                      : 'Full refund within 31 days of purchase. After 31 days, a 20% cancellation fee applies.'}
+                  </p>
+                </div>
+              )}
+
+              {/* Options */}
+              {!promoApplied && (
+                <div className="space-y-3 mb-4">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <Checkbox checked={autoRenew} onCheckedChange={(c) => setAutoRenew(!!c)} />
+                    <span className="text-sm">Auto-renew subscription</span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <Checkbox checked={savePayment} onCheckedChange={(c) => setSavePayment(!!c)} />
+                    <span className="text-sm">Save payment method for future purchases</span>
+                  </label>
+                </div>
+              )}
+
+              <label className="flex items-center gap-3 cursor-pointer mb-4">
+                <Checkbox checked={agreedToPolicy} onCheckedChange={(c) => setAgreedToPolicy(!!c)} />
+                <span className="text-sm">
+                  I agree to the{' '}
+                  <a href="/privacy-policy" target="_blank" className="text-xai-cyan hover:underline">
+                    Privacy Policy & Terms
+                  </a>
+                </span>
+              </label>
+
+              {!promoApplied && (
+                <Button variant="xai" className="w-full h-12" onClick={handlePaystackPay} disabled={isProcessing || !agreedToPolicy}>
                   {isProcessing ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Redirecting…</> :
                     `Pay ${formatLocalPrice(priceNGN, locale.currency)} with Paystack`}
                 </Button>

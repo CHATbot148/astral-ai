@@ -115,10 +115,73 @@ export const ChatContainer = () => {
 
   const {
     conversations, currentConversation, messages,
-    selectConversation, createConversation, addMessage,
-    deleteMessagesFrom, deleteConversation, renameConversation, startNewChat,
+    selectConversation: selectConversationDb,
+    createConversation: createConversationDb,
+    addMessage: addMessageDb,
+    deleteMessagesFrom, deleteConversation, renameConversation,
+    startNewChat: startNewChatDb,
     setMessages,
   } = useConversations();
+
+  // Temporary chat mode — messages stay local, never persisted.
+  const [tempChatMode, setTempChatMode] = useState(false);
+  const tempChatRef = useRef(false);
+  useEffect(() => { tempChatRef.current = tempChatMode; }, [tempChatMode]);
+
+  const addMessage = async (
+    conversationId: string,
+    role: 'user' | 'assistant',
+    content: string,
+    fileUrls?: string[],
+  ) => {
+    if (tempChatRef.current) {
+      const msg = {
+        id: `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        conversation_id: 'temp',
+        role,
+        content,
+        file_urls: fileUrls || null,
+        created_at: new Date().toISOString(),
+      } as any;
+      setMessages((prev) => [...prev, msg]);
+      return msg;
+    }
+    return addMessageDb(conversationId, role, content, fileUrls);
+  };
+
+  const createConversation = async (firstMessage?: string) => {
+    if (tempChatRef.current) {
+      return {
+        id: 'temp',
+        title: 'Temporary',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as any;
+    }
+    return createConversationDb(firstMessage);
+  };
+
+  const startNewChat = () => {
+    setTempChatMode(false);
+    startNewChatDb();
+  };
+
+  const selectConversation = async (conv: any) => {
+    setTempChatMode(false);
+    await selectConversationDb(conv);
+  };
+
+  const toggleTempChat = () => {
+    if (tempChatMode) {
+      setTempChatMode(false);
+      startNewChatDb();
+      return;
+    }
+    startNewChatDb();
+    setTempChatMode(true);
+    toast({ title: 'Temporary chat on', description: 'Messages in this chat will not be saved.' });
+  };
+
 
   useEffect(() => {
     if (currentConversation?.title) {
@@ -1244,8 +1307,11 @@ export const ChatContainer = () => {
           </Button>
           <div className="flex-1 min-w-0 flex justify-center">
             <ChatHeader
-            onTempChat={() => { startNewChat(); toast({ title: 'Temporary chat started', description: 'Messages in this chat will not be saved.' }); }}
+            onTempChat={toggleTempChat}
+            showTempChat={!currentConversation && displayMessages.length === 0}
+            tempActive={tempChatMode}
             />
+
           </div>
           <div className="w-8 sm:w-10" />
         </div>

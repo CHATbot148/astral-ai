@@ -10,9 +10,11 @@ import { cn } from '@/lib/utils';
 interface Props {
   onTempChat?: () => void;
   onUpgrade?: () => void;
+  showTempChat?: boolean;
+  tempActive?: boolean;
 }
 
-export const ChatHeader = ({ onTempChat, onUpgrade }: Props) => {
+export const ChatHeader = ({ onTempChat, onUpgrade, showTempChat = true, tempActive = false }: Props) => {
   const [model, setModel] = useState<ChatModel>(getSelectedModel());
   const { tier } = useSubscription();
   const { toast } = useToast();
@@ -63,15 +65,17 @@ export const ChatHeader = ({ onTempChat, onUpgrade }: Props) => {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7 rounded-full sm:h-8 sm:w-8"
-        aria-label="Start temporary chat"
-        onClick={onTempChat}
-      >
-        <MessageSquareOff className="h-4 w-4" />
-      </Button>
+      {showTempChat && (
+        <Button
+          variant={tempActive ? 'xai' : 'ghost'}
+          size="icon"
+          className="h-7 w-7 rounded-full sm:h-8 sm:w-8"
+          aria-label={tempActive ? 'Temporary chat active' : 'Start temporary chat'}
+          onClick={onTempChat}
+        >
+          <MessageSquareOff className="h-4 w-4" />
+        </Button>
+      )}
     </div>
   );
 };
