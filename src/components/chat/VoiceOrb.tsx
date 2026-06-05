@@ -410,8 +410,8 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({ userVolume, modelVolume, isM
           isExploding = true;
           points.scale.set(responsiveScale * (Math.sin(time*10)*0.1+1), responsiveScale * (Math.sin(time*10)*0.1+1), responsiveScale * (Math.sin(time*10)*0.1+1));
       } else if (currentStatus === 'connected') {
-          // Sync transition for muted states
-          if (muted || vol < 0.02) {
+          // Only morph through shapes/texts when MUTED. Otherwise stay as reactive sphere.
+          if (muted) {
               shapeTimer += 0.01;
               if (shapeTimer > 3.0) { 
                   shapeTimer = 0;
