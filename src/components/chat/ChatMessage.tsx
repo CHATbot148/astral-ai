@@ -1222,11 +1222,12 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
           </motion.div>
         )}
 
-        {/* Image Preview Modal */}
-        <ImagePreviewModal 
-          isOpen={!!previewImage} 
-          imageUrl={previewImage || ''} 
-          onClose={() => setPreviewImage(null)} 
+        {/* Media Viewer (images, AI images, video, documents) */}
+        <MediaViewer
+          open={!!previewImage}
+          url={previewImage || ''}
+          kind={isUser ? 'image' : 'ai-image'}
+          onClose={() => setPreviewImage(null)}
         />
 
         {/* Render extracted media using MediaRenderer */}
