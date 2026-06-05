@@ -34,6 +34,13 @@ export function useGeminiLive() {
   const audioSourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const shouldReconnectRef = useRef(false);
 
+  const requestMicrophoneAccess = useCallback(async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+    return stream;
+  }, []);
+
   const toggleMute = useCallback(() => {
     setIsMuted((prev) => {
       const newState = !prev;
@@ -92,14 +99,12 @@ export function useGeminiLive() {
     });
   };
 
-  const startAudioCapture = useCallback(async () => {
+  const startAudioCapture = useCallback(async (existingStream?: MediaStream) => {
     try {
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       audioCtxRef.current = audioCtx;
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      });
+      const stream = existingStream ?? await requestMicrophoneAccess();
       streamRef.current = stream;
 
       const source = audioCtx.createMediaStreamSource(stream);
@@ -140,7 +145,7 @@ export function useGeminiLive() {
       setError(`Microphone access error: ${err.message}`);
       setStatus('error');
     }
-  }, [stopAllPlayback]);
+  }, [requestMicrophoneAccess, stopAllPlayback]);
 
   const playAudioChunk = useCallback((base64: string) => {
     if (!audioCtxRef.current || !modelAnalyserRef.current) return;
@@ -181,7 +186,7 @@ export function useGeminiLive() {
   }, []);
 
   const connect = useCallback(
-    async (config: { systemInstruction: string; voiceName: string; onTerminationTriggered?: () => void }) => {
+    async (config: { systemInstruction: string; voiceName: string; onTerminationTriggered?: () => void; stream?: MediaStream }) => {
       setTranscripts([]);
       setError(null);
       setUserVolume(0);
@@ -215,7 +220,7 @@ export function useGeminiLive() {
         const msg = JSON.parse(event.data);
         if (msg.type === 'connected') {
           setStatus('connected');
-          startAudioCapture();
+          startAudioCapture(config.stream);
           playInitiatedSound();
           return;
         }
@@ -276,5 +281,5 @@ export function useGeminiLive() {
 
   useEffect(() => () => cleanup(), [cleanup]);
 
-  return { status, transcripts, isMuted, toggleMute, userVolume, modelVolume, error, connect, disconnect };
+  return { status, transcripts, isMuted, toggleMute, userVolume, modelVolume, error, connect, disconnect, requestMicrophoneAccess };
 }
