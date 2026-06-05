@@ -1110,8 +1110,17 @@ export const ChatContainer = () => {
   };
 
   const handleStartVoiceCall = async () => {
+    let primedStream: MediaStream | undefined;
+    try {
+      primedStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+    } catch {
+      primedStream = undefined;
+    }
+
     flushSync(() => setShowVoiceCall(true));
-    await voiceCallRef.current?.startFromTrigger();
+    await voiceCallRef.current?.startFromTrigger(primedStream);
   };
 
   const displayMessages = [...messages];
