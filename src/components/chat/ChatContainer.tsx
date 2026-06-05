@@ -1109,9 +1109,9 @@ export const ChatContainer = () => {
     setShowVideoDialog(true);
   };
 
-  const handleStartVoiceCall = () => {
+  const handleStartVoiceCall = async () => {
     flushSync(() => setShowVoiceCall(true));
-    voiceCallRef.current?.startFromTrigger();
+    await voiceCallRef.current?.startFromTrigger();
   };
 
   const displayMessages = [...messages];
@@ -1228,14 +1228,16 @@ export const ChatContainer = () => {
       />
 
       <main className="flex-1 flex flex-col min-w-0 relative">
-        <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-none">
+        <div className="absolute top-3 left-3 right-3 z-20 flex items-center gap-2 pointer-events-none min-w-0">
           <Button variant="secondary" size="icon" onClick={() => setSidebarOpen(true)}
             className={cn("rounded-full pointer-events-auto", sidebarOpen ? 'lg:hidden' : '')} aria-label="Open sidebar">
             <PanelLeft className="h-5 w-5" />
           </Button>
-          <ChatHeader
+          <div className="flex-1 min-w-0 flex justify-center">
+            <ChatHeader
             onTempChat={() => { startNewChat(); toast({ title: 'Temporary chat started', description: 'Messages in this chat will not be saved.' }); }}
-          />
+            />
+          </div>
           <div className="w-9" />
         </div>
 
@@ -1244,7 +1246,7 @@ export const ChatContainer = () => {
           <div style={{ paddingBottom: `${scrollBottomPadding}px` }}>
             <AnimatePresence mode="wait">
               {displayMessages.length === 0 ? (
-                <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pt-14 lg:pt-4">
+                <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pt-16 lg:pt-4">
                   <WelcomeScreen onSuggestionClick={(s) => handleSend(s)} onAnalyzeDocs={() => setShowAnalyzePopup(true)} onVisualize={() => setShowVisualizePopup(true)} profileName={profile?.full_name} />
                 </motion.div>
               ) : (
