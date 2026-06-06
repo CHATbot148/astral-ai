@@ -1166,6 +1166,10 @@ export const ChatContainer = () => {
         return;
       }
       console.error('Chat error:', error);
+      // Restore the user's typed message back into the input so it's not lost
+      if (content && content.trim()) {
+        setRestoreDraft({ text: content, nonce: Date.now() });
+      }
       toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to send message', variant: 'destructive' });
       setTypingLabel(undefined);
     } finally {
