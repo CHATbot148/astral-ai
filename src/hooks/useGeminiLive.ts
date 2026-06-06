@@ -36,6 +36,7 @@ export function useGeminiLive() {
   const audioSourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const shouldReconnectRef = useRef(false);
   const connectAbortRef = useRef<AbortController | null>(null);
+  const sessionReadyRef = useRef(false);
 
   const requestMicrophoneAccess = useCallback(async () => {
     if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
@@ -84,6 +85,7 @@ export function useGeminiLive() {
     }
     userAnalyserRef.current = null;
     modelAnalyserRef.current = null;
+    sessionReadyRef.current = false;
     if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
       try { audioCtxRef.current.close(); } catch {}
     }
@@ -149,6 +151,7 @@ export function useGeminiLive() {
         }
 
         if (isMutedRef.current) return;
+        if (!sessionReadyRef.current) return;
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
         const inputData = e.inputBuffer.getChannelData(0);
@@ -252,6 +255,7 @@ export function useGeminiLive() {
         const msg = JSON.parse(event.data);
         if (msg.type === 'connected') {
           window.clearTimeout(connectTimeout);
+          sessionReadyRef.current = true;
           setStatus('connected');
           startAudioCapture(config.stream);
           playInitiatedSound();
@@ -259,6 +263,7 @@ export function useGeminiLive() {
         }
         if (msg.type === 'error') {
           window.clearTimeout(connectTimeout);
+          sessionReadyRef.current = false;
           console.error('Gemini Live Error:', msg.message);
           setError(msg.message);
           setStatus('error');
@@ -295,6 +300,7 @@ export function useGeminiLive() {
 
       ws.onclose = () => {
         window.clearTimeout(connectTimeout);
+        sessionReadyRef.current = false;
         if (!shouldReconnectRef.current) return;
         if (status !== 'connected') {
           setError((prev) => prev || 'Voice call disconnected before it became active.');
@@ -307,6 +313,7 @@ export function useGeminiLive() {
 
       ws.onerror = (err) => {
         window.clearTimeout(connectTimeout);
+        sessionReadyRef.current = false;
         console.error('WebSocket error:', err);
         setError('Connection error');
         setStatus('error');
