@@ -88,12 +88,12 @@ Deno.serve(async (req) => {
               outputAudioTranscription: {},
             },
           });
-          try {
-            session = await tryConnect(preferredModel);
-          } catch (primaryErr) {
-            console.warn("[gemini-live-proxy] pro model unavailable, falling back to flash:", primaryErr);
-            session = await tryConnect(fallbackModel);
+          let lastErr: any = null;
+          for (const m of candidates) {
+            try { session = await tryConnect(m); lastErr = null; break; }
+            catch (e) { lastErr = e; console.warn("[gemini-live-proxy] model failed", m, e); }
           }
+          if (!session) throw lastErr || new Error("No live model available");
           socket.send(JSON.stringify({ type: "connected" }));
         } catch (err: any) {
           console.error("[gemini-live-proxy] connect failed:", err);
