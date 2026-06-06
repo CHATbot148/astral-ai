@@ -20,6 +20,7 @@ interface ChatInputProps {
   onStartCall?: () => void;
   onOpenImageDialog?: (prefill?: string) => void;
   onOpenVideoDialog?: () => void;
+  restoreDraft?: { text: string; nonce: number } | null;
 }
 
 declare global {
