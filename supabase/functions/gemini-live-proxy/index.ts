@@ -48,9 +48,14 @@ Deno.serve(async (req) => {
 
       if (msg.type === "setup") {
         try {
-          // Prefer pro live preview for higher fidelity; fall back to flash if unavailable.
-          const preferredModel = "models/gemini-3.1-pro-live-preview";
-          const fallbackModel = "models/gemini-3.1-flash-live-preview";
+          // Use stable live model names. The "3.1 pro live preview" alias does not
+          // exist publicly and was causing every call to fail. Try the native-audio
+          // dialog model first (highest fidelity), then fall back to flash live.
+          const candidates = [
+            "models/gemini-2.5-flash-preview-native-audio-dialog",
+            "models/gemini-live-2.5-flash-preview",
+            "models/gemini-2.0-flash-live-001",
+          ];
           const tryConnect = (model: string) => ai.live.connect({
             model,
             callbacks: {
