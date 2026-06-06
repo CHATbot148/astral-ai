@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Mic, MicOff, Plus, X, Loader2, FileText, Square, Phone, Smile, Pencil, Wand2, Video, Globe } from 'lucide-react';
+import { AttachmentChip } from './AttachmentChip';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { VoiceVisualizer } from './VoiceVisualizer';
