@@ -31,7 +31,6 @@ async function tryGeminiConnect(model: string, systemInstruction: string, voiceN
     upstream.onopen = () => {
       opened = true;
       clearTimeout(timeout);
-      // Send BidiGenerateContentSetup
       upstream.send(JSON.stringify({
         setup: {
           model,
@@ -40,6 +39,7 @@ async function tryGeminiConnect(model: string, systemInstruction: string, voiceN
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
           },
           systemInstruction: { parts: [{ text: systemInstruction }] },
+          realtimeInputConfig: {},
           inputAudioTranscription: {},
           outputAudioTranscription: {},
         },
@@ -113,12 +113,25 @@ Deno.serve(async (req) => {
 
         // Wire upstream → client
         upstream.onmessage = (ev) => {
-          if (typeof ev.data === "string") safeSendClient(ev.data);
+          const handlePayload = (payload: string) => {
+            try {
+              const parsed = JSON.parse(payload);
+              if (parsed.setupComplete) {
+                safeSendClient({ type: "connected" });
+                return;
+              }
+              safeSendClient(parsed);
+            } catch {
+              safeSendClient(payload);
+            }
+          };
+
+          if (typeof ev.data === "string") handlePayload(ev.data);
           else if (ev.data instanceof ArrayBuffer) {
             // Convert to string (Gemini sends JSON over binary sometimes)
-            try { safeSendClient(new TextDecoder().decode(ev.data)); } catch {}
+            try { handlePayload(new TextDecoder().decode(ev.data)); } catch {}
           } else if (ev.data instanceof Blob) {
-            ev.data.text().then((t) => safeSendClient(t)).catch(() => {});
+            ev.data.text().then((t) => handlePayload(t)).catch(() => {});
           }
         };
         upstream.onerror = (e) => {
@@ -130,15 +143,13 @@ Deno.serve(async (req) => {
           safeSendClient({ type: "error", message: "Gemini connection closed" });
           try { client.close(); } catch {}
         };
-
-        safeSendClient({ type: "connected" });
         return;
       }
 
       if (upstream && upstream.readyState === WebSocket.OPEN && msg.audio) {
         upstream.send(JSON.stringify({
           realtimeInput: {
-            mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.audio }],
+            audio: { mimeType: "audio/pcm;rate=16000", data: msg.audio },
           },
         }));
       }
