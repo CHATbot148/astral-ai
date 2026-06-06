@@ -111,8 +111,14 @@ export const MediaViewer = ({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.2 }}
-        className="fixed inset-0 z-[200] flex flex-col bg-[#050507]/95 backdrop-blur-xl"
-      >
+        className="fixed inset-0 z-[200] flex flex-col bg-[#050507]/95 backdrop-blur-xl overscroll-contain"
+        style={{ touchAction: 'none' }}
+        onWheel={(e) => e.stopPropagation()}
+        onTouchMove={(e) => {
+          // Allow touchmove only inside scrollable panes (img/text/pdf containers handle it)
+          const target = e.target as HTMLElement;
+          if (!target.closest('[data-allow-scroll]')) e.preventDefault();
+        }}
         {/* Top bar */}
         <div className="flex items-center justify-between gap-2 px-3 sm:px-5 py-3 border-b border-white/10 bg-black/40 backdrop-blur-md">
           <div className="flex items-center gap-2 min-w-0">
