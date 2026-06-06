@@ -1188,6 +1188,20 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
           kind={isUser ? 'image' : 'ai-image'}
           onClose={() => setPreviewImage(null)}
         />
+        <MediaViewer
+          open={!!previewVideo}
+          url={previewVideo || ''}
+          kind="video"
+          onClose={() => setPreviewVideo(null)}
+        />
+        <MediaViewer
+          open={!!previewDoc}
+          url={previewDoc?.url || ''}
+          fileName={previewDoc?.name}
+          mimeType={previewDoc?.mime}
+          kind="document"
+          onClose={() => setPreviewDoc(null)}
+        />
 
         {/* Render extracted media using MediaRenderer */}
         {parsedContent.mediaItems.length > 0 && (
