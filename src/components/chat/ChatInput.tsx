@@ -312,39 +312,16 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
         {filePreviews.length > 0 && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="mb-3">
             <div className="flex flex-wrap gap-2">
-              {filePreviews.map(({ file, preview }, index) => {
-                const isImg = file.type.startsWith('image/');
-                const isVid = file.type.startsWith('video/');
-                const sizeLabel = file.size > 1024 * 1024
-                  ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
-                  : `${Math.max(1, Math.round(file.size / 1024))} KB`;
-                return (
-                  <motion.div key={index} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.85 }} className="relative group">
-                    {isImg && preview ? (
-                      <div className="w-16 h-16 rounded-xl overflow-hidden border border-border/60 bg-secondary shadow-sm">
-                        <img src={preview} alt={file.name} className="w-full h-full object-cover" />
-                      </div>
-                    ) : isVid && preview ? (
-                      <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-border/60 bg-black shadow-sm">
-                        <video src={preview} className="w-full h-full object-cover" muted playsInline preload="metadata" />
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                          <div className="w-5 h-5 rounded-full bg-white/90 flex items-center justify-center">
-                            <span className="block w-0 h-0 border-y-[4px] border-y-transparent border-l-[6px] border-l-black ml-[2px]" />
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-xai-purple/15 to-xai-cyan/10 flex flex-col items-center justify-center border border-border/60 p-1 shadow-sm" title={file.name}>
-                        <FileText className="h-5 w-5 text-xai-cyan mb-0.5" />
-                        <span className="text-[9px] text-muted-foreground truncate w-full text-center font-medium">{sizeLabel}</span>
-                      </div>
-                    )}
-                    <motion.button onClick={() => removeFile(index)} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center shadow-lg">
-                      <X className="h-3 w-3" />
-                    </motion.button>
-                  </motion.div>
-                );
-              })}
+              {filePreviews.map(({ file, preview }, index) => (
+                <AttachmentChip
+                  key={index}
+                  name={file.name}
+                  size={file.size}
+                  mimeType={file.type}
+                  thumbnailUrl={preview || undefined}
+                  onRemove={() => removeFile(index)}
+                />
+              ))}
             </div>
           </motion.div>
         )}
