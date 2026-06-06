@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils';
 import { getAISettings } from '@/lib/aiSettings';
 import { parseReminderRequest } from '@/lib/reminderParser';
 import { subscribeToPush } from '@/utils/pushSubscription';
+import { buildAttachmentContext } from '@/lib/chatAttachmentParsing';
 
 // Memory extraction patterns
 const MEMORY_PATTERNS = [
@@ -723,6 +724,10 @@ export const ChatContainer = () => {
       }
 
       let fileUrls: string[] = [];
+      let attachmentContext: string | undefined;
+      if (files && files.length > 0) {
+        attachmentContext = await buildAttachmentContext(files);
+      }
       if (files && files.length > 0) fileUrls = await uploadFiles(files);
 
       // Save user message to DB (no optimistic duplicate)
@@ -928,9 +933,9 @@ export const ChatContainer = () => {
         },
         body: JSON.stringify({
           messages: apiMessages,
-          fileContext: fileUrls.length > 0
+          fileContext: attachmentContext || (fileUrls.length > 0
             ? `User uploaded ${fileUrls.length} file(s): ${fileUrls.map((url) => isImageFileUrl(url) ? 'image' : isVideoFileUrl(url) ? 'video' : 'document').join(', ')}`
-            : undefined,
+            : undefined),
           userId: user?.id,
           forceWebSearch: shouldWebSearch,
           webSearchQuery: searchQuery,
