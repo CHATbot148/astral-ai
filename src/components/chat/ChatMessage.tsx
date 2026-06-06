@@ -544,6 +544,8 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
   const [showAudioPlayer, setShowAudioPlayer] = useState(false);
   const [resolvedFiles, setResolvedFiles] = useState<string[]>([]);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewVideo, setPreviewVideo] = useState<string | null>(null);
+  const [previewDoc, setPreviewDoc] = useState<{ url: string; name: string; mime?: string } | null>(null);
   const [failedInlineImages, setFailedInlineImages] = useState<Set<string>>(new Set());
   const [notificationActed, setNotificationActed] = useState(false);
   const [autoListImagesByKey, setAutoListImagesByKey] = useState<Record<string, InlineListImage[]>>({});
@@ -1112,42 +1114,28 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
                     }}
                   />
                 ) : isVideoLike(url) ? (
-                  <div className="relative rounded-2xl overflow-hidden border border-border/60 bg-black shadow-[0_10px_40px_-12px_hsl(var(--xai-purple)/0.45)] w-[min(82vw,360px)]">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewVideo(url)}
+                    aria-label="Play video"
+                    className="group/vid relative w-40 h-40 sm:w-44 sm:h-44 rounded-2xl overflow-hidden border border-border/60 bg-black shadow-[0_10px_40px_-14px_hsl(var(--xai-purple)/0.5)] flex-shrink-0"
+                  >
                     <video
                       src={url}
-                      controls
-                      controlsList="nodownload"
-                      preload="metadata"
+                      muted
                       playsInline
-                      className="block w-full h-auto max-h-[70vh] object-contain bg-black"
+                      preload="metadata"
+                      className="absolute inset-0 w-full h-full object-cover"
                     />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label="Download video"
-                      className="absolute top-2 right-2 h-8 w-8 p-0 rounded-full bg-background/50 backdrop-blur-md hover:bg-background/70 opacity-0 group-hover/img:opacity-100 transition-opacity"
-                      onClick={async () => {
-                        try {
-                          const response = await fetch(url);
-                          const blob = await response.blob();
-                          const blobUrl = URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = blobUrl;
-                          a.download = `astraz-video-${Date.now()}.mp4`;
-                          document.body.appendChild(a);
-                          a.click();
-                          document.body.removeChild(a);
-                          URL.revokeObjectURL(blobUrl);
-                        } catch {
-                          toast({ title: 'Failed to save', variant: 'destructive' });
-                        }
-                      }}
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/10 to-transparent" />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="h-12 w-12 rounded-full bg-black/55 backdrop-blur-md flex items-center justify-center group-hover/vid:scale-110 group-active/vid:scale-95 transition-transform shadow-lg">
+                        <span className="block w-0 h-0 border-y-[8px] border-y-transparent border-l-[12px] border-l-white ml-[3px]" />
+                      </div>
+                    </div>
+                  </button>
                 ) : (() => {
-                  // Document / generic file card with name, type icon, open + download
+                  // ChatGPT-style document/file pill: type icon square + name + PDF/type label
                   let filename = 'Attachment';
                   let ext = '';
                   try {
@@ -1160,61 +1148,32 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
                   const isDoc = ['doc', 'docx', 'odt', 'rtf'].includes(ext);
                   const isSheet = ['xls', 'xlsx', 'csv', 'ods'].includes(ext);
                   const isText = ['txt', 'md', 'log', 'json', 'xml', 'yml', 'yaml'].includes(ext);
-                  const typeLabel = isPdf ? 'PDF Document'
-                    : isDoc ? 'Word Document'
-                    : isSheet ? 'Spreadsheet'
-                    : isText ? 'Text File'
-                    : ext ? `${ext.toUpperCase()} File`
-                    : 'File';
-                  const iconBg = isPdf ? 'from-red-500/20 to-rose-500/10 text-red-500'
-                    : isDoc ? 'from-blue-500/20 to-sky-500/10 text-blue-500'
-                    : isSheet ? 'from-green-500/20 to-emerald-500/10 text-green-500'
-                    : 'from-xai-purple/20 to-xai-cyan/10 text-xai-cyan';
+                  const typeLabel = isPdf ? 'PDF'
+                    : isDoc ? 'DOC'
+                    : isSheet ? 'SHEET'
+                    : isText ? 'TEXT'
+                    : ext ? ext.toUpperCase()
+                    : 'FILE';
+                  const tint = isPdf ? 'bg-gradient-to-br from-red-500 to-rose-600'
+                    : isDoc ? 'bg-gradient-to-br from-sky-500 to-blue-600'
+                    : isSheet ? 'bg-gradient-to-br from-emerald-500 to-green-600'
+                    : 'bg-gradient-to-br from-xai-purple to-xai-cyan';
+                  const mime = isPdf ? 'application/pdf' : undefined;
                   return (
-                    <div className="flex items-center gap-3 px-3 py-2.5 rounded-2xl bg-gradient-to-br from-secondary/80 to-secondary/40 border border-border/60 backdrop-blur-sm hover:border-xai-cyan/40 hover:shadow-[0_4px_20px_hsl(var(--xai-purple)/0.15)] transition-all max-w-[280px]">
-                      <div className={cn("relative flex-shrink-0 w-11 h-11 rounded-xl bg-gradient-to-br flex items-center justify-center", iconBg)}>
-                        <FileText className="h-5 w-5" />
+                    <button
+                      type="button"
+                      onClick={() => setPreviewDoc({ url, name: filename, mime })}
+                      className="group/file flex items-center gap-3 pl-2 pr-4 py-2 rounded-2xl bg-secondary/70 hover:bg-secondary border border-border/60 hover:border-xai-cyan/40 shadow-sm hover:shadow-md transition-all max-w-[300px] text-left"
+                      title={filename}
+                    >
+                      <div className={cn("relative flex-shrink-0 w-11 h-11 rounded-xl flex items-center justify-center shadow-inner text-white", tint)}>
+                        <FileText className="h-5 w-5" strokeWidth={2.2} />
                       </div>
-                      <div className="flex-1 min-w-0 text-left">
-                        <p className="text-sm font-medium truncate" title={filename}>{filename}</p>
-                        <p className="text-[11px] text-muted-foreground">{typeLabel}</p>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13.5px] font-semibold text-foreground truncate leading-tight">{filename}</p>
+                        <p className="text-[11px] text-muted-foreground/90 mt-0.5 font-medium tracking-wide">{typeLabel}</p>
                       </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <a
-                          href={url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-gradient-to-r from-xai-purple/20 to-xai-cyan/20 hover:from-xai-purple/30 hover:to-xai-cyan/30 text-foreground transition-colors"
-                          title="Open file"
-                        >
-                          Open
-                        </a>
-                        <button
-                          onClick={async (e) => {
-                            e.preventDefault();
-                            try {
-                              const response = await fetch(url);
-                              const blob = await response.blob();
-                              const blobUrl = URL.createObjectURL(blob);
-                              const a = document.createElement('a');
-                              a.href = blobUrl;
-                              a.download = filename;
-                              document.body.appendChild(a);
-                              a.click();
-                              document.body.removeChild(a);
-                              URL.revokeObjectURL(blobUrl);
-                            } catch {
-                              toast({ title: 'Failed to download', variant: 'destructive' });
-                            }
-                          }}
-                          className="p-1.5 rounded-lg hover:bg-secondary transition-colors"
-                          title="Download"
-                          aria-label="Download file"
-                        >
-                          <Download className="h-3.5 w-3.5 text-muted-foreground" />
-                        </button>
-                      </div>
-                    </div>
+                    </button>
                   );
                 })()}
               </motion.div>
@@ -1228,6 +1187,20 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
           url={previewImage || ''}
           kind={isUser ? 'image' : 'ai-image'}
           onClose={() => setPreviewImage(null)}
+        />
+        <MediaViewer
+          open={!!previewVideo}
+          url={previewVideo || ''}
+          kind="video"
+          onClose={() => setPreviewVideo(null)}
+        />
+        <MediaViewer
+          open={!!previewDoc}
+          url={previewDoc?.url || ''}
+          fileName={previewDoc?.name}
+          mimeType={previewDoc?.mime}
+          kind="document"
+          onClose={() => setPreviewDoc(null)}
         />
 
         {/* Render extracted media using MediaRenderer */}

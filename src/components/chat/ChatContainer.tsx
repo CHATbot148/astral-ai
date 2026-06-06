@@ -101,6 +101,7 @@ export const ChatContainer = () => {
   const [keyboardInset, setKeyboardInset] = useState(0);
   const [inputDockHeight, setInputDockHeight] = useState(116);
   const [showVisualizePopup, setShowVisualizePopup] = useState(false);
+  const [restoreDraft, setRestoreDraft] = useState<{ text: string; nonce: number } | null>(null);
   const [showAnalyzePopup, setShowAnalyzePopup] = useState(false);
   const analyzeFileInputRef = useRef<HTMLInputElement>(null);
   const analyzeCameraInputRef = useRef<HTMLInputElement>(null);
@@ -1166,6 +1167,10 @@ export const ChatContainer = () => {
         return;
       }
       console.error('Chat error:', error);
+      // Restore the user's typed message back into the input so it's not lost
+      if (content && content.trim()) {
+        setRestoreDraft({ text: content, nonce: Date.now() });
+      }
       toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to send message', variant: 'destructive' });
       setTypingLabel(undefined);
     } finally {
@@ -1446,6 +1451,7 @@ export const ChatContainer = () => {
               onStartCall={user ? handleStartVoiceCall : undefined}
               onOpenImageDialog={openImageDialog}
               onOpenVideoDialog={openVideoDialog}
+              restoreDraft={restoreDraft}
             />
           </div>
         </div>
