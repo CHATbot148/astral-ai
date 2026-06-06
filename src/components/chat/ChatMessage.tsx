@@ -1114,40 +1114,26 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
                     }}
                   />
                 ) : isVideoLike(url) ? (
-                  <div className="relative rounded-2xl overflow-hidden border border-border/60 bg-black shadow-[0_10px_40px_-12px_hsl(var(--xai-purple)/0.45)] w-[min(82vw,360px)]">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewVideo(url)}
+                    aria-label="Play video"
+                    className="group/vid relative w-40 h-40 sm:w-44 sm:h-44 rounded-2xl overflow-hidden border border-border/60 bg-black shadow-[0_10px_40px_-14px_hsl(var(--xai-purple)/0.5)] flex-shrink-0"
+                  >
                     <video
                       src={url}
-                      controls
-                      controlsList="nodownload"
-                      preload="metadata"
+                      muted
                       playsInline
-                      className="block w-full h-auto max-h-[70vh] object-contain bg-black"
+                      preload="metadata"
+                      className="absolute inset-0 w-full h-full object-cover"
                     />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label="Download video"
-                      className="absolute top-2 right-2 h-8 w-8 p-0 rounded-full bg-background/50 backdrop-blur-md hover:bg-background/70 opacity-0 group-hover/img:opacity-100 transition-opacity"
-                      onClick={async () => {
-                        try {
-                          const response = await fetch(url);
-                          const blob = await response.blob();
-                          const blobUrl = URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = blobUrl;
-                          a.download = `astraz-video-${Date.now()}.mp4`;
-                          document.body.appendChild(a);
-                          a.click();
-                          document.body.removeChild(a);
-                          URL.revokeObjectURL(blobUrl);
-                        } catch {
-                          toast({ title: 'Failed to save', variant: 'destructive' });
-                        }
-                      }}
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/10 to-transparent" />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="h-12 w-12 rounded-full bg-black/55 backdrop-blur-md flex items-center justify-center group-hover/vid:scale-110 group-active/vid:scale-95 transition-transform shadow-lg">
+                        <span className="block w-0 h-0 border-y-[8px] border-y-transparent border-l-[12px] border-l-white ml-[3px]" />
+                      </div>
+                    </div>
+                  </button>
                 ) : (() => {
                   // Document / generic file card with name, type icon, open + download
                   let filename = 'Attachment';
