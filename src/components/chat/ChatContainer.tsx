@@ -1451,6 +1451,7 @@ export const ChatContainer = () => {
               onStartCall={user ? handleStartVoiceCall : undefined}
               onOpenImageDialog={openImageDialog}
               onOpenVideoDialog={openVideoDialog}
+              restoreDraft={restoreDraft}
             />
           </div>
         </div>
