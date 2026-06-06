@@ -101,6 +101,7 @@ export const ChatContainer = () => {
   const [keyboardInset, setKeyboardInset] = useState(0);
   const [inputDockHeight, setInputDockHeight] = useState(116);
   const [showVisualizePopup, setShowVisualizePopup] = useState(false);
+  const [restoreDraft, setRestoreDraft] = useState<{ text: string; nonce: number } | null>(null);
   const [showAnalyzePopup, setShowAnalyzePopup] = useState(false);
   const analyzeFileInputRef = useRef<HTMLInputElement>(null);
   const analyzeCameraInputRef = useRef<HTMLInputElement>(null);
