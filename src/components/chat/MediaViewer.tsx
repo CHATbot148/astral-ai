@@ -60,12 +60,20 @@ export const MediaViewer = ({
     if (open) setMode('view');
   }, [open, url]);
 
-  // Lock body scroll
+  // Lock body scroll + prevent iOS rubber-band while open
   useEffect(() => {
     if (!open) return;
-    const prev = document.body.style.overflow;
+    const prevOverflow = document.body.style.overflow;
+    const prevOverscroll = document.body.style.overscrollBehavior;
+    const prevTouch = (document.body.style as any).touchAction;
     document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
+    document.body.style.overscrollBehavior = 'contain';
+    (document.body.style as any).touchAction = 'none';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.overscrollBehavior = prevOverscroll;
+      (document.body.style as any).touchAction = prevTouch;
+    };
   }, [open]);
 
   // ESC to close
