@@ -57,6 +57,14 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
     }
   }, [editValue]);
 
+  // Restore a failed-to-send draft back into the input so typing isn't lost
+  useEffect(() => {
+    if (restoreDraft && restoreDraft.text) {
+      setMessage((prev) => (prev && prev.trim() ? prev : restoreDraft.text));
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+  }, [restoreDraft?.nonce]);
+
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
