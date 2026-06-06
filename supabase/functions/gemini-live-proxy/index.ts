@@ -1,125 +1,158 @@
 // Supabase Edge Function: WebSocket proxy between browser and Gemini Live API.
+// Uses Deno-native WebSocket (no SDK) for reliability inside the edge runtime.
 // Browser cannot send custom headers on WebSocket, so JWT is passed via ?token=.
-// verify_jwt is set to false in config.toml — we validate manually.
-import { GoogleGenAI, Modality, type LiveServerMessage } from "npm:@google/genai@2.8.0";
+// verify_jwt is false in config.toml — we validate manually.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 
+// Stable Gemini Live models in priority order (best audio first, then fallbacks).
+const MODELS = [
+  "models/gemini-2.5-flash-preview-native-audio-dialog",
+  "models/gemini-live-2.5-flash-preview",
+  "models/gemini-2.0-flash-live-001",
+];
+
+function geminiWsUrl(model: string) {
+  // BidiGenerateContent live endpoint
+  return `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
+}
+
+async function tryGeminiConnect(model: string, systemInstruction: string, voiceName: string): Promise<WebSocket> {
+  return new Promise((resolve, reject) => {
+    let opened = false;
+    const upstream = new WebSocket(geminiWsUrl(model));
+    const timeout = setTimeout(() => {
+      if (!opened) { try { upstream.close(); } catch {} reject(new Error("Gemini connect timeout")); }
+    }, 8000);
+
+    upstream.onopen = () => {
+      opened = true;
+      clearTimeout(timeout);
+      // Send BidiGenerateContentSetup
+      upstream.send(JSON.stringify({
+        setup: {
+          model,
+          generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
+          },
+          systemInstruction: { parts: [{ text: systemInstruction }] },
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
+        },
+      }));
+      resolve(upstream);
+    };
+    upstream.onerror = (e) => {
+      clearTimeout(timeout);
+      if (!opened) reject(new Error(`Gemini WS error for ${model}`));
+    };
+    upstream.onclose = (e) => {
+      clearTimeout(timeout);
+      if (!opened) reject(new Error(`Gemini closed before open (${e.code}) for ${model}`));
+    };
+  });
+}
+
 Deno.serve(async (req) => {
   const upgrade = req.headers.get("upgrade") || "";
-  if (upgrade.toLowerCase() !== "websocket") {
-    return new Response("Expected WebSocket", { status: 426 });
-  }
-  if (!GEMINI_API_KEY) {
-    return new Response("GEMINI_API_KEY not configured", { status: 500 });
-  }
+  if (upgrade.toLowerCase() !== "websocket") return new Response("Expected WebSocket", { status: 426 });
+  if (!GEMINI_API_KEY) return new Response("GEMINI_API_KEY not configured", { status: 500 });
 
   const url = new URL(req.url);
   const token = url.searchParams.get("token");
   if (!token) return new Response("Missing token", { status: 401 });
 
-  // Validate JWT via service-role client
   const supa = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
   const { data: userData, error: userErr } = await supa.auth.getUser(token);
   if (userErr || !userData?.user) return new Response("Invalid token", { status: 401 });
 
-  const { socket, response } = Deno.upgradeWebSocket(req);
-  const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-  let session: any = null;
-  let keepaliveInterval: number | null = null;
+  const { socket: client, response } = Deno.upgradeWebSocket(req);
+  let upstream: WebSocket | null = null;
+  let keepalive: number | null = null;
+  let setupReceived = false;
 
-  socket.onopen = () => {
-    console.log("[gemini-live-proxy] client connected user=", userData.user.id);
-    // WebSocket keepalive — many intermediaries drop idle connections
-    keepaliveInterval = setInterval(() => {
-      if (socket.readyState === WebSocket.OPEN) {
-        try { socket.send(JSON.stringify({ type: "ping" })); } catch {}
-      }
-    }, 15000) as unknown as number;
+  const safeSendClient = (obj: unknown) => {
+    if (client.readyState === WebSocket.OPEN) {
+      try { client.send(typeof obj === "string" ? obj : JSON.stringify(obj)); } catch {}
+    }
   };
 
-  socket.onmessage = async (event) => {
+  client.onopen = () => {
+    console.log("[gemini-live-proxy] client connected user=", userData.user.id);
+    keepalive = setInterval(() => safeSendClient({ type: "ping" }), 15000) as unknown as number;
+  };
+
+  client.onmessage = async (event) => {
     try {
-      const msg = JSON.parse(event.data);
+      const msg = JSON.parse(typeof event.data === "string" ? event.data : "{}");
       if (msg.type === "pong") return;
 
-      if (msg.type === "setup") {
-        try {
-          // Use stable live model names. The "3.1 pro live preview" alias does not
-          // exist publicly and was causing every call to fail. Try the native-audio
-          // dialog model first (highest fidelity), then fall back to flash live.
-          const candidates = [
-            "models/gemini-2.5-flash-preview-native-audio-dialog",
-            "models/gemini-live-2.5-flash-preview",
-            "models/gemini-2.0-flash-live-001",
-          ];
-          const tryConnect = (model: string) => ai.live.connect({
-            model,
-            callbacks: {
-              onmessage: (m: LiveServerMessage) => {
-                if (socket.readyState === WebSocket.OPEN) {
-                  socket.send(JSON.stringify(m));
-                }
-              },
-              onclose: () => {
-                if (socket.readyState === WebSocket.OPEN) {
-                  socket.send(JSON.stringify({ type: "error", message: "Gemini connection closed" }));
-                  socket.close();
-                }
-              },
-              onerror: (err: any) => {
-                const errMsg = err?.message || "Gemini session error";
-                console.error("[gemini-live-proxy] session error:", errMsg);
-                if (socket.readyState === WebSocket.OPEN) {
-                  socket.send(JSON.stringify({ type: "error", message: errMsg }));
-                }
-              },
-            },
-            config: {
-              responseModalities: [Modality.AUDIO],
-              speechConfig: {
-                voiceConfig: { prebuiltVoiceConfig: { voiceName: msg.voiceName || "Puck" } },
-              },
-              systemInstruction: msg.systemInstruction || "You are Astraz, a helpful AI voice assistant.",
-              inputAudioTranscription: {},
-              outputAudioTranscription: {},
-            },
-          });
-          let lastErr: any = null;
-          for (const m of candidates) {
-            try { session = await tryConnect(m); lastErr = null; break; }
-            catch (e) { lastErr = e; console.warn("[gemini-live-proxy] model failed", m, e); }
+      if (msg.type === "setup" && !setupReceived) {
+        setupReceived = true;
+        let lastErr: any = null;
+        for (const m of MODELS) {
+          try {
+            upstream = await tryGeminiConnect(m, msg.systemInstruction || "You are Astraz, a helpful AI voice assistant.", msg.voiceName || "Puck");
+            console.log("[gemini-live-proxy] connected to", m);
+            lastErr = null;
+            break;
+          } catch (e) {
+            lastErr = e;
+            console.warn("[gemini-live-proxy] model failed", m, (e as Error)?.message);
           }
-          if (!session) throw lastErr || new Error("No live model available");
-          socket.send(JSON.stringify({ type: "connected" }));
-        } catch (err: any) {
-          console.error("[gemini-live-proxy] connect failed:", err);
-          socket.send(JSON.stringify({ type: "error", message: "Failed to connect to Gemini: " + (err?.message || err) }));
-          socket.close();
         }
+        if (!upstream) {
+          safeSendClient({ type: "error", message: "Failed to connect to Gemini: " + (lastErr?.message || "all models failed") });
+          try { client.close(); } catch {}
+          return;
+        }
+
+        // Wire upstream → client
+        upstream.onmessage = (ev) => {
+          if (typeof ev.data === "string") safeSendClient(ev.data);
+          else if (ev.data instanceof ArrayBuffer) {
+            // Convert to string (Gemini sends JSON over binary sometimes)
+            try { safeSendClient(new TextDecoder().decode(ev.data)); } catch {}
+          } else if (ev.data instanceof Blob) {
+            ev.data.text().then((t) => safeSendClient(t)).catch(() => {});
+          }
+        };
+        upstream.onerror = (e) => {
+          console.error("[gemini-live-proxy] upstream error", e);
+          safeSendClient({ type: "error", message: "Gemini session error" });
+        };
+        upstream.onclose = () => {
+          console.log("[gemini-live-proxy] upstream closed");
+          safeSendClient({ type: "error", message: "Gemini connection closed" });
+          try { client.close(); } catch {}
+        };
+
+        safeSendClient({ type: "connected" });
         return;
       }
 
-      if (session && msg.audio) {
-        session.sendRealtimeInput({
-          audio: { mimeType: "audio/pcm;rate=16000", data: msg.audio },
-        });
+      if (upstream && upstream.readyState === WebSocket.OPEN && msg.audio) {
+        upstream.send(JSON.stringify({
+          realtimeInput: {
+            mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.audio }],
+          },
+        }));
       }
     } catch (err) {
       console.error("[gemini-live-proxy] msg error:", err);
     }
   };
 
-  socket.onclose = () => {
+  client.onclose = () => {
     console.log("[gemini-live-proxy] client disconnected");
-    if (keepaliveInterval) { clearInterval(keepaliveInterval); keepaliveInterval = null; }
-    try { session?.close?.(); } catch {}
+    if (keepalive) { clearInterval(keepalive); keepalive = null; }
+    try { upstream?.close(); } catch {}
   };
-
-  socket.onerror = (err) => console.error("[gemini-live-proxy] ws err:", err);
+  client.onerror = (err) => console.error("[gemini-live-proxy] client ws err:", err);
 
   return response;
 });
