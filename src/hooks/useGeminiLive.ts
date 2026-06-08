@@ -37,6 +37,7 @@ export function useGeminiLive() {
   const shouldReconnectRef = useRef(false);
   const connectAbortRef = useRef<AbortController | null>(null);
   const sessionReadyRef = useRef(false);
+  const connectedOnceRef = useRef(false);
 
   const requestMicrophoneAccess = useCallback(async () => {
     if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
@@ -86,6 +87,9 @@ export function useGeminiLive() {
     userAnalyserRef.current = null;
     modelAnalyserRef.current = null;
     sessionReadyRef.current = false;
+    connectedOnceRef.current = false;
+    setUserVolume(0);
+    setModelVolume(0);
     if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
       try { audioCtxRef.current.close(); } catch {}
     }
@@ -215,6 +219,7 @@ export function useGeminiLive() {
       setUserVolume(0);
       setModelVolume(0);
       setStatus('connecting');
+      connectedOnceRef.current = false;
       shouldReconnectRef.current = true;
       const connectAbort = new AbortController();
       connectAbortRef.current = connectAbort;
@@ -256,6 +261,7 @@ export function useGeminiLive() {
         if (msg.type === 'connected') {
           window.clearTimeout(connectTimeout);
           sessionReadyRef.current = true;
+          connectedOnceRef.current = true;
           setStatus('connected');
           startAudioCapture(config.stream);
           playInitiatedSound();
@@ -265,8 +271,9 @@ export function useGeminiLive() {
           window.clearTimeout(connectTimeout);
           sessionReadyRef.current = false;
           console.error('Gemini Live Error:', msg.message);
-          setError(msg.message);
+          setError(msg.message || 'Voice call failed to connect.');
           setStatus('error');
+          try { ws.close(); } catch {}
           return;
         }
 
@@ -302,7 +309,7 @@ export function useGeminiLive() {
         window.clearTimeout(connectTimeout);
         sessionReadyRef.current = false;
         if (!shouldReconnectRef.current) return;
-        if (status !== 'connected') {
+        if (!connectedOnceRef.current) {
           setError((prev) => prev || 'Voice call disconnected before it became active.');
           setStatus('error');
         } else {
@@ -315,11 +322,11 @@ export function useGeminiLive() {
         window.clearTimeout(connectTimeout);
         sessionReadyRef.current = false;
         console.error('WebSocket error:', err);
-        setError('Connection error');
+        setError('Live call connection error.');
         setStatus('error');
       };
     },
-    [cleanup, startAudioCapture, playAudioChunk, status, stopAllPlayback]
+    [cleanup, startAudioCapture, playAudioChunk, stopAllPlayback]
   );
 
   const disconnect = useCallback(() => {

@@ -10,8 +10,8 @@ interface Props {
 }
 
 /**
- * Renders an interactive visualization widget inline. Always-on; no gate button.
- * Full width, floating control bar like Gemini.
+ * Renders an interactive visualization widget inline with controls.
+ * Keep the frame itself as the primary surface — no extra outer card shell.
  */
 export const VizBlock = ({ code, isStreaming }: Props) => {
   const [expanded, setExpanded] = useState(false);
@@ -39,6 +39,19 @@ export const VizBlock = ({ code, isStreaming }: Props) => {
     return () => window.removeEventListener("keydown", handler);
   }, [expanded]);
 
+  // Lock scroll when expanded
+  useEffect(() => {
+    if (!expanded) return;
+    const prevOverflowBody = document.body.style.overflow;
+    const prevOverflowHtml = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflowBody;
+      document.documentElement.style.overflow = prevOverflowHtml;
+    };
+  }, [expanded]);
+
   if (isStreaming) {
     return (
       <div className="my-3 w-full overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-br from-xai-purple/10 via-secondary/40 to-xai-cyan/10 p-4 flex items-center gap-3">
@@ -61,14 +74,14 @@ export const VizBlock = ({ code, isStreaming }: Props) => {
       sandbox="allow-scripts allow-pointer-lock allow-popups allow-same-origin"
       srcDoc={srcDoc}
       className={cn(
-        "w-full border-0 bg-[#0a0a12]",
+        "w-full border-0 bg-transparent",
         expanded ? "h-full" : "h-[460px] sm:h-[540px]"
       )}
     />
   );
 
   const toolbar = (
-    <div className="flex items-center justify-between gap-2 px-3 py-2 bg-gradient-to-r from-xai-purple/20 via-background/60 to-xai-cyan/20 backdrop-blur border-b border-border/60">
+    <div className="flex items-center justify-between gap-2 rounded-t-xl border border-border/30 bg-gradient-to-r from-xai-purple/20 via-background/60 to-xai-cyan/20 px-3 py-2 backdrop-blur">
       <div className="flex items-center gap-2 min-w-0">
         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-xai-purple to-xai-cyan shadow-md shadow-xai-purple/30">
           <Sparkles className="h-3.5 w-3.5 text-white" />
@@ -98,17 +111,17 @@ export const VizBlock = ({ code, isStreaming }: Props) => {
         layout
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
-        className="my-3 w-full overflow-hidden rounded-2xl border border-border/60 bg-card/60 shadow-[0_15px_45px_-18px_hsl(var(--xai-purple)/0.4)]"
+        className="my-3 w-full"
       >
         {toolbar}
-        <div className="relative">{frame}</div>
+        <div className="relative overflow-hidden rounded-b-xl border-x border-b border-border/30 bg-transparent">{frame}</div>
         <AnimatePresence>
           {showSource && (
             <motion.pre
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="overflow-auto max-h-64 text-[11px] leading-relaxed p-3 bg-secondary/40 border-t border-border/60 font-mono text-muted-foreground"
+              className="overflow-auto max-h-64 rounded-b-xl border-x border-b border-border/30 bg-secondary/40 p-3 text-[11px] leading-relaxed font-mono text-muted-foreground"
             >
               {code}
             </motion.pre>
@@ -122,7 +135,7 @@ export const VizBlock = ({ code, isStreaming }: Props) => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-background/95 backdrop-blur-md flex flex-col"
+            className="fixed inset-0 z-[200] bg-[#050507]/95 backdrop-blur-xl flex flex-col overscroll-none" style={{ touchAction: "none" }}
           >
             {toolbar}
             <div className="flex-1 min-h-0">{frame}</div>

@@ -63,16 +63,34 @@ export const MediaViewer = ({
   // Lock body scroll + prevent iOS rubber-band while open
   useEffect(() => {
     if (!open) return;
+    const html = document.documentElement;
     const prevOverflow = document.body.style.overflow;
     const prevOverscroll = document.body.style.overscrollBehavior;
     const prevTouch = (document.body.style as any).touchAction;
+    const prevBodyPosition = document.body.style.position;
+    const prevBodyWidth = document.body.style.width;
+    const prevBodyTop = document.body.style.top;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevHtmlOverscroll = html.style.overscrollBehavior;
+    const scrollY = window.scrollY;
     document.body.style.overflow = 'hidden';
+    html.style.overflow = 'hidden';
     document.body.style.overscrollBehavior = 'contain';
+    html.style.overscrollBehavior = 'none';
     (document.body.style as any).touchAction = 'none';
+    document.body.style.position = 'fixed';
+    document.body.style.width = '100%';
+    document.body.style.top = `-${scrollY}px`;
     return () => {
       document.body.style.overflow = prevOverflow;
+      html.style.overflow = prevHtmlOverflow;
       document.body.style.overscrollBehavior = prevOverscroll;
+      html.style.overscrollBehavior = prevHtmlOverscroll;
       (document.body.style as any).touchAction = prevTouch;
+      document.body.style.position = prevBodyPosition;
+      document.body.style.width = prevBodyWidth;
+      document.body.style.top = prevBodyTop;
+      window.scrollTo(0, scrollY);
     };
   }, [open]);
 
@@ -113,6 +131,7 @@ export const MediaViewer = ({
         transition={{ duration: 0.2 }}
         className="fixed inset-0 z-[200] flex flex-col bg-[#050507]/95 backdrop-blur-xl overscroll-contain"
         style={{ touchAction: 'none' }}
+        data-allow-scroll="false"
         onWheel={(e) => e.stopPropagation()}
         onTouchMove={(e) => {
           // Allow touchmove only inside scrollable panes (img/text/pdf containers handle it)
@@ -199,7 +218,7 @@ export const MediaViewer = ({
 
 /* ---------------- Video pane ---------------- */
 const VideoPane = ({ url }: { url: string }) => (
-  <div className="h-full w-full flex items-center justify-center p-2 sm:p-6">
+  <div data-allow-scroll className="h-full w-full flex items-center justify-center p-2 sm:p-6 overflow-auto">
     <video
       src={url}
       controls
@@ -215,7 +234,7 @@ const VideoPane = ({ url }: { url: string }) => (
 const ImagePane = ({ url }: { url: string }) => {
   const [scale, setScale] = useState(1);
   return (
-    <div className="relative h-full w-full overflow-auto flex items-center justify-center p-2 sm:p-6">
+    <div data-allow-scroll className="relative h-full w-full overflow-auto flex items-center justify-center p-2 sm:p-6">
       <img
         src={url}
         alt="Preview"
@@ -239,7 +258,7 @@ const DocumentPane = ({ url, fileName, mimeType }: { url: string; fileName?: str
 
   if (isPdf) {
     return (
-      <div className="h-full w-full p-2 sm:p-4">
+      <div data-allow-scroll className="h-full w-full overflow-auto p-2 sm:p-4">
         <iframe
           src={`${url}#view=FitH`}
           title={fileName || 'Document'}
@@ -279,7 +298,7 @@ const TextDocumentPane = ({ url }: { url: string }) => {
     return () => { cancelled = true; };
   }, [url]);
   return (
-    <div className="h-full w-full p-2 sm:p-4">
+    <div data-allow-scroll className="h-full w-full p-2 sm:p-4">
       <pre className="h-full w-full overflow-auto rounded-xl border border-white/10 bg-black/40 p-4 text-[13px] leading-relaxed text-white/90 font-mono whitespace-pre-wrap">{content}</pre>
     </div>
   );

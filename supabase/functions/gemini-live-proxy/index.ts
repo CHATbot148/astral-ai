@@ -10,8 +10,8 @@ const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 
 // Stable Gemini Live models in priority order (best audio first, then fallbacks).
 const MODELS = [
-  "models/gemini-2.5-flash-preview-native-audio-dialog",
-  "models/gemini-live-2.5-flash-preview",
+  "models/gemini-3.1-flash-live-preview",
+  "models/gemini-2.5-flash-native-audio-latest",
   "models/gemini-2.0-flash-live-001",
 ];
 
@@ -22,15 +22,31 @@ function geminiWsUrl(model: string) {
 
 async function tryGeminiConnect(model: string, systemInstruction: string, voiceName: string): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
-    let opened = false;
+    let socketOpened = false;
+    let settled = false;
     const upstream = new WebSocket(geminiWsUrl(model));
+    const finishReject = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      try { upstream.close(); } catch {}
+      reject(error);
+    };
+    const finishResolve = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      upstream.onmessage = null;
+      upstream.onerror = null;
+      upstream.onclose = null;
+      resolve(upstream);
+    };
     const timeout = setTimeout(() => {
-      if (!opened) { try { upstream.close(); } catch {} reject(new Error("Gemini connect timeout")); }
+      finishReject(new Error(`Gemini setup timeout for ${model}`));
     }, 8000);
 
     upstream.onopen = () => {
-      opened = true;
-      clearTimeout(timeout);
+      socketOpened = true;
       upstream.send(JSON.stringify({
         setup: {
           model,
@@ -44,15 +60,44 @@ async function tryGeminiConnect(model: string, systemInstruction: string, voiceN
           outputAudioTranscription: {},
         },
       }));
-      resolve(upstream);
     };
-    upstream.onerror = (e) => {
-      clearTimeout(timeout);
-      if (!opened) reject(new Error(`Gemini WS error for ${model}`));
+    upstream.onmessage = (event) => {
+      const handlePayload = (payload: string) => {
+        try {
+          const parsed = JSON.parse(payload);
+          if (parsed.setupComplete) {
+            finishResolve();
+            return;
+          }
+          if (parsed.error) {
+            const errMessage = parsed.error.message || parsed.error.status || parsed.error.code || "Gemini setup failed";
+            finishReject(new Error(String(errMessage)));
+            return;
+          }
+          if (parsed.goAway) {
+            const timeLeft = parsed.goAway.timeLeft ? ` (${parsed.goAway.timeLeft} left)` : "";
+            finishReject(new Error(`Gemini asked to close the session${timeLeft}`));
+          }
+        } catch {
+          // Ignore non-JSON setup-time payloads and keep waiting for setupComplete.
+        }
+      };
+
+      if (typeof event.data === "string") handlePayload(event.data);
+      else if (event.data instanceof ArrayBuffer) {
+        try { handlePayload(new TextDecoder().decode(event.data)); } catch {}
+      } else if (event.data instanceof Blob) {
+        event.data.text().then((text) => handlePayload(text)).catch(() => {});
+      }
     };
-    upstream.onclose = (e) => {
-      clearTimeout(timeout);
-      if (!opened) reject(new Error(`Gemini closed before open (${e.code}) for ${model}`));
+    upstream.onerror = () => {
+      finishReject(new Error(`Gemini WS error for ${model}`));
+    };
+    upstream.onclose = (event) => {
+      const reason = event.reason?.trim();
+      finishReject(new Error(reason
+        ? `Gemini closed during setup: ${reason}`
+        : `Gemini closed ${socketOpened ? "during setup" : "before open"} (${event.code}) for ${model}`));
     };
   });
 }
@@ -98,6 +143,7 @@ Deno.serve(async (req) => {
           try {
             upstream = await tryGeminiConnect(m, msg.systemInstruction || "You are Astraz, a helpful AI voice assistant.", msg.voiceName || "Puck");
             console.log("[gemini-live-proxy] connected to", m);
+            safeSendClient({ type: "connected" });
             lastErr = null;
             break;
           } catch (e) {
@@ -116,8 +162,14 @@ Deno.serve(async (req) => {
           const handlePayload = (payload: string) => {
             try {
               const parsed = JSON.parse(payload);
-              if (parsed.setupComplete) {
-                safeSendClient({ type: "connected" });
+              if (parsed.error) {
+                const errMessage = parsed.error.message || parsed.error.status || parsed.error.code || "Gemini setup failed";
+                safeSendClient({ type: "error", message: String(errMessage) });
+                return;
+              }
+              if (parsed.goAway) {
+                const timeLeft = parsed.goAway.timeLeft ? ` (${parsed.goAway.timeLeft} left)` : "";
+                safeSendClient({ type: "error", message: `Gemini asked to close the session${timeLeft}` });
                 return;
               }
               safeSendClient(parsed);
@@ -136,11 +188,15 @@ Deno.serve(async (req) => {
         };
         upstream.onerror = (e) => {
           console.error("[gemini-live-proxy] upstream error", e);
-          safeSendClient({ type: "error", message: "Gemini session error" });
+          safeSendClient({ type: "error", message: "Gemini session error while starting the live call." });
         };
-        upstream.onclose = () => {
-          console.log("[gemini-live-proxy] upstream closed");
-          safeSendClient({ type: "error", message: "Gemini connection closed" });
+        upstream.onclose = (event) => {
+          console.log("[gemini-live-proxy] upstream closed", event.code, event.reason);
+          const reason = event.reason?.trim();
+          safeSendClient({
+            type: "error",
+            message: reason ? `Gemini connection closed: ${reason}` : `Gemini connection closed (code ${event.code || 1000})`,
+          });
           try { client.close(); } catch {}
         };
         return;
