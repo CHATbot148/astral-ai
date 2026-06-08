@@ -38,7 +38,7 @@ async function tryGeminiConnect(model: string, systemInstruction: string, voiceN
             responseModalities: ["AUDIO"],
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
           },
-          systemInstruction: { parts: [{ text: systemInstruction }] },
+          systemInstruction: { role: "system", parts: [{ text: systemInstruction }] },
           realtimeInputConfig: {},
           inputAudioTranscription: {},
           outputAudioTranscription: {},
@@ -136,11 +136,15 @@ Deno.serve(async (req) => {
         };
         upstream.onerror = (e) => {
           console.error("[gemini-live-proxy] upstream error", e);
-          safeSendClient({ type: "error", message: "Gemini session error" });
+          safeSendClient({ type: "error", message: "Gemini session error while starting the live call." });
         };
-        upstream.onclose = () => {
-          console.log("[gemini-live-proxy] upstream closed");
-          safeSendClient({ type: "error", message: "Gemini connection closed" });
+        upstream.onclose = (event) => {
+          console.log("[gemini-live-proxy] upstream closed", event.code, event.reason);
+          const reason = event.reason?.trim();
+          safeSendClient({
+            type: "error",
+            message: reason ? `Gemini connection closed: ${reason}` : `Gemini connection closed (code ${event.code || 1000})`,
+          });
           try { client.close(); } catch {}
         };
         return;
