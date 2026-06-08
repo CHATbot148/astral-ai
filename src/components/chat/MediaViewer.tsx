@@ -258,7 +258,7 @@ const DocumentPane = ({ url, fileName, mimeType }: { url: string; fileName?: str
 
   if (isPdf) {
     return (
-      <div data-allow-scroll className="h-full w-full p-2 sm:p-4">
+      <div data-allow-scroll className="h-full w-full overflow-auto p-2 sm:p-4">
         <iframe
           src={`${url}#view=FitH`}
           title={fileName || 'Document'}
