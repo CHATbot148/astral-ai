@@ -63,16 +63,38 @@ export const MediaViewer = ({
   // Lock body scroll + prevent iOS rubber-band while open
   useEffect(() => {
     if (!open) return;
+    const html = document.documentElement;
+    const appRoot = document.getElementById('root');
     const prevOverflow = document.body.style.overflow;
     const prevOverscroll = document.body.style.overscrollBehavior;
     const prevTouch = (document.body.style as any).touchAction;
-    document.body.style.overflow = 'hidden'; document.documentElement.style.overflow = 'hidden';
+    const prevBodyPosition = document.body.style.position;
+    const prevBodyWidth = document.body.style.width;
+    const prevBodyTop = document.body.style.top;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevHtmlOverscroll = html.style.overscrollBehavior;
+    const prevRootPointerEvents = appRoot?.style.pointerEvents;
+    const scrollY = window.scrollY;
+    document.body.style.overflow = 'hidden';
+    html.style.overflow = 'hidden';
     document.body.style.overscrollBehavior = 'contain';
+    html.style.overscrollBehavior = 'none';
     (document.body.style as any).touchAction = 'none';
+    document.body.style.position = 'fixed';
+    document.body.style.width = '100%';
+    document.body.style.top = `-${scrollY}px`;
+    if (appRoot) appRoot.style.pointerEvents = 'none';
     return () => {
-      document.body.style.overflow = prevOverflow; document.documentElement.style.overflow = prevOverflow;
+      document.body.style.overflow = prevOverflow;
+      html.style.overflow = prevHtmlOverflow;
       document.body.style.overscrollBehavior = prevOverscroll;
+      html.style.overscrollBehavior = prevHtmlOverscroll;
       (document.body.style as any).touchAction = prevTouch;
+      document.body.style.position = prevBodyPosition;
+      document.body.style.width = prevBodyWidth;
+      document.body.style.top = prevBodyTop;
+      if (appRoot) appRoot.style.pointerEvents = prevRootPointerEvents ?? '';
+      window.scrollTo(0, scrollY);
     };
   }, [open]);
 
@@ -113,6 +135,7 @@ export const MediaViewer = ({
         transition={{ duration: 0.2 }}
         className="fixed inset-0 z-[200] flex flex-col bg-[#050507]/95 backdrop-blur-xl overscroll-contain"
         style={{ touchAction: 'none' }}
+        data-allow-scroll="false"
         onWheel={(e) => e.stopPropagation()}
         onTouchMove={(e) => {
           // Allow touchmove only inside scrollable panes (img/text/pdf containers handle it)
