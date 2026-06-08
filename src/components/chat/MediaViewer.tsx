@@ -66,11 +66,11 @@ export const MediaViewer = ({
     const prevOverflow = document.body.style.overflow;
     const prevOverscroll = document.body.style.overscrollBehavior;
     const prevTouch = (document.body.style as any).touchAction;
-    document.body.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden'; document.documentElement.style.overflow = 'hidden';
     document.body.style.overscrollBehavior = 'contain';
     (document.body.style as any).touchAction = 'none';
     return () => {
-      document.body.style.overflow = prevOverflow;
+      document.body.style.overflow = prevOverflow; document.documentElement.style.overflow = prevOverflow;
       document.body.style.overscrollBehavior = prevOverscroll;
       (document.body.style as any).touchAction = prevTouch;
     };
