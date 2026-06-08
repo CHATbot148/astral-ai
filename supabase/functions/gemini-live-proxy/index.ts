@@ -38,7 +38,7 @@ async function tryGeminiConnect(model: string, systemInstruction: string, voiceN
             responseModalities: ["AUDIO"],
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
           },
-          systemInstruction: { role: "system", parts: [{ text: systemInstruction }] },
+          systemInstruction: { parts: [{ text: systemInstruction }] },
           realtimeInputConfig: {},
           inputAudioTranscription: {},
           outputAudioTranscription: {},
@@ -118,6 +118,16 @@ Deno.serve(async (req) => {
               const parsed = JSON.parse(payload);
               if (parsed.setupComplete) {
                 safeSendClient({ type: "connected" });
+                return;
+              }
+              if (parsed.error) {
+                const errMessage = parsed.error.message || parsed.error.status || parsed.error.code || "Gemini setup failed";
+                safeSendClient({ type: "error", message: String(errMessage) });
+                return;
+              }
+              if (parsed.goAway) {
+                const timeLeft = parsed.goAway.timeLeft ? ` (${parsed.goAway.timeLeft} left)` : "";
+                safeSendClient({ type: "error", message: `Gemini asked to close the session${timeLeft}` });
                 return;
               }
               safeSendClient(parsed);
