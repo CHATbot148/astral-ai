@@ -39,6 +39,19 @@ export const VizBlock = ({ code, isStreaming }: Props) => {
     return () => window.removeEventListener("keydown", handler);
   }, [expanded]);
 
+  // Lock scroll when expanded
+  useEffect(() => {
+    if (!expanded) return;
+    const prevOverflowBody = document.body.style.overflow;
+    const prevOverflowHtml = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflowBody;
+      document.documentElement.style.overflow = prevOverflowHtml;
+    };
+  }, [expanded]);
+
   if (isStreaming) {
     return (
       <div className="my-3 w-full overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-br from-xai-purple/10 via-secondary/40 to-xai-cyan/10 p-4 flex items-center gap-3">
@@ -61,7 +74,7 @@ export const VizBlock = ({ code, isStreaming }: Props) => {
       sandbox="allow-scripts allow-pointer-lock allow-popups allow-same-origin"
       srcDoc={srcDoc}
       className={cn(
-        "w-full border-0 bg-[#0a0a12]",
+        "w-full border-0 bg-transparent",
         expanded ? "h-full" : "h-[460px] sm:h-[540px]"
       )}
     />
@@ -98,7 +111,7 @@ export const VizBlock = ({ code, isStreaming }: Props) => {
         layout
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
-        className="my-3 w-full overflow-hidden rounded-2xl border border-border/60 bg-card/60 shadow-[0_15px_45px_-18px_hsl(var(--xai-purple)/0.4)]"
+        className="my-3 w-full overflow-hidden rounded-2xl border border-border/60 bg-background/40"
       >
         {toolbar}
         <div className="relative">{frame}</div>
@@ -122,7 +135,7 @@ export const VizBlock = ({ code, isStreaming }: Props) => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-background/95 backdrop-blur-md flex flex-col"
+            className="fixed inset-0 z-[100] bg-[#050507]/95 backdrop-blur-xl flex flex-col"
           >
             {toolbar}
             <div className="flex-1 min-h-0">{frame}</div>
