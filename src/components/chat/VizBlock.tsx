@@ -81,7 +81,7 @@ export const VizBlock = ({ code, isStreaming }: Props) => {
   );
 
   const toolbar = (
-    <div className="flex items-center justify-between gap-2 px-3 py-2 bg-gradient-to-r from-xai-purple/20 via-background/60 to-xai-cyan/20 backdrop-blur border-b border-border/60">
+    <div className="flex items-center justify-between gap-2 rounded-t-xl border border-border/30 bg-gradient-to-r from-xai-purple/20 via-background/60 to-xai-cyan/20 px-3 py-2 backdrop-blur">
       <div className="flex items-center gap-2 min-w-0">
         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-xai-purple to-xai-cyan shadow-md shadow-xai-purple/30">
           <Sparkles className="h-3.5 w-3.5 text-white" />
@@ -114,7 +114,7 @@ export const VizBlock = ({ code, isStreaming }: Props) => {
         className="my-3 w-full"
       >
         {toolbar}
-        <div className="relative overflow-hidden rounded-b-xl border-x border-b border-border/30">{frame}</div>
+        <div className="relative overflow-hidden rounded-b-xl border-x border-b border-border/30 bg-transparent">{frame}</div>
         <AnimatePresence>
           {showSource && (
             <motion.pre
