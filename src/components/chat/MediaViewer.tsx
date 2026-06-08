@@ -64,7 +64,6 @@ export const MediaViewer = ({
   useEffect(() => {
     if (!open) return;
     const html = document.documentElement;
-    const appRoot = document.getElementById('root');
     const prevOverflow = document.body.style.overflow;
     const prevOverscroll = document.body.style.overscrollBehavior;
     const prevTouch = (document.body.style as any).touchAction;
@@ -73,7 +72,6 @@ export const MediaViewer = ({
     const prevBodyTop = document.body.style.top;
     const prevHtmlOverflow = html.style.overflow;
     const prevHtmlOverscroll = html.style.overscrollBehavior;
-    const prevRootPointerEvents = appRoot?.style.pointerEvents;
     const scrollY = window.scrollY;
     document.body.style.overflow = 'hidden';
     html.style.overflow = 'hidden';
@@ -83,7 +81,6 @@ export const MediaViewer = ({
     document.body.style.position = 'fixed';
     document.body.style.width = '100%';
     document.body.style.top = `-${scrollY}px`;
-    if (appRoot) appRoot.style.pointerEvents = 'none';
     return () => {
       document.body.style.overflow = prevOverflow;
       html.style.overflow = prevHtmlOverflow;
@@ -93,7 +90,6 @@ export const MediaViewer = ({
       document.body.style.position = prevBodyPosition;
       document.body.style.width = prevBodyWidth;
       document.body.style.top = prevBodyTop;
-      if (appRoot) appRoot.style.pointerEvents = prevRootPointerEvents ?? '';
       window.scrollTo(0, scrollY);
     };
   }, [open]);
