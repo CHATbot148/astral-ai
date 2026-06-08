@@ -10,8 +10,8 @@ const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 
 // Stable Gemini Live models in priority order (best audio first, then fallbacks).
 const MODELS = [
-  "models/gemini-2.5-flash-preview-native-audio-dialog",
-  "models/gemini-live-2.5-flash-preview",
+  "models/gemini-3.1-flash-live-preview",
+  "models/gemini-2.5-flash-native-audio-latest",
   "models/gemini-2.0-flash-live-001",
 ];
 
