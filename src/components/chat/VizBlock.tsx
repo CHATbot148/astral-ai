@@ -10,8 +10,8 @@ interface Props {
 }
 
 /**
- * Renders an interactive visualization widget inline. Always-on; no gate button.
- * Full width, floating control bar like Gemini.
+ * Renders an interactive visualization widget inline with controls.
+ * Keep the frame itself as the primary surface — no extra outer card shell.
  */
 export const VizBlock = ({ code, isStreaming }: Props) => {
   const [expanded, setExpanded] = useState(false);
@@ -111,17 +111,17 @@ export const VizBlock = ({ code, isStreaming }: Props) => {
         layout
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
-        className="my-3 w-full overflow-hidden rounded-xl border border-border/30"
+        className="my-3 w-full"
       >
         {toolbar}
-        <div className="relative">{frame}</div>
+        <div className="relative overflow-hidden rounded-b-xl border-x border-b border-border/30">{frame}</div>
         <AnimatePresence>
           {showSource && (
             <motion.pre
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="overflow-auto max-h-64 text-[11px] leading-relaxed p-3 bg-secondary/40 border-t border-border/60 font-mono text-muted-foreground"
+              className="overflow-auto max-h-64 rounded-b-xl border-x border-b border-border/30 bg-secondary/40 p-3 text-[11px] leading-relaxed font-mono text-muted-foreground"
             >
               {code}
             </motion.pre>
