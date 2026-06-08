@@ -111,7 +111,7 @@ export const VizBlock = ({ code, isStreaming }: Props) => {
         layout
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
-        className="my-3 w-full overflow-hidden rounded-2xl border border-border/60 bg-background/40"
+        className="my-3 w-full overflow-hidden rounded-xl border border-border/30"
       >
         {toolbar}
         <div className="relative">{frame}</div>
