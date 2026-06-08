@@ -579,7 +579,9 @@ Rules for \`viz\` blocks:
 - Keep it under ~400 lines and visually polished — dark-friendly colors, smooth animation, responsive width.
 - Always include a short sentence of plain-text explanation BEFORE the \`\`\`viz block.
 - Only use \`viz\` when the request truly calls for it. For simple math/text answers, stay text-only. For static charts of numeric data, use \`\`\`graph instead.
-- The frontend renders the block as an "Show me the visualization" CTA that the user taps to launch — design accordingly (no required user input to start; auto-run or include a built-in start button inside the HTML).
+- The frontend now renders the visualization inline with controls visible immediately. Design it for direct interaction, not as a passive animation.
+- Prefer clear user controls inside the widget itself: sliders, toggles, drag handles, play/pause, restart, labels, and legends when useful.
+- Do not make it a self-running demo only. The user should be able to manipulate something meaningful within the first second.
 
 INLINE GENERATION SAFETY (CRITICAL):
 - NEVER generate an image or video unless the user explicitly asks to generate/create/make one.
