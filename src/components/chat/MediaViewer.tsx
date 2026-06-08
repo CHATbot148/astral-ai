@@ -222,7 +222,7 @@ export const MediaViewer = ({
 
 /* ---------------- Video pane ---------------- */
 const VideoPane = ({ url }: { url: string }) => (
-  <div className="h-full w-full flex items-center justify-center p-2 sm:p-6">
+  <div data-allow-scroll className="h-full w-full flex items-center justify-center p-2 sm:p-6 overflow-auto">
     <video
       src={url}
       controls
@@ -238,7 +238,7 @@ const VideoPane = ({ url }: { url: string }) => (
 const ImagePane = ({ url }: { url: string }) => {
   const [scale, setScale] = useState(1);
   return (
-    <div className="relative h-full w-full overflow-auto flex items-center justify-center p-2 sm:p-6">
+    <div data-allow-scroll className="relative h-full w-full overflow-auto flex items-center justify-center p-2 sm:p-6">
       <img
         src={url}
         alt="Preview"
@@ -262,7 +262,7 @@ const DocumentPane = ({ url, fileName, mimeType }: { url: string; fileName?: str
 
   if (isPdf) {
     return (
-      <div className="h-full w-full p-2 sm:p-4">
+      <div data-allow-scroll className="h-full w-full p-2 sm:p-4">
         <iframe
           src={`${url}#view=FitH`}
           title={fileName || 'Document'}
@@ -302,7 +302,7 @@ const TextDocumentPane = ({ url }: { url: string }) => {
     return () => { cancelled = true; };
   }, [url]);
   return (
-    <div className="h-full w-full p-2 sm:p-4">
+    <div data-allow-scroll className="h-full w-full p-2 sm:p-4">
       <pre className="h-full w-full overflow-auto rounded-xl border border-white/10 bg-black/40 p-4 text-[13px] leading-relaxed text-white/90 font-mono whitespace-pre-wrap">{content}</pre>
     </div>
   );
