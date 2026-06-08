@@ -135,7 +135,7 @@ export const VizBlock = ({ code, isStreaming }: Props) => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-[#050507]/95 backdrop-blur-xl flex flex-col"
+            className="fixed inset-0 z-[200] bg-[#050507]/95 backdrop-blur-xl flex flex-col overscroll-none" style={{ touchAction: "none" }}
           >
             {toolbar}
             <div className="flex-1 min-h-0">{frame}</div>
