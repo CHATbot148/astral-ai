@@ -86,6 +86,8 @@ export function useGeminiLive() {
     userAnalyserRef.current = null;
     modelAnalyserRef.current = null;
     sessionReadyRef.current = false;
+    setUserVolume(0);
+    setModelVolume(0);
     if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
       try { audioCtxRef.current.close(); } catch {}
     }
@@ -265,8 +267,9 @@ export function useGeminiLive() {
           window.clearTimeout(connectTimeout);
           sessionReadyRef.current = false;
           console.error('Gemini Live Error:', msg.message);
-          setError(msg.message);
+          setError(msg.message || 'Voice call failed to connect.');
           setStatus('error');
+          try { ws.close(); } catch {}
           return;
         }
 
@@ -315,7 +318,7 @@ export function useGeminiLive() {
         window.clearTimeout(connectTimeout);
         sessionReadyRef.current = false;
         console.error('WebSocket error:', err);
-        setError('Connection error');
+        setError('Live call connection error.');
         setStatus('error');
       };
     },
