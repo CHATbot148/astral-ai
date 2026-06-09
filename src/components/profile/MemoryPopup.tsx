@@ -289,10 +289,13 @@ const CATEGORY_COLORS: Record<string, string> = {
                               <Button variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={() => setConfirmDeleteId(null)}>No</Button>
                             </motion.div>
                           )}
-                       </motion.div>
-                     ))}
-                   </div>
-                 )}
+                        </motion.div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
  
                  {/* Clear All */}
                   {memories.length > 0 && !confirmClearAll && (
