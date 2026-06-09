@@ -1138,3 +1138,75 @@ async function performWebSearch(supabaseUrl: string, query: string, type: string
     return [];
   }
 }
+
+// ChatGPT-style memory extraction. Uses Gemini Flash via Lovable Gateway with strict JSON output.
+// Categories: preference | long_term | relationship | fact | rule
+async function extractAndStoreMemories(
+  apiKey: string,
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  userMessage: string,
+): Promise<void> {
+  try {
+    const trimmed = userMessage.slice(0, 4000);
+    const sys = `You extract durable user memories from chat for an AI assistant (like ChatGPT/Claude memory).
+Return STRICT JSON only: {"memories":[{"category":"...","key":"...","value":"...","importance":1-5}]}.
+
+Rules:
+- Only extract things worth remembering long-term. SKIP small talk, transient context, one-off tasks, questions, opinions about external topics.
+- category must be exactly one of: preference, long_term, relationship, fact, rule.
+  - preference: how the user likes things (communication style, formatting, tools, habits).
+  - long_term: ongoing goals, projects, plans, recurring interests, deadlines.
+  - relationship: important people/companies/teams and how they relate to the user.
+  - fact: stable personal facts (name, age, location, profession, languages, health basics user shares).
+  - rule: hard instructions the user wants always followed ("always reply in Spanish", "never use emojis").
+- key: short snake_case slug (max 40 chars), stable across phrasings (e.g. "communication_style", "current_project", "spouse_name").
+- value: concise human-readable fact (max 200 chars).
+- importance: 5 = identity/critical rule, 3 = useful preference/goal, 1 = mildly relevant.
+- If nothing qualifies, return {"memories":[]}.
+- NEVER invent. Only extract what the user explicitly stated.`;
+
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash-lite",
+        messages: [
+          { role: "system", content: sys },
+          { role: "user", content: `User message:\n"""${trimmed}"""\n\nReturn JSON only.` },
+        ],
+        max_tokens: 600,
+        temperature: 0.1,
+      }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const raw = data.choices?.[0]?.message?.content?.trim() || "";
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return;
+    let parsed: any;
+    try { parsed = JSON.parse(jsonMatch[0]); } catch { return; }
+    const memories = Array.isArray(parsed?.memories) ? parsed.memories : [];
+    const valid = memories
+      .filter((m: any) => m && typeof m.key === "string" && typeof m.value === "string" && typeof m.category === "string")
+      .filter((m: any) => ["preference", "long_term", "relationship", "fact", "rule"].includes(m.category))
+      .map((m: any) => ({
+        user_id: userId,
+        category: m.category,
+        key: String(m.key).slice(0, 40).toLowerCase().replace(/[^a-z0-9_]/g, "_"),
+        value: String(m.value).slice(0, 240),
+        importance: Math.max(1, Math.min(5, Number(m.importance) || 3)),
+        last_used_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }))
+      .filter((m: any) => m.key && m.value);
+    if (valid.length === 0) return;
+    const { error } = await supabase
+      .from("user_memory")
+      .upsert(valid, { onConflict: "user_id,key" });
+    if (error) console.error("[memory] upsert failed:", error);
+    else console.log(`[memory] saved ${valid.length} memories for user ${userId.slice(0,8)}…`);
+  } catch (e) {
+    console.error("[memory] extract error:", e);
+  }
+}
