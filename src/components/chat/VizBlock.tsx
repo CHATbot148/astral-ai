@@ -130,17 +130,17 @@ export const VizBlock = ({ code, isStreaming }: Props) => {
         layout
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
-        className="my-3 w-full"
+        className="my-3 w-full rounded-xl overflow-hidden border border-border/30 bg-gradient-to-br from-xai-purple/5 to-xai-cyan/5"
       >
         {toolbar}
-        <div className="relative overflow-hidden rounded-b-xl border-x border-b border-border/30 bg-transparent">{frame}</div>
+        <div className="relative bg-transparent">{frame}</div>
         <AnimatePresence>
           {showSource && (
             <motion.pre
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="overflow-auto max-h-64 rounded-b-xl border-x border-b border-border/30 bg-secondary/40 p-3 text-[11px] leading-relaxed font-mono text-muted-foreground"
+              className="overflow-auto max-h-64 border-t border-border/30 bg-secondary/40 p-3 text-[11px] leading-relaxed font-mono text-muted-foreground"
             >
               {code}
             </motion.pre>
