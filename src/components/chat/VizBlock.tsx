@@ -17,19 +17,37 @@ export const VizBlock = ({ code, isStreaming }: Props) => {
   const [expanded, setExpanded] = useState(false);
   const [showSource, setShowSource] = useState(false);
   const [nonce, setNonce] = useState(0);
+  const [autoHeight, setAutoHeight] = useState<number | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const srcDoc = useMemo(() => {
     const body = code.trim();
     const isFullDoc = /<\s*html[\s>]/i.test(body) || /<!doctype/i.test(body);
-    if (isFullDoc) return body;
+    const resizeScript = `<script>(function(){function post(){try{var h=Math.max(document.body.scrollHeight,document.documentElement.scrollHeight);parent.postMessage({type:'astraz-viz-height',height:h},'*');}catch(e){}}try{var ro=new ResizeObserver(post);ro.observe(document.body);}catch(e){}window.addEventListener('load',post);setTimeout(post,50);setTimeout(post,300);setTimeout(post,1000);})();<\/script>`;
+    if (isFullDoc) {
+      if (/<\/body>/i.test(body)) return body.replace(/<\/body>/i, `${resizeScript}</body>`);
+      return body + resizeScript;
+    }
     return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
       html,body{margin:0;padding:0;background:transparent;color:#fff;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;}
-      body{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:16px;box-sizing:border-box;}
+      body{padding:14px;box-sizing:border-box;}
       *{box-sizing:border-box;}
       canvas{max-width:100%;height:auto;}
-    </style></head><body>${body}</body></html>`;
+    </style></head><body>${body}${resizeScript}</body></html>`;
   }, [code, nonce]);
+
+  // Listen for height updates from iframe
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.source !== iframeRef.current?.contentWindow) return;
+      const data = e.data;
+      if (data && data.type === "astraz-viz-height" && typeof data.height === "number") {
+        setAutoHeight(Math.min(Math.max(data.height, 120), 900));
+      }
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, []);
 
   // Close fullscreen on Escape
   useEffect(() => {
@@ -73,9 +91,10 @@ export const VizBlock = ({ code, isStreaming }: Props) => {
       title="Astraz visualization"
       sandbox="allow-scripts allow-pointer-lock allow-popups allow-same-origin"
       srcDoc={srcDoc}
+      style={!expanded && autoHeight ? { height: autoHeight } : undefined}
       className={cn(
-        "w-full border-0 bg-transparent",
-        expanded ? "h-full" : "h-[460px] sm:h-[540px]"
+        "w-full border-0 bg-transparent block",
+        expanded ? "h-full" : (!autoHeight && "min-h-[160px]")
       )}
     />
   );
@@ -111,17 +130,17 @@ export const VizBlock = ({ code, isStreaming }: Props) => {
         layout
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
-        className="my-3 w-full"
+        className="my-3 w-full rounded-xl overflow-hidden border border-border/30 bg-gradient-to-br from-xai-purple/5 to-xai-cyan/5"
       >
         {toolbar}
-        <div className="relative overflow-hidden rounded-b-xl border-x border-b border-border/30 bg-transparent">{frame}</div>
+        <div className="relative bg-transparent">{frame}</div>
         <AnimatePresence>
           {showSource && (
             <motion.pre
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="overflow-auto max-h-64 rounded-b-xl border-x border-b border-border/30 bg-secondary/40 p-3 text-[11px] leading-relaxed font-mono text-muted-foreground"
+              className="overflow-auto max-h-64 border-t border-border/30 bg-secondary/40 p-3 text-[11px] leading-relaxed font-mono text-muted-foreground"
             >
               {code}
             </motion.pre>

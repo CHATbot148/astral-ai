@@ -287,19 +287,46 @@ serve(async (req) => {
       if (data?.user?.id) userId = data.user.id;
     }
 
-    // Fetch user memory
+    // Fetch user memory (ChatGPT-style categorized recall)
     let userMemory = "";
+    let memoryServiceClient: ReturnType<typeof createClient> | null = null;
+    let recalledMemoryIds: string[] = [];
     if (userId && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
-      const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-      const { data: memories } = await supabase
+      memoryServiceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      const { data: memories } = await memoryServiceClient
         .from("user_memory")
-        .select("key, value")
-        .eq("user_id", userId);
+        .select("id, category, key, value, importance")
+        .eq("user_id", userId)
+        .order("importance", { ascending: false })
+        .order("last_used_at", { ascending: false })
+        .limit(40);
 
       if (memories && memories.length > 0) {
-        userMemory =
-          "\n\nUser Information (facts they've shared with you):\n" +
-          memories.map((m) => `- ${m.key}: ${m.value}`).join("\n");
+        const grouped: Record<string, string[]> = {};
+        for (const m of memories) {
+          const cat = (m.category as string) || "fact";
+          (grouped[cat] ||= []).push(`- ${m.key}: ${m.value}`);
+          recalledMemoryIds.push(m.id as string);
+        }
+        const labels: Record<string, string> = {
+          preference: "Preferences",
+          long_term: "Long-term context (goals, projects, ongoing topics)",
+          relationship: "People & relationships",
+          fact: "Facts about the user",
+          rule: "Hard rules (must always follow)",
+        };
+        const sections = Object.entries(grouped)
+          .map(([cat, lines]) => `**${labels[cat] || cat}**\n${lines.join("\n")}`)
+          .join("\n\n");
+        userMemory = `\n\n### What you remember about this user\n${sections}\n\nUse this naturally. Never read it back verbatim unless asked.`;
+
+        // Mark recall (fire-and-forget)
+        memoryServiceClient
+          .from("user_memory")
+          .update({ last_used_at: new Date().toISOString() })
+          .in("id", recalledMemoryIds)
+          .then(() => {})
+          .catch(() => {});
       }
     }
 
@@ -319,6 +346,14 @@ serve(async (req) => {
     // Get last user message
     const lastUserMessage = messages.filter((m: { role: string }) => m.role === "user").pop();
     const lastContent = lastUserMessage?.content || "";
+
+    // Fire-and-forget: extract long-term memories from the latest user turn
+    if (userId && memoryServiceClient && lastContent && lastContent.length >= 8 && LOVABLE_API_KEY) {
+      extractAndStoreMemories(LOVABLE_API_KEY, memoryServiceClient, userId, lastContent).catch((e) => {
+        console.error("[memory] extraction failed:", e);
+      });
+    }
+
     
     let searchContext = "";
     let mediaContext = "";
@@ -1101,5 +1136,77 @@ async function performWebSearch(supabaseUrl: string, query: string, type: string
   } catch (error) {
     console.error("Search helper error:", error);
     return [];
+  }
+}
+
+// ChatGPT-style memory extraction. Uses Gemini Flash via Lovable Gateway with strict JSON output.
+// Categories: preference | long_term | relationship | fact | rule
+async function extractAndStoreMemories(
+  apiKey: string,
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  userMessage: string,
+): Promise<void> {
+  try {
+    const trimmed = userMessage.slice(0, 4000);
+    const sys = `You extract durable user memories from chat for an AI assistant (like ChatGPT/Claude memory).
+Return STRICT JSON only: {"memories":[{"category":"...","key":"...","value":"...","importance":1-5}]}.
+
+Rules:
+- Only extract things worth remembering long-term. SKIP small talk, transient context, one-off tasks, questions, opinions about external topics.
+- category must be exactly one of: preference, long_term, relationship, fact, rule.
+  - preference: how the user likes things (communication style, formatting, tools, habits).
+  - long_term: ongoing goals, projects, plans, recurring interests, deadlines.
+  - relationship: important people/companies/teams and how they relate to the user.
+  - fact: stable personal facts (name, age, location, profession, languages, health basics user shares).
+  - rule: hard instructions the user wants always followed ("always reply in Spanish", "never use emojis").
+- key: short snake_case slug (max 40 chars), stable across phrasings (e.g. "communication_style", "current_project", "spouse_name").
+- value: concise human-readable fact (max 200 chars).
+- importance: 5 = identity/critical rule, 3 = useful preference/goal, 1 = mildly relevant.
+- If nothing qualifies, return {"memories":[]}.
+- NEVER invent. Only extract what the user explicitly stated.`;
+
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash-lite",
+        messages: [
+          { role: "system", content: sys },
+          { role: "user", content: `User message:\n"""${trimmed}"""\n\nReturn JSON only.` },
+        ],
+        max_tokens: 600,
+        temperature: 0.1,
+      }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const raw = data.choices?.[0]?.message?.content?.trim() || "";
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return;
+    let parsed: any;
+    try { parsed = JSON.parse(jsonMatch[0]); } catch { return; }
+    const memories = Array.isArray(parsed?.memories) ? parsed.memories : [];
+    const valid = memories
+      .filter((m: any) => m && typeof m.key === "string" && typeof m.value === "string" && typeof m.category === "string")
+      .filter((m: any) => ["preference", "long_term", "relationship", "fact", "rule"].includes(m.category))
+      .map((m: any) => ({
+        user_id: userId,
+        category: m.category,
+        key: String(m.key).slice(0, 40).toLowerCase().replace(/[^a-z0-9_]/g, "_"),
+        value: String(m.value).slice(0, 240),
+        importance: Math.max(1, Math.min(5, Number(m.importance) || 3)),
+        last_used_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }))
+      .filter((m: any) => m.key && m.value);
+    if (valid.length === 0) return;
+    const { error } = await supabase
+      .from("user_memory")
+      .upsert(valid, { onConflict: "user_id,key" });
+    if (error) console.error("[memory] upsert failed:", error);
+    else console.log(`[memory] saved ${valid.length} memories for user ${userId.slice(0,8)}…`);
+  } catch (e) {
+    console.error("[memory] extract error:", e);
   }
 }
