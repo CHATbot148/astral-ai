@@ -287,19 +287,46 @@ serve(async (req) => {
       if (data?.user?.id) userId = data.user.id;
     }
 
-    // Fetch user memory
+    // Fetch user memory (ChatGPT-style categorized recall)
     let userMemory = "";
+    let memoryServiceClient: ReturnType<typeof createClient> | null = null;
+    let recalledMemoryIds: string[] = [];
     if (userId && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
-      const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-      const { data: memories } = await supabase
+      memoryServiceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      const { data: memories } = await memoryServiceClient
         .from("user_memory")
-        .select("key, value")
-        .eq("user_id", userId);
+        .select("id, category, key, value, importance")
+        .eq("user_id", userId)
+        .order("importance", { ascending: false })
+        .order("last_used_at", { ascending: false })
+        .limit(40);
 
       if (memories && memories.length > 0) {
-        userMemory =
-          "\n\nUser Information (facts they've shared with you):\n" +
-          memories.map((m) => `- ${m.key}: ${m.value}`).join("\n");
+        const grouped: Record<string, string[]> = {};
+        for (const m of memories) {
+          const cat = (m.category as string) || "fact";
+          (grouped[cat] ||= []).push(`- ${m.key}: ${m.value}`);
+          recalledMemoryIds.push(m.id as string);
+        }
+        const labels: Record<string, string> = {
+          preference: "Preferences",
+          long_term: "Long-term context (goals, projects, ongoing topics)",
+          relationship: "People & relationships",
+          fact: "Facts about the user",
+          rule: "Hard rules (must always follow)",
+        };
+        const sections = Object.entries(grouped)
+          .map(([cat, lines]) => `**${labels[cat] || cat}**\n${lines.join("\n")}`)
+          .join("\n\n");
+        userMemory = `\n\n### What you remember about this user\n${sections}\n\nUse this naturally. Never read it back verbatim unless asked.`;
+
+        // Mark recall (fire-and-forget)
+        memoryServiceClient
+          .from("user_memory")
+          .update({ last_used_at: new Date().toISOString() })
+          .in("id", recalledMemoryIds)
+          .then(() => {})
+          .catch(() => {});
       }
     }
 
