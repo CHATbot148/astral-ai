@@ -346,6 +346,14 @@ serve(async (req) => {
     // Get last user message
     const lastUserMessage = messages.filter((m: { role: string }) => m.role === "user").pop();
     const lastContent = lastUserMessage?.content || "";
+
+    // Fire-and-forget: extract long-term memories from the latest user turn
+    if (userId && memoryServiceClient && lastContent && lastContent.length >= 8 && LOVABLE_API_KEY) {
+      extractAndStoreMemories(LOVABLE_API_KEY, memoryServiceClient, userId, lastContent).catch((e) => {
+        console.error("[memory] extraction failed:", e);
+      });
+    }
+
     
     let searchContext = "";
     let mediaContext = "";
