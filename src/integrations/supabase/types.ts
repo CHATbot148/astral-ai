@@ -515,25 +515,34 @@ export type Database = {
       }
       user_memory: {
         Row: {
+          category: string
           created_at: string
           id: string
+          importance: number
           key: string
+          last_used_at: string
           updated_at: string
           user_id: string
           value: string
         }
         Insert: {
+          category?: string
           created_at?: string
           id?: string
+          importance?: number
           key: string
+          last_used_at?: string
           updated_at?: string
           user_id: string
           value: string
         }
         Update: {
+          category?: string
           created_at?: string
           id?: string
+          importance?: number
           key?: string
+          last_used_at?: string
           updated_at?: string
           user_id?: string
           value?: string
