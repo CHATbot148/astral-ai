@@ -7,12 +7,30 @@
  import { useAuth } from '@/hooks/useAuth';
  import { useToast } from '@/hooks/use-toast';
  
- interface MemoryItem {
-   id: string;
-   key: string;
-   value: string;
-   created_at: string;
- }
+interface MemoryItem {
+  id: string;
+  key: string;
+  value: string;
+  category: string;
+  importance: number;
+  created_at: string;
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  preference: 'Preferences',
+  long_term: 'Long-term',
+  relationship: 'People',
+  fact: 'Facts',
+  rule: 'Rules',
+};
+
+const CATEGORY_COLORS: Record<string, string> = {
+  preference: 'bg-indigo-500/15 text-indigo-300 border-indigo-400/30',
+  long_term: 'bg-violet-500/15 text-violet-300 border-violet-400/30',
+  relationship: 'bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-400/30',
+  fact: 'bg-sky-500/15 text-sky-300 border-sky-400/30',
+  rule: 'bg-rose-500/15 text-rose-300 border-rose-400/30',
+};
  
  interface MemoryPopupProps {
    isOpen: boolean;
