@@ -238,19 +238,33 @@ const CATEGORY_COLORS: Record<string, string> = {
                        Share things like your name, preferences, or interests
                      </p>
                    </div>
-                 ) : (
-                   <div className="space-y-2">
-                     {memories.map((memory) => (
-                        <motion.div
-                          key={memory.id}
-                          initial={{ opacity: 0, x: -10 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          className="relative flex items-start justify-between gap-3 p-3 rounded-lg bg-secondary/50 border border-border group"
-                        >
-                         <div className="flex-1 min-w-0">
-                           <p className="text-sm font-medium text-xai-cyan">{memory.key}</p>
-                           <p className="text-sm text-foreground truncate">{memory.value}</p>
-                         </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {Object.entries(
+                        memories.reduce<Record<string, MemoryItem[]>>((acc, m) => {
+                          const cat = m.category || 'fact';
+                          (acc[cat] ||= []).push(m);
+                          return acc;
+                        }, {})
+                      ).map(([cat, items]) => (
+                        <div key={cat} className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-display font-semibold tracking-wider uppercase px-2 py-0.5 rounded-md border ${CATEGORY_COLORS[cat] || CATEGORY_COLORS.fact}`}>
+                              {CATEGORY_LABELS[cat] || cat}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">{items.length}</span>
+                          </div>
+                          {items.map((memory) => (
+                         <motion.div
+                           key={memory.id}
+                           initial={{ opacity: 0, x: -10 }}
+                           animate={{ opacity: 1, x: 0 }}
+                           className="relative flex items-start justify-between gap-3 p-3 rounded-lg bg-secondary/50 border border-border group hover:border-primary/40 transition-colors"
+                         >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-primary">{memory.key.replace(/_/g, ' ')}</p>
+                            <p className="text-sm text-foreground break-words">{memory.value}</p>
+                          </div>
                           <Button
                             variant="ghost"
                             size="icon"
