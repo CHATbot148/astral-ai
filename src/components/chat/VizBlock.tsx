@@ -91,9 +91,10 @@ export const VizBlock = ({ code, isStreaming }: Props) => {
       title="Astraz visualization"
       sandbox="allow-scripts allow-pointer-lock allow-popups allow-same-origin"
       srcDoc={srcDoc}
+      style={!expanded && autoHeight ? { height: autoHeight } : undefined}
       className={cn(
-        "w-full border-0 bg-transparent",
-        expanded ? "h-full" : "h-[460px] sm:h-[540px]"
+        "w-full border-0 bg-transparent block",
+        expanded ? "h-full" : (!autoHeight && "min-h-[160px]")
       )}
     />
   );
