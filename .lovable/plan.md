@@ -1,67 +1,94 @@
-# Mega-fix plan
+## 1. Fix the visualization container (image annotation)
 
-Doing all four workstreams in this single batch. No partial drops.
+The big empty black box around the small "How Data Travels" card is the fixed-height iframe surrounding the actual widget. Fix:
 
-## 1. Attachments + media popups (highest priority)
+- Make the iframe auto-size to its content (inject a tiny script into `srcDoc` that uses `ResizeObserver` on `document.body` and `postMessage`s height to the parent; parent listens and sets `iframe.style.height`).
+- Drop the fixed `h-[460px]` baseline; use a small min-height (e.g. 140px) so it grows to fit only what the widget renders.
+- Make the iframe wrapper background transparent and attach the toolbar directly to the top of the visible widget (no rounded bottom card gap, no border around empty space).
+- Result: only the toolbar + the actual widget card are visible — no big outer black container.
 
-**Pill-style attachment chip** (replaces current ugly preview)
-- New `AttachmentChip.tsx`: rectangular pill, ~280px max wide. Left = type icon (image/video/audio/PDF/doc) with colored gradient square. Right = filename truncated to 10 chars + extension (`Quarterl…pdf`), file size below. For images/videos, swap the icon square for a real thumbnail. Used in ChatInput preview and in sent ChatMessage attachments.
-- Astraz actually reading files: in `ChatInput.tsx`, upload files to `chat-files` bucket and send their public URL + filename to `chat` function in a new `attachments` array. In `supabase/functions/chat/index.ts`, accept `attachments[]`. For images, pass directly to the vision-capable model. For PDFs/docs, fetch the URL server-side, extract text via a lightweight parser (pdf for PDF, plain decode for text/csv/json/md), inject as system context. Tell user when format is unsupported.
+Files: `src/components/chat/VizBlock.tsx`.
 
-**Dedicated MediaViewer modal** (`MediaViewer.tsx`) — replaces ImagePreviewModal entirely. Routes by media type:
-- **Video / AI-generated video**: full HTML5 `<video controls>`, dark backdrop, top bar with close + Download. Blob-fetch download for cross-origin.
-- **User image attachment**: image canvas with overlay drawing tool — user can free-draw circles/arrows; on "Send to Astraz" the annotated image is sent back into chat with prompt "I'm referring to the circled area".
-- **AI-generated image**: Download + Edit buttons. Edit opens brush-mask overlay with adjustable brush size, opacity, undo, clear. Prompt input + optional reference upload. Submits to existing `generate-image` edge function with mask + prompt (Leonardo inpainting).
-- **Document (PDF)**: render via `<iframe src={url}>` or react-pdf for multi-page scroll; native PDF viewer is fine fallback. Top bar with Download.
-- **Generic file**: just download.
+## 2. Full Chat UI overhaul (Midnight Indigo + Space Grotesk/DM Sans)
 
-## 2. Visualization rework
+Scope: the existing chat surface only (ChatContainer, ChatHeader, ChatInput, ChatMessage, Sidebar, WelcomeScreen, TypingIndicator). Not the "New Chat" creation flow.
 
-Rebuild `VizBlock.tsx` as a **big rich preview card** (not a tiny "Open" button):
-- Card with gradient header showing viz title (extracted from HTML `<title>` or first heading), dim screenshot-style placeholder (rendered from a hidden iframe captured to canvas, or a static "Interactive Visualization" mesh-gradient art), "Interactive" badge.
-- Single tap = expand inline to full-width interactive iframe with floating control bar (restart, fullscreen, copy code). No "Show me the visualization" gate text.
-- Better iframe defaults: `allow-scripts allow-same-origin allow-pointer-lock`, responsive height (min 400, max 600 normal / 100vh fullscreen).
+Design system updates:
+- Install `@fontsource/space-grotesk` and `@fontsource/dm-sans`, import in `src/main.tsx`, wire `font-display` (Space Grotesk) and `font-sans` (DM Sans) into `tailwind.config.ts`.
+- Add new Midnight Indigo tokens to `index.css`:
+  - `--bg-base: #0a0a1a`, `--bg-surface: #141432`, `--bg-elevated: #1e1e5a`, `--accent: #4f46e5` (indigo-600), `--accent-glow: #818cf8`.
+  - New gradient tokens: `--gradient-midnight` (radial mesh of indigo + violet), `--gradient-accent` (#4f46e5 → #818cf8), `--shadow-indigo-glow`.
+- Replace current `aurora-bg` usage on chat pages with a richer animated mesh background (CSS keyframes drifting two radial gradients over `--bg-base`).
 
-## 3. Models + Call quality
+Components refreshed (visual only, no logic changes):
+- **ChatContainer**: animated mesh background, soft vignette, subtle grain overlay; scroll area gets fade-mask at top/bottom.
+- **ChatHeader**: glass pill with indigo border-glow, restyled model selector with smoother dropdown spring animation.
+- **ChatInput**: floating glass composer with indigo focus-ring glow, animated mic/send buttons (scale + glow), attachment chip animations, send button using new gradient.
+- **ChatMessage**: assistant bubbles transparent on background (per spec); user bubbles use indigo `--accent` with white text; markdown typography swapped to DM Sans with Space Grotesk for headings; code blocks use new indigo accent border; entry animation upgraded (slide+fade+scale, staggered).
+- **Sidebar**: indigo accent highlights, hover lift, smoother slide-in spring.
+- **WelcomeScreen / TypingIndicator**: new pulse/shimmer using accent tokens.
 
-- **Astraz Pro chat model**: in `supabase/functions/chat/index.ts`, swap pro path from current Gemini to `google/gemini-3.1-pro-preview` (top-tier reasoning).
-- **Voice Call**: in `supabase/functions/gemini-live-proxy/index.ts`, swap model from `gemini-3.1-flash-live-preview` to `gemini-3.1-pro-live-preview` (or latest live-preview pro variant; falls back to flash if pro unavailable).
-- **Call audio breakup**: in `useGeminiLive.ts` add (a) PCM jitter buffer that queues incoming audio chunks and plays them with a 120ms lead-in, (b) larger send chunk size (40ms → 100ms) to reduce packet rate, (c) auto-reconnect on `onclose` with exponential backoff if call still active, (d) WS keepalive ping every 15s.
+New animation utilities added to `tailwind.config.ts`:
+- `mesh-drift` (20s background motion), `glow-pulse`, `slide-up-fade`, `pop-in`, `shimmer-indigo`.
 
-## 4. Security fixes (non-breaking only)
+Files: `src/index.css`, `tailwind.config.ts`, `src/main.tsx`, `package.json`, and the chat components listed above.
 
-SQL migration:
-- `daily_usage`: drop user INSERT/UPDATE policies; only service role writes (edge functions already use service role for usage counts).
-- `subscriptions`: drop user INSERT/UPDATE; service role only (paystack-verify already uses service role).
-- `promo_codes`: tighten SELECT to authenticated only AND remove `code` column from selectable (create `promo_codes_public` view with id/tier/description but no code; redeem uses RPC which already row-locks).
-- `realtime.messages`: add RLS policy scoping channels by `conversation_id` ownership.
-- `push_subscriptions`: revoke client SELECT (only service-role read for send-push).
-- `user_connections`: drop client SELECT on `oauth_tokens` via a public view that omits the column.
-- `scheduled_notifications`: restrict UPDATE to non-status columns via column grants.
-- `has_role`/`redeem_promo_code` SECURITY DEFINER: keep but `REVOKE EXECUTE FROM anon, authenticated` where not needed; redeem stays callable by authenticated.
-- `chat-files` bucket: keep public read for object URLs but remove broad list policy (add SELECT policy WHERE name LIKE auth.uid()||'/%' for listing).
+## 3. Real long-term user memory system (ChatGPT/Claude-style)
 
-Skip if it'd break: anything that breaks existing edge functions' service-role writes is fine since they bypass RLS.
+Currently Astraz only saves basics. Upgrade to a proper categorized memory store with automatic extraction, deduplication, and recall.
 
-## 5. Typewriter greeting
+### Schema (migration)
 
-In `WelcomeScreen.tsx`, animate the greeting + name with a 35ms-per-char typewriter (custom hook `useTypewriter`). Only on fresh sessions (no animation when re-entering a thread). Cursor blink while typing.
+Replace ad-hoc storage with a structured `user_memory` table (or extend existing):
 
----
+```text
+user_memory
+  id uuid pk
+  user_id uuid (auth.uid, RLS)
+  category text  -- 'preference' | 'long_term' | 'relationship' | 'fact' | 'rule'
+  key text       -- short slug, e.g. 'communication_style'
+  value text     -- the actual memory content
+  importance int -- 1..5
+  source_message_id uuid null
+  created_at, updated_at, last_used_at
+  unique (user_id, category, key)
+```
 
-## Files touched
-- New: `src/components/chat/AttachmentChip.tsx`, `src/components/chat/MediaViewer.tsx`, `src/components/chat/ImageAnnotator.tsx`, `src/components/chat/ImageMaskEditor.tsx`, `src/components/chat/DocumentViewer.tsx`, `src/hooks/useTypewriter.ts`
-- Edited: `ChatInput.tsx`, `ChatMessage.tsx`, `ChatContainer.tsx`, `MediaRenderer.tsx`, `VizBlock.tsx`, `WelcomeScreen.tsx`, `useGeminiLive.ts`, `supabase/functions/chat/index.ts`, `supabase/functions/gemini-live-proxy/index.ts`, `supabase/functions/generate-image/index.ts` (mask support)
-- Deleted: `ImagePreviewModal.tsx`
-- 1 SQL migration for security fixes
+GRANT + RLS for `authenticated`.
 
-## Order of execution
-1. Security migration (independent, fast)
-2. Edge function model swaps + call quality
-3. Attachment chip + file upload pipeline
-4. MediaViewer with all four routes
-5. Viz rework
-6. Typewriter greeting
-7. Verify build
+### Extraction pipeline (edge function)
 
-Confirm and I'll ship.
+In `supabase/functions/chat/index.ts`:
+- After each user turn (or batched every N turns), call a lightweight Mistral pass with a strict JSON-schema prompt to extract memory candidates across all four categories.
+- Upsert by `(user_id, category, key)`; merge/update if key already exists (avoids duplicates).
+- Track `last_used_at` whenever a memory is injected into a future prompt.
+
+### Recall pipeline
+
+- On every chat request, fetch top ~30 memories ordered by `importance DESC, last_used_at DESC` for that `user_id`.
+- Inject them as a structured `### Known about user` block into the system prompt grouped by category.
+- Respect existing privacy rule: JWT-derived `user_id` only, never trusted from client.
+
+### UI (Profile → Memory page)
+
+- List memories grouped by category with edit/delete.
+- "Clear all memories" action (already aligned with privacy memory rule: explicit deletion required).
+
+### Files
+
+- New migration: `supabase/migrations/<ts>_user_memory_upgrade.sql`.
+- `supabase/functions/chat/index.ts` (extraction + recall).
+- New `supabase/functions/extract-memory/index.ts` if extraction is moved off the hot path.
+- New `src/pages/MemorySettings.tsx` + link from `ProfilePopup`.
+
+## Out of scope
+
+- Voice call connection (already fixed last turn).
+- New Chat creation UI (user excluded it).
+- Payments, connectors, auth flows.
+
+## Technical notes
+
+- Iframe auto-resize uses `postMessage({ type: 'astraz-viz-height', height })` with origin check `event.source === iframe.contentWindow`.
+- Memory extraction prompt enforces JSON schema; on parse failure, skip silently (no toasts per project rule).
+- Recall injection is capped at ~2KB of memory text to protect Mistral context.
