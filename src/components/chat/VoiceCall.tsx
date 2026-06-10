@@ -111,14 +111,6 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
     });
   };
 
-  useEffect(() => {
-    if (status === 'connecting') setActiveStatus('connecting');
-    else if (status === 'connected') setActiveStatus('connected');
-    else if (status === 'error') {
-      startedRef.current = false;
-      setActiveStatus('error');
-    }
-  }, [status]);
 
   useEffect(() => {
     if (status === 'connecting') { setActiveStatus('connecting'); activeStatusRef.current = 'connecting'; }
