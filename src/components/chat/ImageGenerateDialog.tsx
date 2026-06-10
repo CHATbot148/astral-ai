@@ -50,6 +50,10 @@ const IMAGE_MODELS: Array<{ value: string; label: string; hint: string }> = [
   { value: "lucid_origin", label: "Lucid Origin", hint: "Prompt adherence" },
   { value: "flux_2_pro", label: "FLUX.2 Pro", hint: "High fidelity" },
   { value: "phoenix", label: "Phoenix", hint: "Legacy" },
+  { value: "flux_schnell", label: "FLUX Schnell", hint: "Replicate · ultra fast" },
+  { value: "flux_pro", label: "FLUX 1.1 Pro", hint: "Replicate · premium" },
+  { value: "sdxl", label: "SDXL", hint: "Replicate · stylized" },
+  { value: "ideogram_v2", label: "Ideogram v2", hint: "Replicate · typography" },
 ];
 
 const SUGGESTIONS = [

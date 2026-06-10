@@ -426,6 +426,23 @@ export const ChatContainer = () => {
       }
     }
 
+    // Route Replicate-backed models to the dedicated edge function
+    const REPLICATE_MODELS = new Set(['flux_schnell', 'flux_pro', 'sdxl', 'ideogram_v2']);
+    if (opts.modelId && REPLICATE_MODELS.has(opts.modelId)) {
+      const { data, error } = await supabase.functions.invoke('replicate-generate', {
+        body: {
+          kind: 'image',
+          modelId: opts.modelId,
+          prompt: opts.prompt,
+          aspectRatio: opts.aspectRatio,
+          imageUrl: referenceMediaUrl,
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data?.image ?? null;
+    }
+
     const { data, error } = await supabase.functions.invoke('generate-image', {
       body: {
         prompt: opts.prompt,
@@ -520,16 +537,35 @@ export const ChatContainer = () => {
           referenceMediaUrl = refUrl;
         }
 
-        const { data, error } = await supabase.functions.invoke('generate-video', {
-          body: {
-            prompt: opts.prompt,
-            modelId: opts.modelId,
-            duration: opts.duration,
-            quality: opts.quality,
-            referenceMediaUrl,
-            appInForeground: isAppInForeground(),
-          },
-        });
+        // Route Wan 2.2 to Replicate
+        let data: any, error: any;
+        if (opts.modelId === 'wan_22_fast') {
+          if (!referenceMediaUrl) throw new Error('Wan 2.2 needs a reference image (image-to-video).');
+          // Resolve storage ref → signed URL for Replicate
+          let imageUrl = referenceMediaUrl;
+          if (imageUrl.startsWith('storage:')) {
+            const raw = imageUrl.slice('storage:'.length);
+            const slash = raw.indexOf('/');
+            const bucket = raw.slice(0, slash);
+            const path = raw.slice(slash + 1);
+            const { data: signed } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
+            if (signed?.signedUrl) imageUrl = signed.signedUrl;
+          }
+          ({ data, error } = await supabase.functions.invoke('replicate-generate', {
+            body: { kind: 'video', modelId: 'wan_22_fast', prompt: opts.prompt, imageUrl },
+          }));
+        } else {
+          ({ data, error } = await supabase.functions.invoke('generate-video', {
+            body: {
+              prompt: opts.prompt,
+              modelId: opts.modelId,
+              duration: opts.duration,
+              quality: opts.quality,
+              referenceMediaUrl,
+              appInForeground: isAppInForeground(),
+            },
+          }));
+        }
 
         if (error) {
           const message = await extractFunctionErrorMessage(error, 'Video generation failed.');

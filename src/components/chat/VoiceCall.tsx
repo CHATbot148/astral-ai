@@ -35,14 +35,45 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
   const [activeStatus, setActiveStatus] = useState<'idle' | 'connecting' | 'connected' | 'exiting' | 'error'>('idle');
   const [localError, setLocalError] = useState<string | null>(null);
   const startedRef = useRef(false);
+  const wakeLockRef = useRef<any>(null);
+
+  const releaseWakeLock = async () => {
+    try { await wakeLockRef.current?.release?.(); } catch {}
+    wakeLockRef.current = null;
+  };
+
+  const acquireWakeLock = async () => {
+    try {
+      // Screen wake lock — keeps screen on during the call (supported on Chrome Android/iOS 16.4+)
+      if ("wakeLock" in navigator) {
+        wakeLockRef.current = await (navigator as any).wakeLock.request("screen");
+        // Re-acquire on visibility change (browser drops it when tab is hidden)
+        document.addEventListener("visibilitychange", reacquireOnVisible);
+      }
+    } catch (e) {
+      console.warn("WakeLock unavailable:", e);
+    }
+  };
+
+  const reacquireOnVisible = async () => {
+    if (document.visibilityState === "visible" && !wakeLockRef.current && activeStatusRef.current === "connected") {
+      try { wakeLockRef.current = await (navigator as any).wakeLock?.request?.("screen"); } catch {}
+    }
+  };
+
+  const activeStatusRef = useRef<'idle' | 'connecting' | 'connected' | 'exiting' | 'error'>('idle');
 
   const handleEndCall = () => {
     if (activeStatus === 'exiting' || activeStatus === 'idle') return;
     setActiveStatus('exiting');
+    activeStatusRef.current = 'exiting';
     playEndedSound();
+    document.removeEventListener("visibilitychange", reacquireOnVisible);
+    releaseWakeLock();
     setTimeout(() => {
       disconnect();
       setActiveStatus('idle');
+      activeStatusRef.current = 'idle';
       startedRef.current = false;
       onClose();
     }, 1800);
@@ -80,20 +111,36 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
     });
   };
 
+
   useEffect(() => {
-    if (status === 'connecting') setActiveStatus('connecting');
-    else if (status === 'connected') setActiveStatus('connected');
+    if (status === 'connecting') { setActiveStatus('connecting'); activeStatusRef.current = 'connecting'; }
+    else if (status === 'connected') {
+      setActiveStatus('connected');
+      activeStatusRef.current = 'connected';
+      acquireWakeLock();
+    }
     else if (status === 'error') {
       startedRef.current = false;
       setActiveStatus('error');
+      activeStatusRef.current = 'error';
+      releaseWakeLock();
     }
   }, [status]);
+
+  useEffect(() => {
+    return () => {
+      document.removeEventListener("visibilitychange", reacquireOnVisible);
+      releaseWakeLock();
+    };
+  }, []);
 
   useEffect(() => {
     if (!open && startedRef.current) {
       disconnect();
       startedRef.current = false;
       setActiveStatus('idle');
+      activeStatusRef.current = 'idle';
+      releaseWakeLock();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);

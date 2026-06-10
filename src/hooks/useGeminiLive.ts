@@ -33,6 +33,7 @@ export function useGeminiLive() {
   const nextStartTimeRef = useRef<number>(0);
   const modelAnalyserRef = useRef<AnalyserNode | null>(null);
   const userAnalyserRef = useRef<AnalyserNode | null>(null);
+  const outputGainRef = useRef<GainNode | null>(null);
   const audioSourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const shouldReconnectRef = useRef(false);
   const connectAbortRef = useRef<AbortController | null>(null);
@@ -166,7 +167,12 @@ export function useGeminiLive() {
       const modelAnalyser = audioCtx.createAnalyser();
       modelAnalyser.fftSize = 256;
       modelAnalyserRef.current = modelAnalyser;
-      modelAnalyser.connect(audioCtx.destination);
+      // Boost output ~2x (≈+6 dB) so calls are loud enough on mobile speakers.
+      const outputGain = audioCtx.createGain();
+      outputGain.gain.value = 2.0;
+      outputGainRef.current = outputGain;
+      modelAnalyser.connect(outputGain);
+      outputGain.connect(audioCtx.destination);
     } catch (err: any) {
       setError(`Microphone access error: ${err.message}`);
       setStatus('error');
