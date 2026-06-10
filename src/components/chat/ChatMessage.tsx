@@ -12,6 +12,7 @@ import { MediaRenderer } from './MediaRenderer';
 import { MapEmbed } from './MapEmbed';
 import { GraphBlock } from './GraphBlock';
 import { VizBlock } from './VizBlock';
+import { LinkPreview, extractPreviewableUrls } from './LinkPreview';
 import { resolveFileUrl } from '@/lib/storageRef';
 import { extractMediaFromMessage } from '@/utils/mediaDetector';
 import { useToast } from '@/hooks/use-toast';
@@ -1301,6 +1302,18 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
         {!isUser && parsedContent.sources.length > 0 && (
           <SourcesChip sources={parsedContent.sources} />
         )}
+
+        {/* Link previews (Firecrawl-powered) — auto-detect first 2 URLs in message */}
+        {!isStreaming && content && (() => {
+          const urls = extractPreviewableUrls(content, 2);
+          if (urls.length === 0) return null;
+          return (
+            <div className="mt-2 space-y-2">
+              {urls.map((u) => <LinkPreview key={u} url={u} />)}
+            </div>
+          );
+        })()}
+
 
         {/* Audio Player */}
         <AnimatePresence>
