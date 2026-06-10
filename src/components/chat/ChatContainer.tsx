@@ -426,6 +426,23 @@ export const ChatContainer = () => {
       }
     }
 
+    // Route Replicate-backed models to the dedicated edge function
+    const REPLICATE_MODELS = new Set(['flux_schnell', 'flux_pro', 'sdxl', 'ideogram_v2']);
+    if (opts.modelId && REPLICATE_MODELS.has(opts.modelId)) {
+      const { data, error } = await supabase.functions.invoke('replicate-generate', {
+        body: {
+          kind: 'image',
+          modelId: opts.modelId,
+          prompt: opts.prompt,
+          aspectRatio: opts.aspectRatio,
+          imageUrl: referenceMediaUrl,
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data?.image ?? null;
+    }
+
     const { data, error } = await supabase.functions.invoke('generate-image', {
       body: {
         prompt: opts.prompt,
