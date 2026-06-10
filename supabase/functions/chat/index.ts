@@ -1015,9 +1015,17 @@ IMPORTANT RESPONSE GUIDELINES:
       if (!geminiRes.ok) {
         const t = await geminiRes.text();
         console.error("Astraz Pro gateway error:", geminiRes.status, t);
-        if (geminiRes.status === 429 || geminiRes.status === 402) {
-          return new Response(JSON.stringify({ error: "Astraz Pro is busy. Please try again." }),
-            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        if (geminiRes.status === 402) {
+          return new Response(JSON.stringify({
+            error: "Astraz Pro is temporarily unavailable — the AI service is out of credits. Please contact the app owner to top up, or switch back to standard Astraz to continue.",
+            code: "ai_credits_exhausted",
+          }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        if (geminiRes.status === 429) {
+          return new Response(JSON.stringify({
+            error: "Astraz Pro is being rate-limited right now. Try again in a few seconds or switch to standard Astraz.",
+            code: "ai_rate_limited",
+          }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
         // fallthrough to Mistral on hard failure
       } else {
