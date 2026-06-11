@@ -568,9 +568,22 @@ serve(async (req) => {
       }
     }
 
-    // ===== PRIMARY for non-reference: Lovable AI =====
+    // ===== PRIMARY for non-reference: Google AI Studio Gemini (when nano_banana_2 selected), else Lovable AI =====
+    if (!imgBytes && !referenceImageUrl && selectedModelKey === "nano_banana_2") {
+      console.log(`[PRIMARY] Google AI Studio (gemini-2.5-flash-image): "${enhancedPrompt}"`);
+      try {
+        const generated = await generateWithGeminiStudioTextToImage(enhancedPrompt);
+        if (generated) {
+          imgBytes = generated.bytes;
+          imgMime = generated.mime;
+        }
+      } catch (e) {
+        console.error("Gemini Studio text-to-image failed:", e);
+      }
+    }
+
     if (!imgBytes && !referenceImageUrl && selectedModel.provider === "lovable" && selectedModel.lovableModel) {
-      console.log(`[PRIMARY] Lovable AI (${selectedModel.lovableModel}): "${enhancedPrompt}"`);
+      console.log(`[FALLBACK] Lovable AI (${selectedModel.lovableModel}): "${enhancedPrompt}"`);
       try {
         const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel);
         if (generated) {
