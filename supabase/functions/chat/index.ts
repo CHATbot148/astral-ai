@@ -618,6 +618,13 @@ Rules for \`viz\` blocks:
 - Prefer clear user controls inside the widget itself: sliders, toggles, drag handles, play/pause, restart, labels, and legends when useful.
 - Do not make it a self-running demo only. The user should be able to manipulate something meaningful within the first second.
 
+PRONUNCIATION (NEW):
+When the user asks you to pronounce or say a specific word or phrase (e.g. "how do you pronounce 'quinoa'", "say 'bonjour'", "pronounce schadenfreude for me", "how do you say hello in French"), respond ONLY with a fenced \`pronounce\` block — no extra text before or after it — containing JUST the word or phrase to pronounce:
+\`\`\`pronounce
+the exact word or phrase here
+\`\`\`
+The frontend renders this as an interactive card: the word/phrase, a play button, and an accent picker (American / British). Do NOT add commentary, definitions, translations, or surrounding sentences when the user is clearly asking for pronunciation only. If the user asks for the meaning AND pronunciation, give the meaning briefly, then add the \`pronounce\` block on its own at the end.
+
 INLINE GENERATION SAFETY (CRITICAL):
 - NEVER generate an image or video unless the user explicitly asks to generate/create/make one.
 - Informational requests (lists, explanations, comparisons, recommendations, "show me examples") must stay informational.
@@ -966,8 +973,8 @@ IMPORTANT RESPONSE GUIDELINES:
       });
     }
 
-    // === ASTRAZ PRO (Gemini via Lovable AI gateway) ===
-    if (requestedModel === "astraz-pro" && userId && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY && LOVABLE_API_KEY) {
+    // === ASTRAZ PRO (Gemini via user's Google AI Studio API key) ===
+    if (requestedModel === "astraz-pro" && userId && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
       const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
       const { data: sub } = await admin
         .from("subscriptions")
@@ -1003,31 +1010,36 @@ IMPORTANT RESPONSE GUIDELINES:
         .update({ pro_messages_used: used + 1, pro_reset_at: resetAt?.toISOString() ?? null })
         .eq("user_id", userId);
 
-      const geminiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      // Use Google AI Studio (user's GEMINI_API_KEY) directly via OpenAI-compatible endpoint
+      const GEMINI_KEY_PRO = Deno.env.get("GEMINI_API_KEY");
+      if (!GEMINI_KEY_PRO) {
+        return new Response(JSON.stringify({
+          error: "Astraz Pro is not configured (missing Google AI Studio key).",
+          code: "gemini_not_configured",
+        }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const geminiRes = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
         method: "POST",
-        headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${GEMINI_KEY_PRO}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "google/gemini-3.1-pro-preview",
+          model: "gemini-2.5-pro",
           messages: [{ role: "system", content: systemContent }, ...formattedMessages],
           stream: true,
         }),
       });
       if (!geminiRes.ok) {
         const t = await geminiRes.text();
-        console.error("Astraz Pro gateway error:", geminiRes.status, t);
-        if (geminiRes.status === 402) {
-          return new Response(JSON.stringify({
-            error: "Astraz Pro is temporarily unavailable — the AI service is out of credits. Please contact the app owner to top up, or switch back to standard Astraz to continue.",
-            code: "ai_credits_exhausted",
-          }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        }
+        console.error("Astraz Pro (Google AI Studio) error:", geminiRes.status, t);
         if (geminiRes.status === 429) {
           return new Response(JSON.stringify({
-            error: "Astraz Pro is being rate-limited right now. Try again in a few seconds or switch to standard Astraz.",
+            error: "Astraz Pro is being rate-limited by Google. Try again in a few seconds or switch to standard Astraz.",
             code: "ai_rate_limited",
           }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
-        // fallthrough to Mistral on hard failure
+        return new Response(JSON.stringify({
+          error: `Astraz Pro request failed (${geminiRes.status}). Try again or switch to standard Astraz.`,
+          code: "gemini_error",
+        }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       } else {
         const finalBody = rawVideoCards ? appendToStream(geminiRes.body!, rawVideoCards) : geminiRes.body!;
         return new Response(finalBody, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });

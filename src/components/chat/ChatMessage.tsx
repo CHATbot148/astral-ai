@@ -12,6 +12,7 @@ import { MediaRenderer } from './MediaRenderer';
 import { MapEmbed } from './MapEmbed';
 import { GraphBlock } from './GraphBlock';
 import { VizBlock } from './VizBlock';
+import { PronounceCard } from './PronounceCard';
 import { LinkPreview, extractPreviewableUrls } from './LinkPreview';
 import { resolveFileUrl } from '@/lib/storageRef';
 import { extractMediaFromMessage } from '@/utils/mediaDetector';
@@ -318,7 +319,7 @@ function parseMarkdownTable(lines: string[]): { headers: string[]; rows: string[
 // Split text into text parts and table parts
 function splitTextAndTables(
   text: string,
-  parts: Array<{ type: 'text' | 'code' | 'media' | 'table' | 'graph' | 'mapEmbed' | 'viz'; content: string; language?: string; open?: boolean; tableData?: { headers: string[]; rows: string[][] }; mapEmbed?: any }>
+  parts: Array<{ type: 'text' | 'code' | 'media' | 'table' | 'graph' | 'mapEmbed' | 'viz' | 'pronounce'; content: string; language?: string; open?: boolean; tableData?: { headers: string[]; rows: string[][] }; mapEmbed?: any }>
 ) {
   const lines = text.split('\n');
   let buffer: string[] = [];
@@ -697,7 +698,7 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
     sources.push(...sourcesMap.values());
 
     const parts: Array<{
-      type: 'text' | 'code' | 'media' | 'table' | 'graph' | 'mapEmbed' | 'viz';
+      type: 'text' | 'code' | 'media' | 'table' | 'graph' | 'mapEmbed' | 'viz' | 'pronounce';
       content: string;
       language?: string;
       open?: boolean;
@@ -737,6 +738,8 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
         parts.push({ type: 'graph', content: body, language: 'graph', open: false });
       } else if (lang === 'viz' || lang === 'astraz-viz' || lang === 'visualization' || lang === 'widget') {
         parts.push({ type: 'viz', content: body, language: 'viz', open: false });
+      } else if (lang === 'pronounce' || lang === 'pronunciation' || lang === 'say') {
+        parts.push({ type: 'pronounce', content: body, language: 'pronounce', open: false });
       } else {
         parts.push({ type: 'code', language: lang, content: body, open: false });
       }
@@ -1285,6 +1288,8 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
               <GraphBlock key={index} raw={part.content} isStreaming={!!part.open} />
             ) : part.type === 'viz' ? (
               <VizBlock key={index} code={part.content} isStreaming={!!part.open} />
+            ) : part.type === 'pronounce' ? (
+              !part.open ? <PronounceCard key={index} phrase={part.content} /> : null
             ) : part.type === 'table' && part.tableData ? (
               <TableBlock key={index} data={part.tableData} />
             ) : part.type === 'mapEmbed' && part.mapEmbed ? (
