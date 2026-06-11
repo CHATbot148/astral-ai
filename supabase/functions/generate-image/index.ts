@@ -342,6 +342,45 @@ async function generateWithGeminiStudioImage(
   return null;
 }
 
+async function generateWithGeminiStudioTextToImage(
+  prompt: string
+): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+  if (!GEMINI_API_KEY) return null;
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 1024, temperature: 0.6 },
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error("Gemini Studio text-to-image failed:", res.status, errText);
+    return null;
+  }
+
+  const data = await res.json();
+  const candidateParts = data?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(candidateParts)) return null;
+
+  for (const part of candidateParts) {
+    const inline = part?.inlineData || part?.inline_data;
+    if (inline?.data && (inline?.mimeType || inline?.mime_type)) {
+      const outMime = inline.mimeType || inline.mime_type || "image/png";
+      const outBytes = base64ToBytes(String(inline.data));
+      return { bytes: outBytes, mime: outMime };
+    }
+  }
+  return null;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
