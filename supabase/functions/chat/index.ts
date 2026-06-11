@@ -1003,31 +1003,36 @@ IMPORTANT RESPONSE GUIDELINES:
         .update({ pro_messages_used: used + 1, pro_reset_at: resetAt?.toISOString() ?? null })
         .eq("user_id", userId);
 
-      const geminiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      // Use Google AI Studio (user's GEMINI_API_KEY) directly via OpenAI-compatible endpoint
+      const GEMINI_KEY_PRO = Deno.env.get("GEMINI_API_KEY");
+      if (!GEMINI_KEY_PRO) {
+        return new Response(JSON.stringify({
+          error: "Astraz Pro is not configured (missing Google AI Studio key).",
+          code: "gemini_not_configured",
+        }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const geminiRes = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
         method: "POST",
-        headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${GEMINI_KEY_PRO}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "google/gemini-3.1-pro-preview",
+          model: "gemini-2.5-pro",
           messages: [{ role: "system", content: systemContent }, ...formattedMessages],
           stream: true,
         }),
       });
       if (!geminiRes.ok) {
         const t = await geminiRes.text();
-        console.error("Astraz Pro gateway error:", geminiRes.status, t);
-        if (geminiRes.status === 402) {
-          return new Response(JSON.stringify({
-            error: "Astraz Pro is temporarily unavailable — the AI service is out of credits. Please contact the app owner to top up, or switch back to standard Astraz to continue.",
-            code: "ai_credits_exhausted",
-          }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        }
+        console.error("Astraz Pro (Google AI Studio) error:", geminiRes.status, t);
         if (geminiRes.status === 429) {
           return new Response(JSON.stringify({
-            error: "Astraz Pro is being rate-limited right now. Try again in a few seconds or switch to standard Astraz.",
+            error: "Astraz Pro is being rate-limited by Google. Try again in a few seconds or switch to standard Astraz.",
             code: "ai_rate_limited",
           }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
-        // fallthrough to Mistral on hard failure
+        return new Response(JSON.stringify({
+          error: `Astraz Pro request failed (${geminiRes.status}). Try again or switch to standard Astraz.`,
+          code: "gemini_error",
+        }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       } else {
         const finalBody = rawVideoCards ? appendToStream(geminiRes.body!, rawVideoCards) : geminiRes.body!;
         return new Response(finalBody, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
