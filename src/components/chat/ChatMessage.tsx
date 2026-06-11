@@ -1288,6 +1288,8 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
               <GraphBlock key={index} raw={part.content} isStreaming={!!part.open} />
             ) : part.type === 'viz' ? (
               <VizBlock key={index} code={part.content} isStreaming={!!part.open} />
+            ) : part.type === 'pronounce' ? (
+              !part.open ? <PronounceCard key={index} phrase={part.content} /> : null
             ) : part.type === 'table' && part.tableData ? (
               <TableBlock key={index} data={part.tableData} />
             ) : part.type === 'mapEmbed' && part.mapEmbed ? (
