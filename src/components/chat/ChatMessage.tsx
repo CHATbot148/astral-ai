@@ -12,6 +12,7 @@ import { MediaRenderer } from './MediaRenderer';
 import { MapEmbed } from './MapEmbed';
 import { GraphBlock } from './GraphBlock';
 import { VizBlock } from './VizBlock';
+import { PronounceCard } from './PronounceCard';
 import { LinkPreview, extractPreviewableUrls } from './LinkPreview';
 import { resolveFileUrl } from '@/lib/storageRef';
 import { extractMediaFromMessage } from '@/utils/mediaDetector';
