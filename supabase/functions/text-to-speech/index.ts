@@ -54,7 +54,7 @@ serve(async (req) => {
       });
     }
 
-    const { text, voiceId = "asteria" } = await req.json();
+    const { text, voiceId = "asteria", accent } = await req.json();
 
     const DEEPGRAM_API_KEY = Deno.env.get("DEEPGRAM_API_KEY");
     if (!DEEPGRAM_API_KEY) {
@@ -63,9 +63,18 @@ serve(async (req) => {
 
     if (!text) throw new Error("Text is required");
 
-    const voiceKey =
-      Object.keys(VOICE_MAP).find((k) => String(voiceId).toLowerCase().includes(k)) || "asteria";
-    const deepgramVoiceModel = VOICE_MAP[voiceKey] || VOICE_MAP.asteria;
+    // Accent override: 'us' = American, 'uk'/'gb' = British. Used by the pronunciation card.
+    let deepgramVoiceModel: string;
+    const accentNorm = String(accent || "").toLowerCase();
+    if (accentNorm === "uk" || accentNorm === "gb" || accentNorm === "british") {
+      deepgramVoiceModel = "aura-2-helena-en";
+    } else if (accentNorm === "us" || accentNorm === "american") {
+      deepgramVoiceModel = "aura-asteria-en";
+    } else {
+      const voiceKey =
+        Object.keys(VOICE_MAP).find((k) => String(voiceId).toLowerCase().includes(k)) || "asteria";
+      deepgramVoiceModel = VOICE_MAP[voiceKey] || VOICE_MAP.asteria;
+    }
 
     // Split long text into chunks at sentence boundaries (Deepgram has ~2000 char limit per request)
     const fullText = String(text).trim();
