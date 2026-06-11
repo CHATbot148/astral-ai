@@ -738,6 +738,8 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
         parts.push({ type: 'graph', content: body, language: 'graph', open: false });
       } else if (lang === 'viz' || lang === 'astraz-viz' || lang === 'visualization' || lang === 'widget') {
         parts.push({ type: 'viz', content: body, language: 'viz', open: false });
+      } else if (lang === 'pronounce' || lang === 'pronunciation' || lang === 'say') {
+        parts.push({ type: 'pronounce', content: body, language: 'pronounce', open: false });
       } else {
         parts.push({ type: 'code', language: lang, content: body, open: false });
       }
