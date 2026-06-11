@@ -966,8 +966,8 @@ IMPORTANT RESPONSE GUIDELINES:
       });
     }
 
-    // === ASTRAZ PRO (Gemini via Lovable AI gateway) ===
-    if (requestedModel === "astraz-pro" && userId && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY && LOVABLE_API_KEY) {
+    // === ASTRAZ PRO (Gemini via user's Google AI Studio API key) ===
+    if (requestedModel === "astraz-pro" && userId && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
       const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
       const { data: sub } = await admin
         .from("subscriptions")
