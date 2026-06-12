@@ -119,8 +119,6 @@ async function generateV2(
   const mode = quality === "1080p" ? "RESOLUTION_1080" : "RESOLUTION_720";
 
   console.log(`[v2] POST /api/rest/v2/generations model=${model} duration=${duration} mode=${mode}`);
-  // Leonardo v2 generations endpoint does NOT accept "duration" — only model+prompt+mode+dims.
-  // Duration on Kling 3 is controlled by the model variant, not the request body.
   const res = await fetch("https://cloud.leonardo.ai/api/rest/v2/generations", {
     method: "POST",
     headers: {
@@ -131,13 +129,13 @@ async function generateV2(
     body: JSON.stringify({
       model,
       prompt,
+      duration,
       mode,
       width,
       height,
       public: false,
     }),
   });
-
 
   if (!res.ok) {
     const t = await res.text();
