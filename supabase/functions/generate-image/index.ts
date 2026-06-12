@@ -27,14 +27,16 @@ const ASPECT_RATIO_MAP: Record<string, { width: number; height: number }> = {
 // Provider model mapping
 const IMAGE_MODELS: Record<
   string,
-  { provider: "lovable" | "leonardo"; lovableModel?: string; leonardoId?: string }
+  { provider: "gemini_studio" | "lovable" | "leonardo"; lovableModel?: string; leonardoId?: string }
 > = {
-  nano_banana_2: { provider: "lovable", lovableModel: "google/gemini-2.5-flash-image" },
+  // Nano Banana 2 = Google's gemini-2.5-flash-image (preview), called directly with the user's Google AI Studio key
+  nano_banana_2: { provider: "gemini_studio" },
   seedream_4_5: { provider: "leonardo", leonardoId: "b24e16ff-06e3-43eb-8d33-4c419f36e1b7" },
   lucid_origin: { provider: "leonardo", leonardoId: "5c232a9e-9061-4777-980a-ddc8e65647c6" },
   flux_2_pro: { provider: "leonardo", leonardoId: "aa77f04e-3eec-4034-9c07-d0f619684628" },
   phoenix: { provider: "leonardo", leonardoId: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3" },
 };
+
 
 const DEFAULT_MODEL = "nano_banana_2";
 const VIDEO_REFERENCE_PATTERN = /\.(mp4|webm|mov|avi|mkv|m4v|gif)(\?|$)/i;
@@ -291,7 +293,6 @@ async function generateWithGeminiStudioImage(
   const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
   if (!GEMINI_API_KEY) return null;
 
-  // Gemini requires inline bytes or file URIs; for reference-edit we use inline bytes.
   const { bytes, mime } = await resolveReferenceImageToBytes(referenceImageUrl);
   const base64 = bytesToBase64(bytes);
 
@@ -308,39 +309,55 @@ async function generateWithGeminiStudioImage(
     },
   ];
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${GEMINI_API_KEY}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts }],
-        generationConfig: { maxOutputTokens: 1024, temperature: 0.4 },
-      }),
+  const MODELS = [
+    "gemini-2.5-flash-image-preview",
+    "gemini-2.5-flash-image",
+    "gemini-2.0-flash-exp-image-generation",
+  ];
+
+  for (const model of MODELS) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts }],
+            generationConfig: {
+              maxOutputTokens: 1024,
+              temperature: 0.4,
+              responseModalities: ["IMAGE", "TEXT"],
+            },
+          }),
+        }
+      );
+
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error(`Gemini Studio image edit (${model}) failed:`, res.status, errText);
+        continue;
+      }
+
+      const data = await res.json();
+      const candidateParts = data?.candidates?.[0]?.content?.parts;
+      if (!Array.isArray(candidateParts)) continue;
+
+      for (const part of candidateParts) {
+        const inline = part?.inlineData || part?.inline_data;
+        if (inline?.data && (inline?.mimeType || inline?.mime_type)) {
+          const outMime = inline.mimeType || inline.mime_type || "image/png";
+          const outBytes = base64ToBytes(String(inline.data));
+          return { bytes: outBytes, mime: outMime };
+        }
+      }
+    } catch (e) {
+      console.error(`Gemini Studio edit (${model}) threw:`, e);
     }
-  );
-
-  if (!res.ok) {
-    const errText = await res.text();
-    console.error("Gemini Studio image edit failed:", res.status, errText);
-    return null;
   }
-
-  const data = await res.json();
-  const candidateParts = data?.candidates?.[0]?.content?.parts;
-  if (!Array.isArray(candidateParts)) return null;
-
-  for (const part of candidateParts) {
-    const inline = part?.inlineData || part?.inline_data;
-    if (inline?.data && (inline?.mimeType || inline?.mime_type)) {
-      const outMime = inline.mimeType || inline.mime_type || "image/png";
-      const outBytes = base64ToBytes(String(inline.data));
-      return { bytes: outBytes, mime: outMime };
-    }
-  }
-
   return null;
 }
+
 
 async function generateWithGeminiStudioTextToImage(
   prompt: string
@@ -348,38 +365,56 @@ async function generateWithGeminiStudioTextToImage(
   const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
   if (!GEMINI_API_KEY) return null;
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${GEMINI_API_KEY}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 1024, temperature: 0.6 },
-      }),
-    }
-  );
+  // Try image-capable models in order; preview alias is the most stable on the public AI Studio API.
+  const MODELS = [
+    "gemini-2.5-flash-image-preview",
+    "gemini-2.5-flash-image",
+    "gemini-2.0-flash-exp-image-generation",
+  ];
 
-  if (!res.ok) {
-    const errText = await res.text();
-    console.error("Gemini Studio text-to-image failed:", res.status, errText);
-    return null;
-  }
+  for (const model of MODELS) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: {
+              maxOutputTokens: 1024,
+              temperature: 0.6,
+              responseModalities: ["IMAGE", "TEXT"],
+            },
+          }),
+        }
+      );
 
-  const data = await res.json();
-  const candidateParts = data?.candidates?.[0]?.content?.parts;
-  if (!Array.isArray(candidateParts)) return null;
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error(`Gemini Studio text-to-image (${model}) failed:`, res.status, errText);
+        continue;
+      }
 
-  for (const part of candidateParts) {
-    const inline = part?.inlineData || part?.inline_data;
-    if (inline?.data && (inline?.mimeType || inline?.mime_type)) {
-      const outMime = inline.mimeType || inline.mime_type || "image/png";
-      const outBytes = base64ToBytes(String(inline.data));
-      return { bytes: outBytes, mime: outMime };
+      const data = await res.json();
+      const candidateParts = data?.candidates?.[0]?.content?.parts;
+      if (!Array.isArray(candidateParts)) continue;
+
+      for (const part of candidateParts) {
+        const inline = part?.inlineData || part?.inline_data;
+        if (inline?.data && (inline?.mimeType || inline?.mime_type)) {
+          const outMime = inline.mimeType || inline.mime_type || "image/png";
+          const outBytes = base64ToBytes(String(inline.data));
+          return { bytes: outBytes, mime: outMime };
+        }
+      }
+    } catch (e) {
+      console.error(`Gemini Studio (${model}) threw:`, e);
     }
   }
   return null;
 }
+
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
