@@ -64,7 +64,7 @@ const ParticleField = memo(() => {
           if (falloff <= 0) continue;
           const a = falloff * alpha * 0.55;
           const r = 1.1 + falloff * 0.6;
-          ctx.fillStyle = `hsla(270, 80%, 65%, ${a})`;
+          ctx.fillStyle = `hsla(210, 90%, 65%, ${a})`;
           ctx.beginPath();
           ctx.arc(x + (Math.sin(elapsed + x) * 0.5), y + (Math.cos(elapsed + y) * 0.5), r, 0, Math.PI * 2);
           ctx.fill();
@@ -79,12 +79,20 @@ const ParticleField = memo(() => {
 });
 ParticleField.displayName = 'ParticleField';
 
+const VIZ_PROMPTS = [
+  'Visualize how a sine wave changes with frequency and amplitude — interactive sliders.',
+  'Show me an interactive visualization of how binary search works on a sorted array.',
+  'Visualize gravity: drop balls of different mass into a 2D scene with a draggable launcher.',
+  'Show me an interactive visualization of the Pythagorean theorem with draggable triangle sides.',
+];
+
 export const WELCOME_SHORTCUTS = [
   { icon: Brain, title: 'Brainstorm ideas', type: 'prompt' as const, getValue: () => 'Generate creative ideas for my project' },
   { icon: LineChart, title: 'Plot graph', type: 'prompt' as const, getValue: () => PLOT_PROMPTS[Math.floor(Math.random() * PLOT_PROMPTS.length)] },
   { icon: FileText, title: 'Analyze documents', type: 'action' as const, getValue: () => 'analyze' },
-  { icon: Sparkles, title: 'Visualize', type: 'action' as const, getValue: () => 'visualize' },
+  { icon: Sparkles, title: 'Show a visualization', type: 'prompt' as const, getValue: () => VIZ_PROMPTS[Math.floor(Math.random() * VIZ_PROMPTS.length)] },
 ];
+
 
 export const WelcomeScreen = memo(({ onAnalyzeDocs, onVisualize, profileName }: WelcomeScreenProps) => {
   const { user } = useAuth();
