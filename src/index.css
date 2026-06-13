@@ -15,7 +15,7 @@
     --popover: 0 0% 100%;
     --popover-foreground: 240 10% 10%;
 
-    --primary: 260 80% 58%;
+    --primary: 212 92% 56%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 240 8% 95%;
@@ -32,27 +32,27 @@
 
     --border: 240 8% 91%;
     --input: 240 8% 93%;
-    --ring: 260 80% 58%;
+    --ring: 212 92% 56%;
 
     --radius: 0.75rem;
 
     /* Astraz brand tokens */
     --xai-cyan: 190 90% 48%;
     --xai-cyan-glow: 190 90% 58%;
-    --xai-purple: 270 80% 58%;
-    --xai-purple-glow: 270 80% 68%;
-    --xai-gradient: linear-gradient(135deg, hsl(270 80% 58%), hsl(190 90% 48%));
+    --xai-purple: 212 92% 56%;
+    --xai-purple-glow: 212 92% 66%;
+    --xai-gradient: linear-gradient(135deg, hsl(212 92% 56%), hsl(190 90% 48%));
     --xai-glass: 0 0% 100% / 0.92;
     --xai-glass-border: 240 8% 88% / 0.6;
 
     --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 240 10% 20%;
-    --sidebar-primary: 260 80% 58%;
+    --sidebar-primary: 212 92% 56%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 240 8% 96%;
     --sidebar-accent-foreground: 240 10% 10%;
     --sidebar-border: 240 8% 93%;
-    --sidebar-ring: 260 80% 58%;
+    --sidebar-ring: 212 92% 56%;
   }
 
   .dark {
