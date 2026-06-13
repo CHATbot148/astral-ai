@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PanelLeft, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { WelcomeScreen, WELCOME_SHORTCUTS } from './WelcomeScreen';
@@ -195,16 +195,24 @@ export const ChatContainer = () => {
 
   useEffect(() => {
     const root = scrollRef.current;
-    const viewport = root?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null;
+    if (!root) return;
+    // AI Elements Conversation (use-stick-to-bottom) — find the actual scrollable child
+    const findScrollable = (): HTMLElement | null => {
+      const nodes = root.querySelectorAll<HTMLElement>('*');
+      for (const node of Array.from(nodes)) {
+        const cs = getComputedStyle(node);
+        if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && node.scrollHeight > node.clientHeight + 4) return node;
+      }
+      return null;
+    };
+    const viewport = findScrollable();
     if (!viewport) return;
     viewportRef.current = viewport;
-    const scrollToBottom = () => { viewport.scrollTop = viewport.scrollHeight; };
     const updateAffordance = () => {
       const distance = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
       setShowScrollToBottom(distance > 200);
     };
     updateAffordance();
-    if (!showScrollToBottom) scrollToBottom();
     viewport.addEventListener('scroll', updateAffordance, { passive: true });
     return () => viewport.removeEventListener('scroll', updateAffordance);
   }, [messages, streamingContent]);
@@ -247,7 +255,7 @@ export const ChatContainer = () => {
   // has multiple late layout passes (fonts, images, virtual keyboard, safe-area
   // insets), so we re-snap several times to make sure we land at the bottom.
   useEffect(() => {
-    const viewport = viewportRef.current || (scrollRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null);
+    const viewport = viewportRef.current;
     if (!viewport) return;
     const snap = () => { viewport.scrollTop = viewport.scrollHeight; };
     const timers: number[] = [];
@@ -1381,8 +1389,8 @@ export const ChatContainer = () => {
         </div>
 
 
-        <ScrollArea ref={scrollRef} className="flex-1 min-w-0 overscroll-none">
-          <div className="w-full min-w-0 max-w-full overflow-x-hidden" style={{ paddingBottom: `${scrollBottomPadding}px` }}>
+        <Conversation ref={scrollRef as any} className="flex-1 min-w-0">
+          <ConversationContent className="w-full min-w-0 max-w-full overflow-x-hidden p-0" style={{ paddingBottom: `${scrollBottomPadding}px` }}>
             <AnimatePresence mode="wait">
               {displayMessages.length === 0 ? (
                 <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pt-[calc(env(safe-area-inset-top,0px)+4.5rem)] sm:pt-20 lg:pt-6">
@@ -1429,8 +1437,9 @@ export const ChatContainer = () => {
                 </motion.div>
               )}
             </AnimatePresence>
-          </div>
-        </ScrollArea>
+          </ConversationContent>
+          <ConversationScrollButton />
+        </Conversation>
 
         <AnimatePresence>
           {showScrollToBottom && (
