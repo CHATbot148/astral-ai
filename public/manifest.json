@@ -4,21 +4,27 @@
   "description": "Your intelligent AI assistant powered by cutting-edge technology",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0a0a0f",
-  "theme_color": "#00d4ff",
+  "background_color": "#000000",
+  "theme_color": "#7c3aed",
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/astraz-full-logo.png",
+      "src": "/astraz-pwa-icon.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "/astraz-full-logo.png",
+      "src": "/astraz-pwa-icon.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/astraz-pwa-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "categories": ["productivity", "utilities"],
