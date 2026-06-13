@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { LineChart, Brain, FileText, Sparkles } from 'lucide-react';
+import { LineChart, Brain, FileText, Sparkles, Boxes } from 'lucide-react';
 import { useTypewriter } from '@/hooks/useTypewriter';
 import astrazLogo from '@/assets/astraz-logo.png';
 import { useAuth } from '@/hooks/useAuth';
@@ -79,10 +79,18 @@ const ParticleField = memo(() => {
 });
 ParticleField.displayName = 'ParticleField';
 
+const VIZ_PROMPTS = [
+  'Show me an interactive visualization of how a neural network learns from data.',
+  'Build an interactive visualization of the solar system with orbital speeds.',
+  'Visualize the water cycle as an interactive diagram I can explore.',
+  'Show me an interactive visualization of compound interest over 30 years.',
+];
+
 export const WELCOME_SHORTCUTS = [
   { icon: Brain, title: 'Brainstorm ideas', type: 'prompt' as const, getValue: () => 'Generate creative ideas for my project' },
   { icon: LineChart, title: 'Plot graph', type: 'prompt' as const, getValue: () => PLOT_PROMPTS[Math.floor(Math.random() * PLOT_PROMPTS.length)] },
   { icon: FileText, title: 'Analyze documents', type: 'action' as const, getValue: () => 'analyze' },
+  { icon: Boxes, title: 'Show visualization', type: 'prompt' as const, getValue: () => VIZ_PROMPTS[Math.floor(Math.random() * VIZ_PROMPTS.length)] },
   { icon: Sparkles, title: 'Visualize', type: 'action' as const, getValue: () => 'visualize' },
 ];
 
