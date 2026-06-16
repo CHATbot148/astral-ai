@@ -62,7 +62,10 @@ const App = () => {
         <AuthProvider>
           <SubscriptionProvider>
             <TooltipProvider>
-              {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
+              {showSplash && (isPwaStandalone()
+                ? <PwaSplashScreen onComplete={() => setShowSplash(false)} />
+                : <SplashScreen onComplete={() => setShowSplash(false)} />
+              )}
               <ConnectionStatus />
               <Toaster />
               <Sonner />
