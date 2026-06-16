@@ -9,6 +9,18 @@ import { ThemeProvider } from "@/hooks/useTheme";
 import { SubscriptionProvider } from "@/hooks/useSubscription";
 
 import { SplashScreen } from "@/components/SplashScreen";
+import { PwaSplashScreen } from "@/components/PwaSplashScreen";
+
+const isPwaStandalone = () => {
+  if (typeof window === 'undefined') return false;
+  return (
+    window.matchMedia?.('(display-mode: standalone)').matches ||
+    window.matchMedia?.('(display-mode: fullscreen)').matches ||
+    window.matchMedia?.('(display-mode: minimal-ui)').matches ||
+    // iOS Safari
+    (window.navigator as any).standalone === true
+  );
+};
 import { ConnectionStatus } from "@/components/ConnectionStatus";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
@@ -50,7 +62,10 @@ const App = () => {
         <AuthProvider>
           <SubscriptionProvider>
             <TooltipProvider>
-              {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
+              {showSplash && (isPwaStandalone()
+                ? <PwaSplashScreen onComplete={() => setShowSplash(false)} />
+                : <SplashScreen onComplete={() => setShowSplash(false)} />
+              )}
               <ConnectionStatus />
               <Toaster />
               <Sonner />
