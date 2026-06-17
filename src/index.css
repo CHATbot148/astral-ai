@@ -233,6 +233,14 @@
     from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: translateY(0); }
   }
+
+  @keyframes pwa-splash-slide {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(450%); }
+  }
+  .pwa-splash-slide {
+    animation: pwa-splash-slide 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
 }
 
 /* Subtle mesh gradient background */

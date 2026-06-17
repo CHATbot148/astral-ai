@@ -1046,30 +1046,25 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
         "min-w-0 space-y-2",
         isUser ? "text-right max-w-full ml-auto" : "text-left w-full"
       )}>
-        <div className={cn("flex items-center gap-2", isUser ? "justify-end" : "justify-start")}>
-          <span className="font-semibold text-sm">
-            {isUser ? (userName || 'You') : 'Astraz'}
-          </span>
-          {isStreaming && (
-            <span className="flex gap-1">
-              <motion.span
-                className="w-1.5 h-1.5 rounded-full bg-xai-cyan"
-                animate={{ opacity: [0.4, 1, 0.4] }}
-                transition={{ duration: 1, repeat: Infinity, delay: 0 }}
-              />
-              <motion.span
-                className="w-1.5 h-1.5 rounded-full bg-xai-cyan"
-                animate={{ opacity: [0.4, 1, 0.4] }}
-                transition={{ duration: 1, repeat: Infinity, delay: 0.2 }}
-              />
-              <motion.span
-                className="w-1.5 h-1.5 rounded-full bg-xai-cyan"
-                animate={{ opacity: [0.4, 1, 0.4] }}
-                transition={{ duration: 1, repeat: Infinity, delay: 0.4 }}
-              />
+        {!isUser && (
+          <div className="flex items-center gap-2">
+            <span
+              aria-hidden
+              className="inline-block h-2 w-2 rounded-full"
+              style={{ background: 'var(--xai-gradient)', boxShadow: '0 0 8px hsl(var(--xai-purple) / 0.7)' }}
+            />
+            <span className="font-display font-semibold text-[0.72rem] uppercase tracking-[0.24em] text-muted-foreground">
+              Astraz
             </span>
-          )}
-        </div>
+            {isStreaming && (
+              <span className="flex gap-1 ml-1">
+                <motion.span className="w-1 h-1 rounded-full bg-xai-cyan" animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1, repeat: Infinity }} />
+                <motion.span className="w-1 h-1 rounded-full bg-xai-cyan" animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1, repeat: Infinity, delay: 0.2 }} />
+                <motion.span className="w-1 h-1 rounded-full bg-xai-cyan" animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1, repeat: Infinity, delay: 0.4 }} />
+              </span>
+            )}
+          </div>
+        )}
 
         {/* File Attachments / Generated Images */}
         {fileUrls && fileUrls.length > 0 && resolvedFiles.length === 0 && (
@@ -1270,11 +1265,12 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
         ) : (
         <div 
           className={cn(
-            "text-foreground leading-relaxed inline-block max-w-full min-w-0",
+            "leading-relaxed inline-block max-w-full min-w-0",
             isUser
-              ? "bg-secondary rounded-2xl rounded-tr-sm px-4 py-2 w-fit max-w-[85vw] sm:max-w-[70ch] ml-auto break-words [overflow-wrap:anywhere]"
-              : "w-full min-w-0 max-w-full break-words [overflow-wrap:anywhere]"
+              ? "text-primary-foreground rounded-[22px] rounded-br-md px-4 py-2.5 w-fit max-w-[85vw] sm:max-w-[70ch] ml-auto break-words [overflow-wrap:anywhere] shadow-[0_8px_28px_-12px_hsl(var(--xai-purple)/0.65)] ring-1 ring-white/10"
+              : "text-foreground w-full min-w-0 max-w-full break-words [overflow-wrap:anywhere]"
           )}
+          style={isUser ? { background: 'var(--xai-gradient)' } : undefined}
         >
           {parsedContent.parts.map((part, index) =>
             part.type === 'code' ? (
