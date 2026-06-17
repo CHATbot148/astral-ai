@@ -1265,11 +1265,12 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
         ) : (
         <div 
           className={cn(
-            "text-foreground leading-relaxed inline-block max-w-full min-w-0",
+            "leading-relaxed inline-block max-w-full min-w-0",
             isUser
-              ? "bg-secondary rounded-2xl rounded-tr-sm px-4 py-2 w-fit max-w-[85vw] sm:max-w-[70ch] ml-auto break-words [overflow-wrap:anywhere]"
-              : "w-full min-w-0 max-w-full break-words [overflow-wrap:anywhere]"
+              ? "text-primary-foreground rounded-[22px] rounded-br-md px-4 py-2.5 w-fit max-w-[85vw] sm:max-w-[70ch] ml-auto break-words [overflow-wrap:anywhere] shadow-[0_8px_28px_-12px_hsl(var(--xai-purple)/0.65)] ring-1 ring-white/10"
+              : "text-foreground w-full min-w-0 max-w-full break-words [overflow-wrap:anywhere]"
           )}
+          style={isUser ? { background: 'var(--xai-gradient)' } : undefined}
         >
           {parsedContent.parts.map((part, index) =>
             part.type === 'code' ? (
