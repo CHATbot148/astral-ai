@@ -479,7 +479,13 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
           {isRecording ? (
             <div className="flex-1 flex items-center gap-2 min-h-[40px] px-2">
               <motion.div whileTap={{ scale: 0.92 }}>
-                <Button variant="ghost" size="icon" onClick={stopRecording} aria-label="Stop recording" className="h-9 w-9 rounded-full text-destructive bg-destructive/10">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={stopRecording}
+                  aria-label="Stop recording"
+                  className="h-10 w-10 rounded-full text-white bg-gradient-to-br from-rose-500 to-red-600 shadow-[0_8px_24px_-6px_hsl(0_75%_55%/0.55)] hover:opacity-95 ring-2 ring-rose-500/30 animate-pulse"
+                >
                   <MicOff className="h-4 w-4" />
                 </Button>
               </motion.div>
@@ -517,13 +523,14 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
                   size="icon"
                   onClick={toggleRecording}
                   disabled={disabled || isTranscribing}
-                  className="h-9 w-9 rounded-full hover:bg-secondary/70"
+                  className="h-10 w-10 rounded-full bg-background/60 border border-border/70 backdrop-blur-md hover:bg-xai-purple/10 hover:border-xai-purple/50 hover:text-foreground transition-all shadow-sm"
                   aria-label="Voice input"
                 >
-                  {isTranscribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-[18px] w-[18px] text-muted-foreground" />}
+                  {isTranscribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-[18px] w-[18px] text-foreground/80" />}
                 </Button>
               </motion.div>
             )}
+
 
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.9 }}>
               {onStop ? (

@@ -852,9 +852,13 @@ export const ChatContainer = () => {
         })
       )).filter(Boolean) as Array<{ role: string; content: string; imageUrls: string[]; videoUrls: string[] }>;
 
+      const userContentWithAttachments = attachmentContext
+        ? `${content}\n\n---\n${attachmentContext}`
+        : content;
+
       apiMessages.push({
         role: 'user' as const,
-        content,
+        content: userContentWithAttachments,
         imageUrls,
         videoUrls: videoFileUrls,
       });
@@ -1372,6 +1376,10 @@ export const ChatContainer = () => {
       />
 
       <main className="flex-1 flex flex-col min-w-0 relative">
+        <div className="chat-canvas-bg" aria-hidden="true">
+          <div className="chat-canvas-grid" />
+          <div className="chat-canvas-orb" />
+        </div>
         <div className="absolute top-2 left-2 right-2 z-20 flex items-center gap-1.5 pointer-events-none min-w-0 sm:top-3 sm:left-3 sm:right-3 sm:gap-2">
           <Button variant="secondary" size="icon" onClick={() => setSidebarOpen(true)}
             className={cn("rounded-full pointer-events-auto h-8 w-8 sm:h-10 sm:w-10", sidebarOpen ? 'lg:hidden' : '')} aria-label="Open sidebar">
