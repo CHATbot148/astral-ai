@@ -1325,73 +1325,54 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
         {/* Actions & Reactions */}
         {!isUser && !isStreaming && content && (
           <div className={cn(
-            "flex items-center gap-1 pt-2 opacity-0 group-hover:opacity-100 transition-opacity",
+            "flex items-center gap-1.5 pt-2.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity",
             isUser ? "justify-end" : "justify-start"
           )}>
-            {/* Listen Button */}
-            <Button
-              variant="ghost"
-              size="sm"
+            {/* Listen */}
+            <button
+              type="button"
               onClick={() => setShowAudioPlayer(!showAudioPlayer)}
-              className={cn(
-                "h-7 px-2 text-xs",
-                showAudioPlayer ? "text-xai-cyan" : "text-muted-foreground hover:text-foreground"
-              )}
+              data-active={showAudioPlayer || undefined}
+              aria-label="Listen"
+              className="chat-action-btn"
             >
-              <Volume2 className="h-3 w-3 mr-1" />
-              Listen
-            </Button>
+              <Volume2 className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Listen</span>
+            </button>
 
-            {/* Copy Button */}
-            <Button
-              variant="ghost"
-              size="sm"
+            {/* Copy */}
+            <button
+              type="button"
               onClick={copyToClipboard}
-              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+              data-active={copied || undefined}
+              aria-label="Copy"
+              className="chat-action-btn"
             >
-              {copied ? (
-                <>
-                  <Check className="h-3 w-3 mr-1" />
-                  Copied
-                </>
-              ) : (
-                <>
-                  <Copy className="h-3 w-3 mr-1" />
-                  Copy
-                </>
-              )}
-            </Button>
+              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              <span className="hidden sm:inline">{copied ? 'Copied' : 'Copy'}</span>
+            </button>
 
-            {/* Reaction Button */}
+            {/* Reaction */}
             <div className="relative">
-              <Button
-                variant="ghost"
-                size="sm"
+              <button
+                type="button"
                 onClick={() => setShowReactions(!showReactions)}
+                data-active={!!reaction || undefined}
                 aria-label={reaction ? `Change reaction (current: ${reaction})` : 'Add reaction'}
-                className={cn(
-                  "h-7 px-2 text-xs",
-                  reaction ? "text-xai-cyan" : "text-muted-foreground hover:text-foreground"
-                )}
+                className="chat-action-btn"
               >
-                {reaction ? (
-                  (() => {
-                    const Icon = reactionIcons[reaction];
-                    return <Icon className="h-3 w-3" />;
-                  })()
-                ) : (
-                  <ThumbsUp className="h-3 w-3" />
-                )}
-              </Button>
-              
-              {/* Reaction Picker */}
+                {reaction
+                  ? (() => { const Icon = reactionIcons[reaction]; return <Icon className="h-3.5 w-3.5" />; })()
+                  : <ThumbsUp className="h-3.5 w-3.5" />}
+              </button>
+
               <AnimatePresence>
                 {showReactions && (
                   <motion.div
                     initial={{ opacity: 0, scale: 0.9, y: 10 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                    className="absolute bottom-full left-0 mb-1 flex gap-1 p-1.5 rounded-lg bg-popover border border-border shadow-lg"
+                    className="absolute bottom-full left-0 mb-2 flex gap-1 p-1.5 rounded-full bg-popover/95 backdrop-blur-xl border border-border/70 shadow-xl z-20"
                   >
                     {(Object.keys(reactionIcons) as Reaction[]).filter(Boolean).map((r) => {
                       const Icon = reactionIcons[r!];
@@ -1420,41 +1401,33 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
 
         {/* Actions for user messages */}
         {isUser && !isStreaming && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="flex items-center gap-2 justify-end text-xs text-muted-foreground mt-1 opacity-0 group-hover:opacity-100 transition-opacity"
+            className="flex items-center gap-1.5 justify-end mt-1.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
           >
             {canEdit && onEdit && (
-              <Button
-                variant="ghost"
-                size="sm"
+              <button
+                type="button"
                 onClick={handleEdit}
-                className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                aria-label="Edit"
+                className="chat-action-btn"
               >
-                <Pencil className="h-3 w-3 mr-1" />
-                Edit
-              </Button>
+                <Pencil className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Edit</span>
+              </button>
             )}
-            <Button
-              variant="ghost"
-              size="sm"
+            <button
+              type="button"
               onClick={copyToClipboardUser}
-              className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+              data-active={copied || undefined}
+              aria-label="Copy"
+              className="chat-action-btn"
             >
-              {copied ? (
-                <>
-                  <Check className="h-3 w-3 mr-1" />
-                  Copied
-                </>
-              ) : (
-                <>
-                  <Copy className="h-3 w-3 mr-1" />
-                  Copy
-                </>
-              )}
-            </Button>
-            <span className="flex items-center gap-1">
+              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              <span className="hidden sm:inline">{copied ? 'Copied' : 'Copy'}</span>
+            </button>
+            <span className="inline-flex items-center gap-1 text-[10.5px] font-medium text-muted-foreground/80 px-1.5">
               <Check className="h-3 w-3" />
               Sent
             </span>
