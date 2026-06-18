@@ -1263,14 +1263,13 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
             </span>
           </motion.div>
         ) : (
-        <div 
+        <div
           className={cn(
-            "leading-relaxed inline-block max-w-full min-w-0",
+            "inline-block max-w-full min-w-0 text-[15px] [line-height:1.65]",
             isUser
-              ? "text-primary-foreground rounded-[22px] rounded-br-md px-4 py-2.5 w-fit max-w-[85vw] sm:max-w-[70ch] ml-auto break-words [overflow-wrap:anywhere] shadow-[0_8px_28px_-12px_hsl(var(--xai-purple)/0.65)] ring-1 ring-white/10"
-              : "text-foreground w-full min-w-0 max-w-full break-words [overflow-wrap:anywhere]"
+              ? "chat-bubble-user font-medium text-foreground rounded-[18px] rounded-br-md px-4 py-2.5 w-fit max-w-[85vw] sm:max-w-[70ch] ml-auto text-left break-words [overflow-wrap:anywhere]"
+              : "chat-bubble-ai font-normal text-foreground w-full min-w-0 max-w-full break-words [overflow-wrap:anywhere] rounded-[18px] pl-4 pr-3 py-2.5 border-l-2 border-[hsl(var(--xai-purple))]"
           )}
-          style={isUser ? { background: 'var(--xai-gradient)' } : undefined}
         >
           {parsedContent.parts.map((part, index) =>
             part.type === 'code' ? (

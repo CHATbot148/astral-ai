@@ -369,24 +369,23 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
 
       <input ref={fileInputRef} type="file" multiple onChange={handleFileChange} className="hidden" accept="image/*,video/*,.pdf,.doc,.docx,.txt" />
 
-      {/* Modern unified input bar - floating */}
+      {/* Modern unified input bar - floating glass */}
       <div className="relative">
-        {/* Animated gradient glow */}
+        {/* Soft accent glow */}
         <div
-          className="pointer-events-none absolute -inset-[1px] rounded-[28px] opacity-60 blur-[8px] transition-opacity duration-500"
+          className="pointer-events-none absolute -inset-[2px] rounded-[20px] opacity-50 blur-[14px] transition-opacity duration-500"
           style={{
             background:
-              'conic-gradient(from 180deg at 50% 50%, hsl(var(--xai-purple)/0.55), hsl(var(--xai-cyan)/0.55), hsl(var(--xai-purple)/0.55))',
+              'linear-gradient(135deg, hsl(var(--xai-purple)/0.35), hsl(var(--xai-cyan)/0.35))',
           }}
           aria-hidden
         />
 
         <div
           className={cn(
-            'relative flex items-center gap-1.5 sm:gap-2 rounded-[26px] px-1.5 py-1.5 sm:px-2 sm:py-2',
-            'bg-background/85 backdrop-blur-xl',
-            'border border-border/60 shadow-[0_10px_40px_-12px_hsl(var(--xai-purple)/0.35)]',
-            'transition-all duration-300 min-h-[58px] sm:min-h-[62px]',
+            'relative flex items-center gap-1.5 sm:gap-2 rounded-[16px] px-1.5 py-1.5 sm:px-2 sm:py-2',
+            'chat-input-glass indigo-focus-ring',
+            'transition-all duration-200 min-h-[58px] sm:min-h-[62px]',
             isRecording && 'border-destructive/40'
           )}
         >

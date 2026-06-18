@@ -1390,7 +1390,7 @@ export const ChatContainer = () => {
 
 
         <div ref={scrollRef} className="flex-1 min-w-0 flex flex-col overflow-hidden">
-        <Conversation className="flex-1 min-w-0">
+        <Conversation className="flex-1 min-w-0 chat-scroll-fade">
           <ConversationContent className="w-full min-w-0 max-w-full overflow-x-hidden p-0" style={{ paddingBottom: `${scrollBottomPadding}px` }}>
             <AnimatePresence mode="wait">
               {displayMessages.length === 0 ? (
