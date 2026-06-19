@@ -64,19 +64,7 @@ export const LinkPreview = ({ url, className }: Props) => {
   }, [url]);
 
   if (errored) return null;
-
-  if (loading) {
-    return (
-      <div className={cn("my-2 w-full max-w-md rounded-xl border border-border/40 bg-card/30 p-3 animate-pulse flex gap-3", className)}>
-        <div className="h-14 w-14 rounded-lg bg-muted/40 flex-shrink-0" />
-        <div className="flex-1 min-w-0 space-y-1.5">
-          <div className="h-3 w-1/2 bg-muted/40 rounded" />
-          <div className="h-2.5 w-full bg-muted/30 rounded" />
-          <div className="h-2.5 w-2/3 bg-muted/30 rounded" />
-        </div>
-      </div>
-    );
-  }
+  if (loading) return null;
 
   if (!data) return null;
 

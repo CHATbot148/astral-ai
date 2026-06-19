@@ -452,6 +452,72 @@ serve(async (req) => {
         }
       }
 
+      // === FIRECRAWL: scrape content from URLs in user's message ===
+      const FIRECRAWL_API_KEY = Deno.env.get("FIRECRAWL_API_KEY");
+      if (FIRECRAWL_API_KEY) {
+        const URL_RE = /https?:\/\/[^\s<>"'\)]+/gi;
+        const MEDIA_EXT_RE = /\.(png|jpg|jpeg|gif|webp|mp4|webm|mov|avi|mkv|m4a|mp3|wav|ogg|svg|ico|pdf)(\?|#|$)/i;
+        const seen = new Set<string>();
+        const urlsToCrawl: string[] = [];
+        for (const raw of (lastContent.match(URL_RE) || [])) {
+          const u = raw.replace(/[.,;:!?\)\]]+$/, "");
+          if (MEDIA_EXT_RE.test(u)) continue;
+          if (u.includes("supabase.co/storage")) continue;
+          if (seen.has(u)) continue;
+          seen.add(u);
+          urlsToCrawl.push(u);
+          if (urlsToCrawl.length >= 2) break;
+        }
+
+        if (urlsToCrawl.length > 0) {
+          try {
+            const scraped = await Promise.all(urlsToCrawl.map(async (url) => {
+              try {
+                const r = await fetch("https://api.firecrawl.dev/v2/scrape", {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Bearer ${FIRECRAWL_API_KEY}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    url,
+                    formats: ["markdown"],
+                    onlyMainContent: true,
+                  }),
+                });
+                if (!r.ok) {
+                  console.error("Firecrawl scrape failed", url, r.status, await r.text().catch(() => ""));
+                  return null;
+                }
+                const j = await r.json();
+                const d = j?.data || j;
+                const md: string = (d?.markdown || "").toString();
+                const title = d?.metadata?.title || url;
+                if (!md.trim()) return null;
+                // Trim to a sane budget per URL
+                const trimmed = md.length > 12000 ? md.slice(0, 12000) + "\n…[truncated]" : md;
+                return `### ${title}\nSource: ${url}\n\n${trimmed}`;
+              } catch (e) {
+                console.error("Firecrawl error", url, e);
+                return null;
+              }
+            }));
+            const valid = scraped.filter(Boolean) as string[];
+            if (valid.length > 0) {
+              searchContext += `\n\n[Crawled Page Content - USE THIS AS YOUR PRIMARY SOURCE OF TRUTH for the URL(s) the user shared]:\n\n${valid.join("\n\n---\n\n")}`;
+              for (const u of urlsToCrawl) {
+                if (!webSources.find((s) => s.url === u)) {
+                  webSources.push({ title: new URL(u).hostname, url: u });
+                }
+              }
+            }
+          } catch (e) {
+            console.error("Firecrawl batch error:", e);
+          }
+        }
+      }
+
+
       // Auto visual context: detect if the topic would benefit from inline images
       const visualCheck = needsVisualContext(lastContent);
       if (visualCheck.needed && !mediaContext) {
@@ -1025,19 +1091,34 @@ IMPORTANT RESPONSE GUIDELINES:
           model: "gemini-2.5-pro",
           messages: [{ role: "system", content: systemContent }, ...formattedMessages],
           stream: true,
+          max_tokens: 8192,
         }),
       });
       if (!geminiRes.ok) {
         const t = await geminiRes.text();
         console.error("Astraz Pro (Google AI Studio) error:", geminiRes.status, t);
+        // Extract real error message from Google
+        let detail = "";
+        try {
+          const parsed = JSON.parse(t);
+          detail = parsed?.error?.message || parsed?.message || "";
+        } catch {
+          detail = t.slice(0, 300);
+        }
         if (geminiRes.status === 429) {
           return new Response(JSON.stringify({
-            error: "Astraz Pro is being rate-limited by Google. Try again in a few seconds or switch to standard Astraz.",
+            error: `Astraz Pro is being rate-limited by Google. ${detail || "Try again in a few seconds or switch to standard Astraz."}`,
             code: "ai_rate_limited",
           }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
+        if (geminiRes.status === 400 || geminiRes.status === 401 || geminiRes.status === 403) {
+          return new Response(JSON.stringify({
+            error: `Astraz Pro: ${detail || "API key rejected by Google."}`,
+            code: "gemini_auth_error",
+          }), { status: geminiRes.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
         return new Response(JSON.stringify({
-          error: `Astraz Pro request failed (${geminiRes.status}). Try again or switch to standard Astraz.`,
+          error: `Astraz Pro request failed (${geminiRes.status}): ${detail}`,
           code: "gemini_error",
         }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       } else {
