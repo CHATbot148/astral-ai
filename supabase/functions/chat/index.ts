@@ -450,6 +450,7 @@ serve(async (req) => {
         } catch (e) {
           console.error("Auto web search error:", e);
         }
+      }
 
       // === FIRECRAWL: scrape content from URLs in user's message ===
       const FIRECRAWL_API_KEY = Deno.env.get("FIRECRAWL_API_KEY");
