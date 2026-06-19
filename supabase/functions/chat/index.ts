@@ -1091,19 +1091,34 @@ IMPORTANT RESPONSE GUIDELINES:
           model: "gemini-2.5-pro",
           messages: [{ role: "system", content: systemContent }, ...formattedMessages],
           stream: true,
+          max_tokens: 8192,
         }),
       });
       if (!geminiRes.ok) {
         const t = await geminiRes.text();
         console.error("Astraz Pro (Google AI Studio) error:", geminiRes.status, t);
+        // Extract real error message from Google
+        let detail = "";
+        try {
+          const parsed = JSON.parse(t);
+          detail = parsed?.error?.message || parsed?.message || "";
+        } catch {
+          detail = t.slice(0, 300);
+        }
         if (geminiRes.status === 429) {
           return new Response(JSON.stringify({
-            error: "Astraz Pro is being rate-limited by Google. Try again in a few seconds or switch to standard Astraz.",
+            error: `Astraz Pro is being rate-limited by Google. ${detail || "Try again in a few seconds or switch to standard Astraz."}`,
             code: "ai_rate_limited",
           }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
+        if (geminiRes.status === 400 || geminiRes.status === 401 || geminiRes.status === 403) {
+          return new Response(JSON.stringify({
+            error: `Astraz Pro: ${detail || "API key rejected by Google."}`,
+            code: "gemini_auth_error",
+          }), { status: geminiRes.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
         return new Response(JSON.stringify({
-          error: `Astraz Pro request failed (${geminiRes.status}). Try again or switch to standard Astraz.`,
+          error: `Astraz Pro request failed (${geminiRes.status}): ${detail}`,
           code: "gemini_error",
         }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       } else {
