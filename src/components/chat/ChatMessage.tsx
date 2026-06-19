@@ -1303,9 +1303,9 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
           <SourcesChip sources={parsedContent.sources} />
         )}
 
-        {/* Link previews (Firecrawl-powered) — auto-detect first 2 URLs in message */}
+        {/* Link previews (Firecrawl-powered) — auto-detect first URL in message */}
         {!isStreaming && content && (() => {
-          const urls = extractPreviewableUrls(content, 2);
+          const urls = extractPreviewableUrls(content, 1);
           if (urls.length === 0) return null;
           return (
             <div className="mt-2 space-y-2">
