@@ -501,101 +501,13 @@ export const ChatContainer = () => {
     })();
   };
 
-  const handleVideoGenerate = async (opts: VideoGenOptions) => {
-    let convId = currentConversation?.id;
-    if (!convId) {
-      const newConv = await createConversation(`Generate video: ${opts.prompt}`);
-      if (!newConv) throw new Error('Failed to create conversation');
-      convId = newConv.id;
-    }
-    await addMessage(convId, 'user', `Generate a video: ${opts.prompt}`);
-
-    // Fire-and-forget: close dialog immediately, generate in background
-    toast({ title: '🎬 Generating video in background', description: "You'll be notified when it's ready. This may take up to a minute." });
-    const capturedConvId = convId;
-
-    // Run generation in background (don't await)
-    (async () => {
-      setIsGeneratingVideo(true);
-      setTypingLabel('Generating video…');
-      try {
-        let referenceMediaUrl: string | undefined;
-
-        if (opts.reference?.kind === 'image') {
-          let refUrl = opts.reference.dataUrl;
-          if (refUrl.startsWith('data:') && user) {
-            try {
-              const match = refUrl.match(/^data:(.+?);base64,(.+)$/);
-              if (match) {
-                const mime = match[1];
-                const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg';
-                const binary = atob(match[2]);
-                const bytes = new Uint8Array(binary.length);
-                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-                const path = `${user.id}/ref-${Date.now()}.${ext}`;
-                const { error: uploadErr } = await supabase.storage.from('chat-files').upload(path, bytes, { contentType: mime });
-                if (!uploadErr) {
-                  refUrl = makeStorageRef('chat-files', path);
-                }
-              }
-            } catch (e) {
-              console.error('Video ref image upload failed:', e);
-            }
-          }
-          referenceMediaUrl = refUrl;
-        }
-
-        // Route Wan 2.2 to Replicate
-        let data: any, error: any;
-        if (opts.modelId === 'wan_22_fast') {
-          if (!referenceMediaUrl) throw new Error('Wan 2.2 needs a reference image (image-to-video).');
-          // Resolve storage ref → signed URL for Replicate
-          let imageUrl = referenceMediaUrl;
-          if (imageUrl.startsWith('storage:')) {
-            const raw = imageUrl.slice('storage:'.length);
-            const slash = raw.indexOf('/');
-            const bucket = raw.slice(0, slash);
-            const path = raw.slice(slash + 1);
-            const { data: signed } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
-            if (signed?.signedUrl) imageUrl = signed.signedUrl;
-          }
-          ({ data, error } = await supabase.functions.invoke('replicate-generate', {
-            body: { kind: 'video', modelId: 'wan_22_fast', prompt: opts.prompt, imageUrl },
-          }));
-        } else {
-          ({ data, error } = await supabase.functions.invoke('generate-video', {
-            body: {
-              prompt: opts.prompt,
-              modelId: opts.modelId,
-              duration: opts.duration,
-              quality: opts.quality,
-              referenceMediaUrl,
-              appInForeground: isAppInForeground(),
-            },
-          }));
-        }
-
-        if (error) {
-          const message = await extractFunctionErrorMessage(error, 'Video generation failed.');
-          throw new Error(message);
-        }
-
-        if (data?.error) throw new Error(data.error);
-        if (data?.video) {
-          await addMessage(capturedConvId, 'assistant', `Here's your video.`, [data.video]);
-          toast({ title: '✅ Video ready!', description: opts.prompt.slice(0, 60) });
-        } else {
-          await addMessage(capturedConvId, 'assistant', `I couldn't generate that video. Please try again.`);
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Please try again.';
-        toast({ title: 'Video generation failed', description: message, variant: 'destructive' });
-        await addMessage(capturedConvId, 'assistant', `I couldn't generate that video. ${message}`);
-      } finally {
-        setIsGeneratingVideo(false);
-        setTypingLabel(undefined);
-      }
-    })();
+  const handleVideoGenerate = async (_opts: VideoGenOptions) => {
+    toast({
+      title: 'Video generation paused',
+      description: 'Video generation is temporarily disabled while we recharge credits. Try image generation instead.',
+      variant: 'destructive',
+    });
+    setShowVideoDialog(false);
   };
 
   const handleEditMessage = (messageId: string, content: string) => {
