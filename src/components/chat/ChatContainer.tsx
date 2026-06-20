@@ -718,8 +718,10 @@ export const ChatContainer = () => {
     const imageMatch = value.match(/\[GENERATE_IMAGE:([^\]]+)\]/);
     if (imageMatch?.[1]) return { type: 'image', prompt: imageMatch[1].trim() };
 
+    // Video generation is temporarily disabled — treat any [GENERATE_VIDEO:...] as image
+    // so we never trigger Leonardo while credits are paused.
     const videoMatch = value.match(/\[GENERATE_VIDEO:([^\]]+)\]/);
-    if (videoMatch?.[1]) return { type: 'video', prompt: videoMatch[1].trim() };
+    if (videoMatch?.[1]) return { type: 'image', prompt: videoMatch[1].trim() };
 
     return null;
   };
