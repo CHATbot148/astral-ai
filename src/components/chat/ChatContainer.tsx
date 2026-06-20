@@ -1307,11 +1307,11 @@ export const ChatContainer = () => {
           <ConversationContent className="w-full min-w-0 max-w-full overflow-x-hidden p-0" style={{ paddingBottom: `${scrollBottomPadding}px` }}>
             <AnimatePresence mode="wait">
               {displayMessages.length === 0 ? (
-                <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pt-[calc(env(safe-area-inset-top,0px)+4.5rem)] sm:pt-20 lg:pt-6">
+                <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pt-[calc(env(safe-area-inset-top,0px)+3rem)] sm:pt-16 lg:pt-6">
                   <WelcomeScreen onAnalyzeDocs={() => setShowAnalyzePopup(true)} onVisualize={() => setShowVisualizePopup(true)} profileName={profile?.full_name} />
                 </motion.div>
               ) : (
-                <motion.div key="messages" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto pt-[calc(env(safe-area-inset-top,0px)+4.25rem)] lg:pt-6 min-w-0 overflow-x-hidden">
+                <motion.div key="messages" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto pt-[calc(env(safe-area-inset-top,0px)+2.75rem)] lg:pt-6 min-w-0 overflow-x-hidden">
                   {displayMessages.map((msg, msgIndex) => {
                   const userMessages = displayMessages.filter(m => m.role === 'user');
                   const userMsgIndex = userMessages.findIndex(m => m.id === msg.id);
