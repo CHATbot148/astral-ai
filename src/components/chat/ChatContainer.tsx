@@ -1042,7 +1042,7 @@ export const ChatContainer = () => {
                 referenceMediaUrl,
               });
               if (generatedImage) {
-                await addMessage(capturedConvId, 'assistant', `Here's your image.`, [generatedImage]);
+                // Server inserts the assistant message via realtime (see generate-image).
               } else {
                 await addMessage(capturedConvId, 'assistant', `I couldn't generate that image. Please try again.`);
               }
