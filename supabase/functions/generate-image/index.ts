@@ -394,6 +394,7 @@ serve(async (req) => {
       aspectRatio = "1:1",
       modelId,
       appInForeground,
+      conversationId,
     } = await req.json();
     if (!prompt && !imageDataUrl) throw new Error("Prompt or imageDataUrl is required");
 
