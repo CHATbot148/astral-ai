@@ -1174,9 +1174,12 @@ export const ChatContainer = () => {
     });
   }
 
-  const composerBaseOffset = keyboardInset > 0 ? 8 : 38;
+  // Smaller base offset on mobile so the composer sits closer to the bottom edge
+  // (avoids the "floating" / elevated look). Desktop keeps a slightly larger pad.
+  const isMobileViewport = typeof window !== 'undefined' && window.innerWidth < 768;
+  const composerBaseOffset = keyboardInset > 0 ? 4 : (isMobileViewport ? 10 : 28);
   const composerOffset = keyboardInset + composerBaseOffset;
-  const scrollBottomPadding = inputDockHeight + composerOffset + (keyboardInset > 0 ? 8 : 18);
+  const scrollBottomPadding = inputDockHeight + composerOffset + (keyboardInset > 0 ? 6 : 14);
 
   const handleAnalyzeFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const list = e.target.files;
