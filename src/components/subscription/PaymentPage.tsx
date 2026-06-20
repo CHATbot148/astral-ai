@@ -629,7 +629,7 @@ export const PaymentPage = ({ selectedTier, billingCycle, reason = 'general' }: 
                   variant="xai"
                   className="mt-5 h-12 w-full"
                   disabled={isProcessing || isVerifying || !agreedToPolicy || paymentComplete || (paymentMethod === 'apple_pay' && !supportsApplePay) || (paymentMethod === 'bank_transfer' && !supportsBankTransfer)}
-                  onClick={() => handlePaystackPay(paymentMethod)}
+                  onClick={submitPayment}
                 >
                   {isProcessing ? (
                     <>
@@ -637,13 +637,15 @@ export const PaymentPage = ({ selectedTier, billingCycle, reason = 'general' }: 
                       Redirecting…
                     </>
                   ) : (
-                    `Continue with ${paymentMethod === 'apple_pay' ? 'Apple Pay' : paymentMethod === 'bank_transfer' ? 'Bank Transfer' : 'Card'} · ${formatLocalPrice(priceNGN, locale.currency)}`
+                    `Continue with ${paymentMethod === 'apple_pay' ? 'Apple Pay' : paymentMethod === 'bank_transfer' ? 'Bank Transfer' : paymentMethod === 'stripe' ? 'Stripe' : 'Card'} · ${formatLocalPrice(priceNGN, locale.currency)}`
                   )}
                 </Button>
               )}
 
               <p className="mt-3 text-center text-[11px] text-muted-foreground">
-                Payments are processed securely through Paystack.
+                {paymentMethod === 'stripe'
+                  ? 'International payments are processed securely through Stripe.'
+                  : 'Payments are processed securely through Paystack.'}
               </p>
             </div>
           )}
