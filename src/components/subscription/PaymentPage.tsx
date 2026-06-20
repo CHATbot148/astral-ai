@@ -150,15 +150,21 @@ export const PaymentPage = ({ selectedTier, billingCycle, reason = 'general' }: 
     if (!user || isVerifying || paymentComplete) return;
 
     const reference = searchParams.get('reference') || searchParams.get('trxref');
-    if (!reference) return;
+    const stripeSessionId = searchParams.get('stripe_session_id');
+    if (!reference && !stripeSessionId) return;
 
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete('reference');
     nextParams.delete('trxref');
+    nextParams.delete('stripe_session_id');
     setSearchParams(nextParams, { replace: true });
 
     setIsVerifying(true);
-    supabase.functions.invoke('paystack-verify', { body: { reference } }).then(({ data, error }) => {
+    const verifier = stripeSessionId
+      ? supabase.functions.invoke('stripe-checkout', { body: { action: 'verify', sessionId: stripeSessionId } })
+      : supabase.functions.invoke('paystack-verify', { body: { reference } });
+
+    verifier.then(({ data, error }) => {
       if (error || data?.error) {
         toast({ title: data?.error || 'Payment verification failed', variant: 'destructive' });
       } else {
