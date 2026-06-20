@@ -474,7 +474,8 @@ export const ChatContainer = () => {
       try {
         const generatedImage = await generateImageWithOptions(opts);
         if (generatedImage) {
-          await addMessage(capturedConvId, 'assistant', `Here's your image.`, [generatedImage]);
+          // Server inserts the assistant message itself (via realtime) when a
+          // conversationId was passed, so we skip the client insert to avoid duplicates.
           toast({ title: '✅ Image ready!', description: opts.prompt.slice(0, 60) });
         } else {
           await addMessage(capturedConvId, 'assistant', `I couldn't generate that image. Please try again.`);
