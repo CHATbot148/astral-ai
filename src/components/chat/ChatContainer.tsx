@@ -1248,13 +1248,14 @@ export const ChatContainer = () => {
                     <p className="text-xs text-muted-foreground">Create AI images</p>
                   </div>
                 </button>
-                <button onClick={() => { setShowVisualizePopup(false); openVideoDialog(); }} className="flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/70 w-full text-left text-sm rounded-xl transition-colors">
+                <div className="flex items-center gap-3 px-4 py-3 w-full text-left text-sm rounded-xl opacity-60 cursor-not-allowed">
                   <span className="text-xl">🎬</span>
                   <div>
                     <p className="font-medium">Generate Video</p>
-                    <p className="text-xs text-muted-foreground">Create AI videos</p>
+                    <p className="text-xs text-muted-foreground">Paused — credits recharging</p>
                   </div>
-                </button>
+                </div>
+
               </div>
               <button onClick={() => setShowVisualizePopup(false)} className="w-full py-3 text-sm text-muted-foreground hover:text-foreground border-t border-border/50">Cancel</button>
             </motion.div>
