@@ -434,23 +434,9 @@ export const ChatContainer = () => {
       }
     }
 
-    // Route Replicate-backed models to the dedicated edge function
-    const REPLICATE_MODELS = new Set(['flux_schnell', 'flux_pro', 'sdxl', 'ideogram_v2']);
-    if (opts.modelId && REPLICATE_MODELS.has(opts.modelId)) {
-      const { data, error } = await supabase.functions.invoke('replicate-generate', {
-        body: {
-          kind: 'image',
-          modelId: opts.modelId,
-          prompt: opts.prompt,
-          aspectRatio: opts.aspectRatio,
-          imageUrl: referenceMediaUrl,
-        },
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      return data?.image ?? null;
-    }
-
+    // Image generation is locked to Nano Banana 2 (Replicate models disabled while
+    // we recharge credits). Always call generate-image with the forced model id.
+    const conversationIdForGen = currentConversation?.id;
     const { data, error } = await supabase.functions.invoke('generate-image', {
       body: {
         prompt: opts.prompt,
@@ -458,8 +444,9 @@ export const ChatContainer = () => {
         aspectRatio: opts.aspectRatio,
         referenceMediaUrl,
         referenceImageUrl: referenceMediaUrl,
-        modelId: opts.modelId,
+        modelId: 'nano_banana_2',
         appInForeground: isAppInForeground(),
+        conversationId: conversationIdForGen,
       },
     });
     if (error) throw error;
@@ -487,7 +474,8 @@ export const ChatContainer = () => {
       try {
         const generatedImage = await generateImageWithOptions(opts);
         if (generatedImage) {
-          await addMessage(capturedConvId, 'assistant', `Here's your image.`, [generatedImage]);
+          // Server inserts the assistant message itself (via realtime) when a
+          // conversationId was passed, so we skip the client insert to avoid duplicates.
           toast({ title: '✅ Image ready!', description: opts.prompt.slice(0, 60) });
         } else {
           await addMessage(capturedConvId, 'assistant', `I couldn't generate that image. Please try again.`);
@@ -501,101 +489,13 @@ export const ChatContainer = () => {
     })();
   };
 
-  const handleVideoGenerate = async (opts: VideoGenOptions) => {
-    let convId = currentConversation?.id;
-    if (!convId) {
-      const newConv = await createConversation(`Generate video: ${opts.prompt}`);
-      if (!newConv) throw new Error('Failed to create conversation');
-      convId = newConv.id;
-    }
-    await addMessage(convId, 'user', `Generate a video: ${opts.prompt}`);
-
-    // Fire-and-forget: close dialog immediately, generate in background
-    toast({ title: '🎬 Generating video in background', description: "You'll be notified when it's ready. This may take up to a minute." });
-    const capturedConvId = convId;
-
-    // Run generation in background (don't await)
-    (async () => {
-      setIsGeneratingVideo(true);
-      setTypingLabel('Generating video…');
-      try {
-        let referenceMediaUrl: string | undefined;
-
-        if (opts.reference?.kind === 'image') {
-          let refUrl = opts.reference.dataUrl;
-          if (refUrl.startsWith('data:') && user) {
-            try {
-              const match = refUrl.match(/^data:(.+?);base64,(.+)$/);
-              if (match) {
-                const mime = match[1];
-                const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg';
-                const binary = atob(match[2]);
-                const bytes = new Uint8Array(binary.length);
-                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-                const path = `${user.id}/ref-${Date.now()}.${ext}`;
-                const { error: uploadErr } = await supabase.storage.from('chat-files').upload(path, bytes, { contentType: mime });
-                if (!uploadErr) {
-                  refUrl = makeStorageRef('chat-files', path);
-                }
-              }
-            } catch (e) {
-              console.error('Video ref image upload failed:', e);
-            }
-          }
-          referenceMediaUrl = refUrl;
-        }
-
-        // Route Wan 2.2 to Replicate
-        let data: any, error: any;
-        if (opts.modelId === 'wan_22_fast') {
-          if (!referenceMediaUrl) throw new Error('Wan 2.2 needs a reference image (image-to-video).');
-          // Resolve storage ref → signed URL for Replicate
-          let imageUrl = referenceMediaUrl;
-          if (imageUrl.startsWith('storage:')) {
-            const raw = imageUrl.slice('storage:'.length);
-            const slash = raw.indexOf('/');
-            const bucket = raw.slice(0, slash);
-            const path = raw.slice(slash + 1);
-            const { data: signed } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
-            if (signed?.signedUrl) imageUrl = signed.signedUrl;
-          }
-          ({ data, error } = await supabase.functions.invoke('replicate-generate', {
-            body: { kind: 'video', modelId: 'wan_22_fast', prompt: opts.prompt, imageUrl },
-          }));
-        } else {
-          ({ data, error } = await supabase.functions.invoke('generate-video', {
-            body: {
-              prompt: opts.prompt,
-              modelId: opts.modelId,
-              duration: opts.duration,
-              quality: opts.quality,
-              referenceMediaUrl,
-              appInForeground: isAppInForeground(),
-            },
-          }));
-        }
-
-        if (error) {
-          const message = await extractFunctionErrorMessage(error, 'Video generation failed.');
-          throw new Error(message);
-        }
-
-        if (data?.error) throw new Error(data.error);
-        if (data?.video) {
-          await addMessage(capturedConvId, 'assistant', `Here's your video.`, [data.video]);
-          toast({ title: '✅ Video ready!', description: opts.prompt.slice(0, 60) });
-        } else {
-          await addMessage(capturedConvId, 'assistant', `I couldn't generate that video. Please try again.`);
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Please try again.';
-        toast({ title: 'Video generation failed', description: message, variant: 'destructive' });
-        await addMessage(capturedConvId, 'assistant', `I couldn't generate that video. ${message}`);
-      } finally {
-        setIsGeneratingVideo(false);
-        setTypingLabel(undefined);
-      }
-    })();
+  const handleVideoGenerate = async (_opts: VideoGenOptions) => {
+    toast({
+      title: 'Video generation paused',
+      description: 'Video generation is temporarily disabled while we recharge credits. Try image generation instead.',
+      variant: 'destructive',
+    });
+    setShowVideoDialog(false);
   };
 
   const handleEditMessage = (messageId: string, content: string) => {
@@ -718,8 +618,10 @@ export const ChatContainer = () => {
     const imageMatch = value.match(/\[GENERATE_IMAGE:([^\]]+)\]/);
     if (imageMatch?.[1]) return { type: 'image', prompt: imageMatch[1].trim() };
 
+    // Video generation is temporarily disabled — treat any [GENERATE_VIDEO:...] as image
+    // so we never trigger Leonardo while credits are paused.
     const videoMatch = value.match(/\[GENERATE_VIDEO:([^\]]+)\]/);
-    if (videoMatch?.[1]) return { type: 'video', prompt: videoMatch[1].trim() };
+    if (videoMatch?.[1]) return { type: 'image', prompt: videoMatch[1].trim() };
 
     return null;
   };
@@ -1140,7 +1042,7 @@ export const ChatContainer = () => {
                 referenceMediaUrl,
               });
               if (generatedImage) {
-                await addMessage(capturedConvId, 'assistant', `Here's your image.`, [generatedImage]);
+                // Server inserts the assistant message via realtime (see generate-image).
               } else {
                 await addMessage(capturedConvId, 'assistant', `I couldn't generate that image. Please try again.`);
               }
@@ -1273,9 +1175,12 @@ export const ChatContainer = () => {
     });
   }
 
-  const composerBaseOffset = keyboardInset > 0 ? 8 : 38;
+  // Smaller base offset on mobile so the composer sits closer to the bottom edge
+  // (avoids the "floating" / elevated look). Desktop keeps a slightly larger pad.
+  const isMobileViewport = typeof window !== 'undefined' && window.innerWidth < 768;
+  const composerBaseOffset = keyboardInset > 0 ? 4 : (isMobileViewport ? 10 : 28);
   const composerOffset = keyboardInset + composerBaseOffset;
-  const scrollBottomPadding = inputDockHeight + composerOffset + (keyboardInset > 0 ? 8 : 18);
+  const scrollBottomPadding = inputDockHeight + composerOffset + (keyboardInset > 0 ? 6 : 14);
 
   const handleAnalyzeFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const list = e.target.files;
@@ -1347,13 +1252,14 @@ export const ChatContainer = () => {
                     <p className="text-xs text-muted-foreground">Create AI images</p>
                   </div>
                 </button>
-                <button onClick={() => { setShowVisualizePopup(false); openVideoDialog(); }} className="flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/70 w-full text-left text-sm rounded-xl transition-colors">
+                <div className="flex items-center gap-3 px-4 py-3 w-full text-left text-sm rounded-xl opacity-60 cursor-not-allowed">
                   <span className="text-xl">🎬</span>
                   <div>
                     <p className="font-medium">Generate Video</p>
-                    <p className="text-xs text-muted-foreground">Create AI videos</p>
+                    <p className="text-xs text-muted-foreground">Paused — credits recharging</p>
                   </div>
-                </button>
+                </div>
+
               </div>
               <button onClick={() => setShowVisualizePopup(false)} className="w-full py-3 text-sm text-muted-foreground hover:text-foreground border-t border-border/50">Cancel</button>
             </motion.div>
@@ -1402,11 +1308,11 @@ export const ChatContainer = () => {
           <ConversationContent className="w-full min-w-0 max-w-full overflow-x-hidden p-0" style={{ paddingBottom: `${scrollBottomPadding}px` }}>
             <AnimatePresence mode="wait">
               {displayMessages.length === 0 ? (
-                <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pt-[calc(env(safe-area-inset-top,0px)+4.5rem)] sm:pt-20 lg:pt-6">
+                <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pt-[calc(env(safe-area-inset-top,0px)+3rem)] sm:pt-16 lg:pt-6">
                   <WelcomeScreen onAnalyzeDocs={() => setShowAnalyzePopup(true)} onVisualize={() => setShowVisualizePopup(true)} profileName={profile?.full_name} />
                 </motion.div>
               ) : (
-                <motion.div key="messages" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto pt-[calc(env(safe-area-inset-top,0px)+4.25rem)] lg:pt-6 min-w-0 overflow-x-hidden">
+                <motion.div key="messages" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto pt-[calc(env(safe-area-inset-top,0px)+2.75rem)] lg:pt-6 min-w-0 overflow-x-hidden">
                   {displayMessages.map((msg, msgIndex) => {
                   const userMessages = displayMessages.filter(m => m.role === 'user');
                   const userMsgIndex = userMessages.findIndex(m => m.id === msg.id);

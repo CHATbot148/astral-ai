@@ -46,14 +46,6 @@ const ASPECTS: Array<{ value: ImageGenOptions["aspectRatio"]; label: string }> =
 
 const IMAGE_MODELS: Array<{ value: string; label: string; hint: string }> = [
   { value: "nano_banana_2", label: "Nano Banana 2", hint: "Fast + sharp" },
-  { value: "seedream_4_5", label: "Seedream 4.5", hint: "Text designs" },
-  { value: "lucid_origin", label: "Lucid Origin", hint: "Prompt adherence" },
-  { value: "flux_2_pro", label: "FLUX.2 Pro", hint: "High fidelity" },
-  { value: "phoenix", label: "Phoenix", hint: "Legacy" },
-  { value: "flux_schnell", label: "FLUX Schnell", hint: "Replicate · ultra fast" },
-  { value: "flux_pro", label: "FLUX 1.1 Pro", hint: "Replicate · premium" },
-  { value: "sdxl", label: "SDXL", hint: "Replicate · stylized" },
-  { value: "ideogram_v2", label: "Ideogram v2", hint: "Replicate · typography" },
 ];
 
 const SUGGESTIONS = [
@@ -70,8 +62,8 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   const [prompt, setPrompt] = useState(initialPrompt);
   const [style, setStyle] = useState<ImageGenOptions["style"]>("photoreal");
   const [aspectRatio, setAspectRatio] = useState<ImageGenOptions["aspectRatio"]>("1:1");
-  const [selectedModel, setSelectedModel] = useState("nano_banana_2");
-  const canSelectModel = tier === "pro" || tier === "ultimate";
+  const selectedModel = "nano_banana_2";
+  const canSelectModel = false;
   const [isWorking, setIsWorking] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -197,28 +189,12 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
             </div>
           </motion.div>
 
-          {/* Model (Pro/Ultimate) */}
-          {canSelectModel && (
-            <motion.div variants={fadeUp} className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                <Sparkles className="h-3.5 w-3.5" /> AI Model
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {IMAGE_MODELS.map((m) => (
-                  <button key={m.value} onClick={() => setSelectedModel(m.value)} disabled={isWorking}
-                    className={cn(
-                      "flex flex-col px-3 py-2 rounded-xl border transition-all text-left",
-                      selectedModel === m.value
-                        ? "border-xai-purple bg-xai-purple/10 shadow-[0_0_12px_-4px_hsl(var(--xai-purple)/0.3)]"
-                        : "border-border/50 bg-secondary/30 hover:border-xai-purple/40"
-                    )}>
-                    <span className="text-xs font-medium text-foreground">{m.label}</span>
-                    <span className="text-[10px] text-muted-foreground">{m.hint}</span>
-                  </button>
-                ))}
-              </div>
-            </motion.div>
-          )}
+          {/* Model — locked to Nano Banana 2 */}
+          <motion.div variants={fadeUp} className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border/50 bg-secondary/30 text-xs text-muted-foreground">
+            <Sparkles className="h-3.5 w-3.5 text-xai-cyan" />
+            <span>Model: <span className="font-medium text-foreground">Nano Banana 2</span> · Fast + sharp</span>
+          </motion.div>
+
 
           {/* Reference */}
           <motion.div variants={fadeUp}>

@@ -406,74 +406,94 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
               </Button>
             </motion.div>
 
-            {/* Attachment Menu */}
+            {/* Attachment Menu — redesigned, larger, modern */}
             <AnimatePresence>
               {showAttachMenu && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.92, y: 8 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.92, y: 8 }}
-                  transition={{ type: 'spring', stiffness: 320, damping: 24 }}
-                  className="absolute bottom-full left-0 mb-3 z-50 bg-popover/95 backdrop-blur-xl border border-border/70 rounded-2xl shadow-2xl overflow-hidden min-w-[220px]"
-                >
-                  <button
-                    onClick={() => { setShowAttachMenu(false); onOpenImageDialog?.(message.trim() || undefined); }}
-                    className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/70 w-full text-left text-sm transition-colors"
-                  >
-                    <Wand2 className="h-4 w-4 text-xai-cyan" />
-                    <div>
-                      <p className="font-medium">Create Image</p>
-                      <p className="text-xs text-muted-foreground">Visualize anything</p>
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => { setShowAttachMenu(false); onOpenVideoDialog?.(); }}
-                    className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/70 w-full text-left text-sm transition-colors"
-                  >
-                    <Video className="h-4 w-4 text-xai-purple" />
-                    <div>
-                      <p className="font-medium">Create Video</p>
-                      <p className="text-xs text-muted-foreground">Generate short videos</p>
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => { fileInputRef.current?.click(); setShowAttachMenu(false); }}
-                    className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/70 w-full text-left text-sm transition-colors"
-                  >
-                    <FileText className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <p className="font-medium">Add Files</p>
-                      <p className="text-xs text-muted-foreground">Upload images & documents</p>
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowAttachMenu(false);
-                      setMessage(prev => prev.startsWith('Search for: ') ? prev : 'Search for: ' + prev);
-                      textareaRef.current?.focus();
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setShowAttachMenu(false)}
+                    aria-hidden
+                  />
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.96, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.96, y: 10 }}
+                    transition={{ type: 'spring', stiffness: 360, damping: 26 }}
+                    className="absolute bottom-full left-0 mb-3 z-50 w-[300px] sm:w-[340px] origin-bottom-left rounded-3xl border border-border/60 bg-popover/95 backdrop-blur-2xl shadow-2xl overflow-hidden"
+                    style={{
+                      boxShadow:
+                        '0 24px 60px -16px hsl(var(--xai-purple)/0.45), 0 8px 24px -8px hsl(var(--xai-cyan)/0.25)',
                     }}
-                    className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/70 w-full text-left text-sm transition-colors"
                   >
-                    <Globe className="h-4 w-4 text-green-500" />
-                    <div>
-                      <p className="font-medium">Web Search</p>
-                      <p className="text-xs text-muted-foreground">Find real-time info</p>
+                    <div className="px-5 pt-4 pb-2">
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground/80 font-semibold">Add to chat</p>
                     </div>
-                  </button>
-                  <button
-                    onClick={() => { setShowGifPicker(true); setShowAttachMenu(false); }}
-                    className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/70 w-full text-left text-sm transition-colors"
-                  >
-                    <Smile className="h-4 w-4 text-yellow-500" />
-                    <div>
-                      <p className="font-medium">GIFs</p>
-                      <p className="text-xs text-muted-foreground">Send animated GIFs</p>
+                    <div className="px-2 pb-2 grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => { setShowAttachMenu(false); onOpenImageDialog?.(message.trim() || undefined); }}
+                        className="group relative flex flex-col items-start gap-2 p-3.5 rounded-2xl bg-secondary/40 hover:bg-secondary/80 border border-border/40 hover:border-xai-cyan/40 transition-all text-left"
+                      >
+                        <span className="flex items-center justify-center h-9 w-9 rounded-xl bg-gradient-to-br from-xai-cyan/25 to-xai-purple/15 ring-1 ring-xai-cyan/25 group-hover:scale-105 transition-transform">
+                          <Wand2 className="h-4 w-4 text-xai-cyan" />
+                        </span>
+                        <div>
+                          <p className="text-sm font-semibold">Create Image</p>
+                          <p className="text-[11px] text-muted-foreground leading-snug">Visualize anything</p>
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => { fileInputRef.current?.click(); setShowAttachMenu(false); }}
+                        className="group relative flex flex-col items-start gap-2 p-3.5 rounded-2xl bg-secondary/40 hover:bg-secondary/80 border border-border/40 hover:border-xai-purple/40 transition-all text-left"
+                      >
+                        <span className="flex items-center justify-center h-9 w-9 rounded-xl bg-gradient-to-br from-xai-purple/25 to-xai-cyan/15 ring-1 ring-xai-purple/25 group-hover:scale-105 transition-transform">
+                          <FileText className="h-4 w-4 text-xai-purple" />
+                        </span>
+                        <div>
+                          <p className="text-sm font-semibold">Add Files</p>
+                          <p className="text-[11px] text-muted-foreground leading-snug">Images & documents</p>
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowAttachMenu(false);
+                          setMessage(prev => prev.startsWith('Search for: ') ? prev : 'Search for: ' + prev);
+                          textareaRef.current?.focus();
+                        }}
+                        className="group relative flex flex-col items-start gap-2 p-3.5 rounded-2xl bg-secondary/40 hover:bg-secondary/80 border border-border/40 hover:border-green-500/40 transition-all text-left"
+                      >
+                        <span className="flex items-center justify-center h-9 w-9 rounded-xl bg-gradient-to-br from-green-500/25 to-emerald-400/15 ring-1 ring-green-500/25 group-hover:scale-105 transition-transform">
+                          <Globe className="h-4 w-4 text-green-500" />
+                        </span>
+                        <div>
+                          <p className="text-sm font-semibold">Web Search</p>
+                          <p className="text-[11px] text-muted-foreground leading-snug">Real-time info</p>
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => { setShowGifPicker(true); setShowAttachMenu(false); }}
+                        className="group relative flex flex-col items-start gap-2 p-3.5 rounded-2xl bg-secondary/40 hover:bg-secondary/80 border border-border/40 hover:border-yellow-500/40 transition-all text-left"
+                      >
+                        <span className="flex items-center justify-center h-9 w-9 rounded-xl bg-gradient-to-br from-yellow-500/25 to-amber-400/15 ring-1 ring-yellow-500/25 group-hover:scale-105 transition-transform">
+                          <Smile className="h-4 w-4 text-yellow-500" />
+                        </span>
+                        <div>
+                          <p className="text-sm font-semibold">GIFs</p>
+                          <p className="text-[11px] text-muted-foreground leading-snug">Animated stickers</p>
+                        </div>
+                      </button>
                     </div>
-                  </button>
-                </motion.div>
+                    <div className="px-5 py-2.5 border-t border-border/50 bg-secondary/20">
+                      <p className="text-[10px] text-muted-foreground/80">
+                        Video generation is paused while credits recharge.
+                      </p>
+                    </div>
+                  </motion.div>
+                </>
               )}
             </AnimatePresence>
           </div>
+
 
           {/* Center: textarea or recording visualizer */}
           {isRecording ? (

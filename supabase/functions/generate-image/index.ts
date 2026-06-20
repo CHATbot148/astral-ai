@@ -394,6 +394,7 @@ serve(async (req) => {
       aspectRatio = "1:1",
       modelId,
       appInForeground,
+      conversationId,
     } = await req.json();
     if (!prompt && !imageDataUrl) throw new Error("Prompt or imageDataUrl is required");
 
@@ -702,6 +703,21 @@ serve(async (req) => {
     if (!imgBytes) throw new Error("All image generation providers failed. Please try again.");
 
     const ref = await uploadAndSave(admin, userId, prompt, style, aspectRatio, imgBytes, imgMime);
+
+    // If a conversationId is provided, insert the assistant message directly so the
+    // image appears in chat via realtime even if the client request timed out.
+    if (conversationId && userId !== "anonymous") {
+      try {
+        await admin.from("messages").insert({
+          conversation_id: conversationId,
+          role: "assistant",
+          content: "Here's your image.",
+          file_urls: [ref],
+        });
+      } catch (insertErr) {
+        console.error("Failed to insert chat message for generated image (non-blocking):", insertErr);
+      }
+    }
 
     // Always send generation completion notification (push + email based on user prefs)
     if (userId !== "anonymous") {
