@@ -236,7 +236,7 @@ export const PaymentPage = ({ selectedTier, billingCycle, reason = 'general' }: 
     }
   };
 
-  const handlePaystackPay = async (method: Exclude<PaymentMethod, 'coupon'>) => {
+  const handlePaystackPay = async (method: Exclude<PaymentMethod, 'coupon' | 'stripe'>) => {
     if (!agreedToPolicy) {
       toast({ title: 'Please agree to the Privacy Policy & Terms', variant: 'destructive' });
       return;
@@ -281,6 +281,43 @@ export const PaymentPage = ({ selectedTier, billingCycle, reason = 'general' }: 
       toast({ title: await getFunctionErrorMessage(error, 'Payment init failed'), variant: 'destructive' });
       setIsProcessing(false);
     }
+  };
+
+  const handleStripePay = async () => {
+    if (!agreedToPolicy) {
+      toast({ title: 'Please agree to the Privacy Policy & Terms', variant: 'destructive' });
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const callbackParams = new URLSearchParams({
+        tier: selectedTier,
+        cycle: billingCycle,
+        reason,
+      });
+      const callbackUrl = `${window.location.origin}/payment?${callbackParams.toString()}`;
+      const { data, error } = await supabase.functions.invoke('stripe-checkout', {
+        body: { action: 'create', tier: selectedTier, cycle: billingCycle, callbackUrl, autoRenew },
+      });
+
+      if (error || data?.error || !data?.url) {
+        toast({ title: data?.error || 'Could not start Stripe checkout', variant: 'destructive' });
+        setIsProcessing(false);
+        return;
+      }
+
+      window.location.href = data.url;
+    } catch (error) {
+      toast({ title: await getFunctionErrorMessage(error, 'Stripe checkout failed'), variant: 'destructive' });
+      setIsProcessing(false);
+    }
+  };
+
+  const submitPayment = () => {
+    if (paymentMethod === 'stripe') return handleStripePay();
+    if (paymentMethod === 'coupon') return;
+    return handlePaystackPay(paymentMethod);
   };
 
   const reasonText =
