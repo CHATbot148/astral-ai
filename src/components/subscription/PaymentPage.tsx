@@ -604,15 +604,13 @@ export const PaymentPage = ({ selectedTier, billingCycle, reason = 'general' }: 
                       Redirecting…
                     </>
                   ) : (
-                    `Continue with ${paymentMethod === 'apple_pay' ? 'Apple Pay' : paymentMethod === 'bank_transfer' ? 'Bank Transfer' : paymentMethod === 'stripe' ? 'Stripe' : 'Card'} · ${formatLocalPrice(priceNGN, locale.currency)}`
+                    `Continue with ${paymentMethod === 'apple_pay' ? 'Apple Pay' : paymentMethod === 'bank_transfer' ? 'Bank Transfer' : 'Card'} · ${formatLocalPrice(priceNGN, locale.currency)}`
                   )}
                 </Button>
               )}
 
               <p className="mt-3 text-center text-[11px] text-muted-foreground">
-                {paymentMethod === 'stripe'
-                  ? 'International payments are processed securely through Stripe.'
-                  : 'Payments are processed securely through Paystack.'}
+                Payments are processed securely through Paystack.
               </p>
             </div>
           )}
