@@ -22,7 +22,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { detectLocale, getCachedLocale, formatLocalPrice, type LocaleInfo } from '@/lib/pricing';
 
-type PaymentMethod = 'coupon' | 'card' | 'apple_pay' | 'bank_transfer' | 'stripe';
+type PaymentMethod = 'coupon' | 'card' | 'apple_pay' | 'bank_transfer';
 type PaymentReason = 'image_limit' | 'video_limit' | 'general';
 
 interface PaymentPageProps {
@@ -37,8 +37,7 @@ const PAYMENT_METHODS: Array<{
   description: string;
   icon: typeof Gift;
 }> = [
-  { id: 'card', label: 'Card (Paystack)', description: 'Local cards & wallets', icon: CreditCard },
-  { id: 'stripe', label: 'Card (Stripe)', description: 'International cards · USD', icon: CreditCard },
+  { id: 'card', label: 'Card', description: 'Enter card details', icon: CreditCard },
   { id: 'apple_pay', label: 'Apple Pay', description: 'Fast wallet checkout', icon: Apple },
   { id: 'bank_transfer', label: 'Bank Transfer', description: 'Supported regions only', icon: Landmark },
   { id: 'coupon', label: 'Coupon', description: 'Redeem 30-day access', icon: Gift },
