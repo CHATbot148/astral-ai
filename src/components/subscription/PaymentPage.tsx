@@ -231,7 +231,7 @@ export const PaymentPage = ({ selectedTier, billingCycle, reason = 'general' }: 
     }
   };
 
-  const handlePaystackPay = async (method: Exclude<PaymentMethod, 'coupon' | 'stripe'>) => {
+  const handlePaystackPay = async (method: Exclude<PaymentMethod, 'coupon'>) => {
     if (!agreedToPolicy) {
       toast({ title: 'Please agree to the Privacy Policy & Terms', variant: 'destructive' });
       return;
