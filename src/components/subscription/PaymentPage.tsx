@@ -22,7 +22,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { detectLocale, getCachedLocale, formatLocalPrice, type LocaleInfo } from '@/lib/pricing';
 
-type PaymentMethod = 'coupon' | 'card' | 'apple_pay' | 'bank_transfer' | 'stripe';
+type PaymentMethod = 'coupon' | 'card' | 'apple_pay' | 'bank_transfer';
 type PaymentReason = 'image_limit' | 'video_limit' | 'general';
 
 interface PaymentPageProps {
@@ -37,8 +37,7 @@ const PAYMENT_METHODS: Array<{
   description: string;
   icon: typeof Gift;
 }> = [
-  { id: 'card', label: 'Card (Paystack)', description: 'Local cards & wallets', icon: CreditCard },
-  { id: 'stripe', label: 'Card (Stripe)', description: 'International cards · USD', icon: CreditCard },
+  { id: 'card', label: 'Card', description: 'Enter card details', icon: CreditCard },
   { id: 'apple_pay', label: 'Apple Pay', description: 'Fast wallet checkout', icon: Apple },
   { id: 'bank_transfer', label: 'Bank Transfer', description: 'Supported regions only', icon: Landmark },
   { id: 'coupon', label: 'Coupon', description: 'Redeem 30-day access', icon: Gift },
@@ -150,19 +149,15 @@ export const PaymentPage = ({ selectedTier, billingCycle, reason = 'general' }: 
     if (!user || isVerifying || paymentComplete) return;
 
     const reference = searchParams.get('reference') || searchParams.get('trxref');
-    const stripeSessionId = searchParams.get('stripe_session_id');
-    if (!reference && !stripeSessionId) return;
+    if (!reference) return;
 
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete('reference');
     nextParams.delete('trxref');
-    nextParams.delete('stripe_session_id');
     setSearchParams(nextParams, { replace: true });
 
     setIsVerifying(true);
-    const verifier = stripeSessionId
-      ? supabase.functions.invoke('stripe-checkout', { body: { action: 'verify', sessionId: stripeSessionId } })
-      : supabase.functions.invoke('paystack-verify', { body: { reference } });
+    const verifier = supabase.functions.invoke('paystack-verify', { body: { reference } });
 
     verifier.then(({ data, error }) => {
       if (error || data?.error) {
@@ -236,7 +231,7 @@ export const PaymentPage = ({ selectedTier, billingCycle, reason = 'general' }: 
     }
   };
 
-  const handlePaystackPay = async (method: Exclude<PaymentMethod, 'coupon' | 'stripe'>) => {
+  const handlePaystackPay = async (method: Exclude<PaymentMethod, 'coupon'>) => {
     if (!agreedToPolicy) {
       toast({ title: 'Please agree to the Privacy Policy & Terms', variant: 'destructive' });
       return;
@@ -283,39 +278,7 @@ export const PaymentPage = ({ selectedTier, billingCycle, reason = 'general' }: 
     }
   };
 
-  const handleStripePay = async () => {
-    if (!agreedToPolicy) {
-      toast({ title: 'Please agree to the Privacy Policy & Terms', variant: 'destructive' });
-      return;
-    }
-
-    setIsProcessing(true);
-    try {
-      const callbackParams = new URLSearchParams({
-        tier: selectedTier,
-        cycle: billingCycle,
-        reason,
-      });
-      const callbackUrl = `${window.location.origin}/payment?${callbackParams.toString()}`;
-      const { data, error } = await supabase.functions.invoke('stripe-checkout', {
-        body: { action: 'create', tier: selectedTier, cycle: billingCycle, callbackUrl, autoRenew },
-      });
-
-      if (error || data?.error || !data?.url) {
-        toast({ title: data?.error || 'Could not start Stripe checkout', variant: 'destructive' });
-        setIsProcessing(false);
-        return;
-      }
-
-      window.location.href = data.url;
-    } catch (error) {
-      toast({ title: await getFunctionErrorMessage(error, 'Stripe checkout failed'), variant: 'destructive' });
-      setIsProcessing(false);
-    }
-  };
-
   const submitPayment = () => {
-    if (paymentMethod === 'stripe') return handleStripePay();
     if (paymentMethod === 'coupon') return;
     return handlePaystackPay(paymentMethod);
   };
@@ -637,15 +600,13 @@ export const PaymentPage = ({ selectedTier, billingCycle, reason = 'general' }: 
                       Redirecting…
                     </>
                   ) : (
-                    `Continue with ${paymentMethod === 'apple_pay' ? 'Apple Pay' : paymentMethod === 'bank_transfer' ? 'Bank Transfer' : paymentMethod === 'stripe' ? 'Stripe' : 'Card'} · ${formatLocalPrice(priceNGN, locale.currency)}`
+                    `Continue with ${paymentMethod === 'apple_pay' ? 'Apple Pay' : paymentMethod === 'bank_transfer' ? 'Bank Transfer' : 'Card'} · ${formatLocalPrice(priceNGN, locale.currency)}`
                   )}
                 </Button>
               )}
 
               <p className="mt-3 text-center text-[11px] text-muted-foreground">
-                {paymentMethod === 'stripe'
-                  ? 'International payments are processed securely through Stripe.'
-                  : 'Payments are processed securely through Paystack.'}
+                Payments are processed securely through Paystack.
               </p>
             </div>
           )}
