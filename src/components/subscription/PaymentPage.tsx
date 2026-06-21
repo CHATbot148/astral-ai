@@ -149,19 +149,15 @@ export const PaymentPage = ({ selectedTier, billingCycle, reason = 'general' }: 
     if (!user || isVerifying || paymentComplete) return;
 
     const reference = searchParams.get('reference') || searchParams.get('trxref');
-    const stripeSessionId = searchParams.get('stripe_session_id');
-    if (!reference && !stripeSessionId) return;
+    if (!reference) return;
 
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete('reference');
     nextParams.delete('trxref');
-    nextParams.delete('stripe_session_id');
     setSearchParams(nextParams, { replace: true });
 
     setIsVerifying(true);
-    const verifier = stripeSessionId
-      ? supabase.functions.invoke('stripe-checkout', { body: { action: 'verify', sessionId: stripeSessionId } })
-      : supabase.functions.invoke('paystack-verify', { body: { reference } });
+    const verifier = supabase.functions.invoke('paystack-verify', { body: { reference } });
 
     verifier.then(({ data, error }) => {
       if (error || data?.error) {
