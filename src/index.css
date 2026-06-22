@@ -415,6 +415,19 @@
     .chat-canvas-bg::after,
     .chat-canvas-bg > .chat-canvas-orb { animation: none; }
   }
+  /* Performance: kill expensive animated blurred orbs on phones — they pin the GPU
+     and heat the device. Keep a static, much cheaper backdrop instead. */
+  @media (max-width: 768px) {
+    .chat-canvas-bg::before,
+    .chat-canvas-bg::after,
+    .chat-canvas-bg > .chat-canvas-orb {
+      animation: none !important;
+      filter: blur(60px);
+      opacity: 0.08 !important;
+      will-change: auto;
+    }
+    .chat-canvas-bg > .chat-canvas-grid { display: none; }
+  }
 }
 
 /* Subtle mesh gradient background */
@@ -461,6 +474,20 @@
   filter: blur(150px);
   opacity: 0.05;
   animation: aurora 30s ease-in-out infinite;
+}
+
+/* Mobile: disable aurora animation entirely; static blur is much cheaper. */
+@media (max-width: 768px) {
+  .aurora-bg::before,
+  .aurora-bg::after {
+    animation: none !important;
+    filter: blur(80px) !important;
+    will-change: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aurora-bg::before,
+  .aurora-bg::after { animation: none !important; }
 }
 
 :root:not(.dark) .aurora-bg::before {
