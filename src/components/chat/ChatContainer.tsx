@@ -1193,7 +1193,6 @@ export const ChatContainer = () => {
 
   return (
     <div className="flex h-[100dvh] overflow-hidden bg-background">
-      <div className="aurora-bg" />
       <AnimatePresence>
         {showVoiceCall && <VoiceCall ref={voiceCallRef} open={showVoiceCall} onClose={() => setShowVoiceCall(false)} />}
       </AnimatePresence>
