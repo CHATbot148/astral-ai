@@ -1332,6 +1332,7 @@ export const ChatContainer = () => {
                         fileUrls={msg.file_urls} userAvatar={profile?.avatar_url} userName={profile?.full_name}
                         onEdit={canEdit ? (content: string) => handleEditMessage(msg.id, content) : undefined} canEdit={canEdit}
                         onNotificationAction={handleNotificationAction}
+                        onApproveImageGeneration={() => handleSend('Yes, please generate the image now.')}
                         enableAutoListImages={enableAutoListImages} />
                     );
                   })}
