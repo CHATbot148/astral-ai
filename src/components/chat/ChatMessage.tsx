@@ -1320,8 +1320,8 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
         {/* Image generation approval CTA — appears when Astraz is waiting for go-ahead */}
         {!isUser && !isStreaming && content && onApproveImageGeneration && parsedContent.mediaItems.length === 0 && (() => {
           const text = content.toLowerCase();
-          const mentionsImage = /\b(image|picture|photo|illustration|render|visual|artwork|wallpaper)\b/.test(text);
-          const asksApproval = /(would you like me to (generate|create|make)|want me to (generate|create|make)|shall i (generate|create|make)|should i (generate|create|make)|ready (to generate|when you are|to go)|say the word|just (say|confirm|let me know)|let me know (when|if) you'?re ready|give me the (go-?ahead|green light)|confirm to (generate|proceed)|go ahead\??$)/i.test(content);
+          const mentionsImage = /\b(image|picture|photo|illustration|render|visual|artwork|wallpaper|scene|portrait|poster|artwork|art\b)\b/.test(text);
+          const asksApproval = /(would you like me to (generate|create|make|render|produce|draw)|want me to (generate|create|make|render|produce|draw)|shall i (generate|create|make|render|produce|draw)|should i (generate|create|make|render|proceed)|ready (to generate|when you are|to go|to proceed)|say the word|just (say|confirm|let me know)|let me know (when|if) you'?re ready|give me the (go-?ahead|green light|nod)|confirm to (generate|proceed)|approve.{0,20}(generation|to (generate|proceed))|here'?s (the|my) plan|here is (the|my) plan|here'?s what i'?ll (do|create|generate)|sound good\??|does (this|that) (sound|work)|ok(ay)? to (proceed|generate)|^go ahead\??$|tap.{0,20}approve|hit approve)/im.test(content);
           const alreadyGenerated = /\b(here'?s your (freshly )?generated|here is your generated|i'?ve (just )?generated|generation request|should see it pop up|momentarily)\b/i.test(text);
           if (!mentionsImage || !asksApproval || alreadyGenerated) return null;
           if (imageApprovalActed) {
