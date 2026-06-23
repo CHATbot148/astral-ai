@@ -268,6 +268,19 @@ export const ChatContainer = () => {
 
   useEffect(() => { if (user) fetchProfile(); }, [user]);
 
+  // Watchdog: when an assistant message arrives carrying a file (image/video),
+  // clear any lingering "generating" UI state. The server inserts the message
+  // via realtime, so the HTTP roundtrip occasionally outlives the actual result.
+  useEffect(() => {
+    if (!isGeneratingImage && !isGeneratingVideo) return;
+    const last = messages[messages.length - 1];
+    if (last && last.role === 'assistant' && last.file_urls && last.file_urls.length > 0) {
+      setIsGeneratingImage(false);
+      setIsGeneratingVideo(false);
+      setTypingLabel(undefined);
+    }
+  }, [messages, isGeneratingImage, isGeneratingVideo]);
+
   const fetchProfile = async () => {
     if (!user) return;
     const { data } = await supabase.from('profiles').select('full_name, avatar_url').eq('user_id', user.id).single();
