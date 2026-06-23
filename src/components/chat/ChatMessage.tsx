@@ -540,7 +540,7 @@ const FileImageWithLoader = ({ url, index, isUser, onPreview, onDownload }: { ur
   );
 };
 
-export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUrls, userAvatar, userName, onEdit, canEdit = true, onNotificationAction, enableAutoListImages = false }: ChatMessageProps) => {
+export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUrls, userAvatar, userName, onEdit, canEdit = true, onNotificationAction, onApproveImageGeneration, enableAutoListImages = false }: ChatMessageProps) => {
   const [copied, setCopied] = useState(false);
   const [reaction, setReaction] = useState<Reaction>(null);
   const [showReactions, setShowReactions] = useState(false);
