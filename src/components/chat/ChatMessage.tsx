@@ -551,6 +551,7 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
   const [previewDoc, setPreviewDoc] = useState<{ url: string; name: string; mime?: string } | null>(null);
   const [failedInlineImages, setFailedInlineImages] = useState<Set<string>>(new Set());
   const [notificationActed, setNotificationActed] = useState(false);
+  const [imageApprovalActed, setImageApprovalActed] = useState(false);
   const [autoListImagesByKey, setAutoListImagesByKey] = useState<Record<string, InlineListImage[]>>({});
   const [autoListImagesLoading, setAutoListImagesLoading] = useState(false);
   const { toast } = useToast();
