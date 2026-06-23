@@ -1317,8 +1317,40 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
         })()}
 
 
+        {/* Image generation approval CTA — appears when Astraz is waiting for go-ahead */}
+        {!isUser && !isStreaming && content && onApproveImageGeneration && parsedContent.mediaItems.length === 0 && (() => {
+          const text = content.toLowerCase();
+          const mentionsImage = /\b(image|picture|photo|illustration|render|visual|artwork|wallpaper)\b/.test(text);
+          const asksApproval = /(would you like me to (generate|create|make)|want me to (generate|create|make)|shall i (generate|create|make)|should i (generate|create|make)|ready (to generate|when you are|to go)|say the word|just (say|confirm|let me know)|let me know (when|if) you'?re ready|give me the (go-?ahead|green light)|confirm to (generate|proceed)|go ahead\??$)/i.test(content);
+          const alreadyGenerated = /\b(here'?s your (freshly )?generated|here is your generated|i'?ve (just )?generated|generation request|should see it pop up|momentarily)\b/i.test(text);
+          if (!mentionsImage || !asksApproval || alreadyGenerated) return null;
+          if (imageApprovalActed) {
+            return (
+              <p className="mt-2 text-xs text-muted-foreground">✅ Generating now…</p>
+            );
+          }
+          return (
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-3"
+            >
+              <Button
+                size="sm"
+                variant="xai"
+                onClick={() => { setImageApprovalActed(true); onApproveImageGeneration(); }}
+                className="rounded-full px-4 h-9 gap-2 shadow-lg shadow-xai-purple/30"
+              >
+                <Sparkles className="h-4 w-4" />
+                Approve image generation
+              </Button>
+            </motion.div>
+          );
+        })()}
+
         {/* Audio Player */}
         <AnimatePresence>
+
           {showAudioPlayer && !isUser && !isStreaming && content && (
             <AudioPlayer text={content} onClose={() => setShowAudioPlayer(false)} />
           )}
