@@ -31,6 +31,7 @@ interface ChatMessageProps {
   onEdit?: (content: string) => void;
   canEdit?: boolean;
   onNotificationAction?: (action: 'accept' | 'cancel', data: any) => void;
+  onApproveImageGeneration?: () => void;
   enableAutoListImages?: boolean;
 }
 
