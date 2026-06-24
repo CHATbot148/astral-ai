@@ -124,6 +124,12 @@ export const VoiceCall = forwardRef<VoiceCallHandle, VoiceCallProps>(({ open, on
       setActiveStatus('error');
       activeStatusRef.current = 'error';
       releaseWakeLock();
+    } else if (status === 'idle' && startedRef.current && activeStatusRef.current === 'connected') {
+      startedRef.current = false;
+      setLocalError('Voice call connection dropped. Restart the call to reconnect.');
+      setActiveStatus('error');
+      activeStatusRef.current = 'error';
+      releaseWakeLock();
     }
   }, [status]);
 

@@ -413,7 +413,7 @@ serve(async (req) => {
     if (!shouldGenerateImage && !shouldGenerateVideo) {
       const lastAssistant = [...messages].reverse().find((m: { role: string }) => m.role === "assistant");
       const lastAssistantText: string = (lastAssistant?.content || "").toString();
-      const assistantAskedToGenerate = /\b(shall i (?:go ahead|generate|create)|do you want me to (?:generate|create)|want me to (?:generate|create)|ready to generate|i(?:'| a)?ll generate|generate (?:this|that|it)\??|create (?:this|that|it)\??)/i
+      const assistantAskedToGenerate = /\b(shall\s+i\s+(?:go\s+ahead\s+and\s+)?(?:generate|create|make|render)|do\s+you\s+want\s+me\s+to\s+(?:generate|create|make|render)|want\s+me\s+to\s+(?:generate|create|make|render)|ready\??\s*(?:say|tap|hit|approve|confirm|go ahead|generate it)|say\s+[“"']?(?:go ahead|yes|generate it|create it|make it)[”"']?|only\s+(?:create|generate)\s+it\s+after\s+you\s+say|i(?:'| a)?ll\s+(?:generate|create|make|render)|generate\s+(?:this|that|it)\??|create\s+(?:this|that|it)\??|here'?s\s+(?:the|my)\s+plan)/i
         .test(lastAssistantText) || /generate an image|generate a video|create an image|create a video/i.test(lastAssistantText);
       const userApproved = /^\s*(?:yes|yep|yeah|yup|sure|ok(?:ay)?|alright|please do|do it|go ahead|go on|generate it|create it|make it|start|proceed|sounds good|that works|perfect|👍|✅)\b[.! ]*/i
         .test(lastContent);
@@ -839,7 +839,7 @@ IMPORTANT RESPONSE GUIDELINES:
 
     // When generation intent detected, let the AI handle conversationally (ask for details/permission)
     if (shouldGenerateImage) {
-      systemContent += `\n\n[GENERATION CONTEXT] The user wants to generate an image. Detected prompt: "${imagePrompt}". Follow the MEDIA GENERATION HANDLING instructions above. If the prompt is clear and detailed, describe what you'll create and ask for permission. If vague, ask clarifying questions first. Do NOT output [GENERATE_IMAGE:...] until the user explicitly approves.`;
+      systemContent += `\n\n[GENERATION CONTEXT] The user wants to generate an image. Detected prompt: "${imagePrompt}". Follow the MEDIA GENERATION HANDLING instructions above. If the prompt is clear and detailed, describe what you'll create and ask for permission. If vague, ask clarifying questions first. Do NOT output [GENERATE_IMAGE:...] until the user explicitly approves. Never tell the user there are no buttons; the app may show an approval button below your message.`;
     }
 
     if (shouldGenerateVideo) {
@@ -1130,55 +1130,41 @@ IMPORTANT RESPONSE GUIDELINES:
         .update({ pro_messages_used: used + 1, pro_reset_at: resetAt?.toISOString() ?? null })
         .eq("user_id", userId);
 
-      // Use Google AI Studio (user's GEMINI_API_KEY) directly via OpenAI-compatible endpoint
-      const GEMINI_KEY_PRO = Deno.env.get("GEMINI_API_KEY");
-      if (!GEMINI_KEY_PRO) {
+      if (!LOVABLE_API_KEY) {
         return new Response(JSON.stringify({
-          error: "Astraz Pro is not configured (missing Google AI Studio key).",
-          code: "gemini_not_configured",
+          error: "Astraz Pro is not configured.",
+          code: "pro_not_configured",
         }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
-      const geminiRes = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${GEMINI_KEY_PRO}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "gemini-2.5-pro",
-          messages: [{ role: "system", content: systemContent }, ...formattedMessages],
-          stream: true,
-          max_tokens: 8192,
-        }),
-      });
-      if (!geminiRes.ok) {
-        const t = await geminiRes.text();
-        console.error("Astraz Pro (Google AI Studio) error:", geminiRes.status, t);
-        // Extract real error message from Google
-        let detail = "";
-        try {
-          const parsed = JSON.parse(t);
-          detail = parsed?.error?.message || parsed?.message || "";
-        } catch {
-          detail = t.slice(0, 300);
+
+      const proModels = ["google/gemini-3.1-pro-preview", "google/gemini-2.5-pro", "openai/gpt-5-mini"];
+      let lastProError = "";
+      for (const proModel of proModels) {
+        const proRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: proModel,
+            messages: [{ role: "system", content: systemContent }, ...formattedMessages],
+            stream: true,
+            max_tokens: 8192,
+          }),
+        });
+
+        if (proRes.ok && proRes.body) {
+          const finalBody = rawVideoCards ? appendToStream(proRes.body, rawVideoCards) : proRes.body;
+          return new Response(finalBody, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
         }
-        if (geminiRes.status === 429) {
-          return new Response(JSON.stringify({
-            error: `Astraz Pro is being rate-limited by Google. ${detail || "Try again in a few seconds or switch to standard Astraz."}`,
-            code: "ai_rate_limited",
-          }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        }
-        if (geminiRes.status === 400 || geminiRes.status === 401 || geminiRes.status === 403) {
-          return new Response(JSON.stringify({
-            error: `Astraz Pro: ${detail || "API key rejected by Google."}`,
-            code: "gemini_auth_error",
-          }), { status: geminiRes.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        }
-        return new Response(JSON.stringify({
-          error: `Astraz Pro request failed (${geminiRes.status}): ${detail}`,
-          code: "gemini_error",
-        }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      } else {
-        const finalBody = rawVideoCards ? appendToStream(geminiRes.body!, rawVideoCards) : geminiRes.body!;
-        return new Response(finalBody, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
+
+        lastProError = await proRes.text().catch(() => `HTTP ${proRes.status}`);
+        console.error("Astraz Pro gateway error:", proModel, proRes.status, lastProError);
       }
+
+      return new Response(JSON.stringify({
+        error: "Astraz Pro is temporarily unavailable. Switch to standard Astraz and try again in a moment.",
+        code: "pro_gateway_error",
+        detail: lastProError.slice(0, 240),
+      }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     if (!MISTRAL_API_KEY) {

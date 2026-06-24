@@ -29,7 +29,7 @@ const IMAGE_MODELS: Record<
   string,
   { provider: "lovable" | "leonardo"; lovableModel?: string; leonardoId?: string }
 > = {
-  nano_banana_2: { provider: "lovable", lovableModel: "google/gemini-2.5-flash-image" },
+  nano_banana_2: { provider: "lovable", lovableModel: "google/gemini-3.1-flash-image" },
   seedream_4_5: { provider: "leonardo", leonardoId: "b24e16ff-06e3-43eb-8d33-4c419f36e1b7" },
   lucid_origin: { provider: "leonardo", leonardoId: "5c232a9e-9061-4777-980a-ddc8e65647c6" },
   flux_2_pro: { provider: "leonardo", leonardoId: "aa77f04e-3eec-4034-9c07-d0f619684628" },
@@ -401,13 +401,10 @@ serve(async (req) => {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
     const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const LEONARDO_API_KEY = Deno.env.get("LEONARDO_API_KEY");
-    const STABILITY_API_KEY = Deno.env.get("STABILITY_API_KEY");
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) throw new Error("Backend is not configured");
-    if (!LEONARDO_API_KEY && !STABILITY_API_KEY && !LOVABLE_API_KEY && !GEMINI_API_KEY) {
+    if (!LOVABLE_API_KEY) {
       throw new Error("Image generation API key not configured");
     }
 
@@ -494,97 +491,22 @@ serve(async (req) => {
     let imgBytes: Uint8Array | null = null;
     let imgMime = "image/png";
 
-    // Handle image-to-image reference via Leonardo init-image
-    let initImageId: string | undefined;
-    if (referenceImageUrl && LEONARDO_API_KEY) {
-      try {
-        // Step 1: Get presigned upload URL
-        const initRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/init-image", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${LEONARDO_API_KEY}`,
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify({ extension: "jpg" }),
-        });
-        if (initRes.ok) {
-          const initData = await initRes.json();
-          const uploadUrl = initData?.uploadInitImage?.url;
-          const initId = initData?.uploadInitImage?.id;
-          if (uploadUrl && initId) {
-            // Step 2: Upload the reference image bytes
-            let refBytes: Uint8Array;
-            if (referenceImageUrl.startsWith("data:")) {
-              const parsed = parseDataUrl(referenceImageUrl);
-              refBytes = parsed.bytes;
-            } else {
-              const resolvedUrl = referenceImageUrl.startsWith("storage:")
-                ? await resolveStorageRefToSignedUrl(referenceImageUrl)
-                : referenceImageUrl;
-              const refRes = await fetch(resolvedUrl);
-              refBytes = new Uint8Array(await refRes.arrayBuffer());
-            }
-            const uploadRes = await fetch(uploadUrl, {
-              method: "PUT",
-              headers: { "Content-Type": "image/jpeg" },
-              body: refBytes,
-            });
-            if (uploadRes.ok) {
-              initImageId = initId;
-              console.log("Reference image uploaded, initImageId:", initImageId);
-            }
-          }
-        }
-      } catch (e) {
-        console.error("Init image upload failed (non-blocking):", e);
-      }
-    }
-
-    // ===== PRIMARY for reference images: Gemini Studio (reliable multimodal) =====
+    // Image generation is locked to Nano Banana 2 only while other media credits are paused.
     if (referenceImageUrl) {
-      console.log(`[PRIMARY] Google AI Studio (Gemini) for reference-image edit: "${prompt}"`);
+      console.log(`[PRIMARY] Nano Banana 2 reference generation: "${enhancedPrompt}"`);
       try {
-        const edited = await generateWithGeminiStudioImage(prompt, referenceImageUrl);
-        if (edited) {
-          imgBytes = edited.bytes;
-          imgMime = edited.mime;
-        }
-      } catch (e) {
-        console.error("Gemini Studio primary (reference) failed:", e);
-      }
-
-      // Fallback: try Lovable AI with multimodal reference
-      if (!imgBytes && selectedModel.provider === "lovable" && selectedModel.lovableModel) {
-        console.log(`[FALLBACK] Lovable AI multimodal for reference: "${enhancedPrompt}"`);
-        try {
-          const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel, referenceImageUrl);
-          if (generated) {
-            imgBytes = generated.bytes;
-            imgMime = generated.mime;
-          }
-        } catch (e) {
-          console.error("Lovable AI reference fallback failed:", e);
-        }
-      }
-    }
-
-    // ===== PRIMARY for non-reference: Google AI Studio Gemini (when nano_banana_2 selected), else Lovable AI =====
-    if (!imgBytes && !referenceImageUrl && selectedModelKey === "nano_banana_2") {
-      console.log(`[PRIMARY] Google AI Studio (gemini-2.5-flash-image): "${enhancedPrompt}"`);
-      try {
-        const generated = await generateWithGeminiStudioTextToImage(enhancedPrompt);
+        const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel!, referenceImageUrl);
         if (generated) {
           imgBytes = generated.bytes;
           imgMime = generated.mime;
         }
       } catch (e) {
-        console.error("Gemini Studio text-to-image failed:", e);
+        console.error("Nano Banana 2 reference generation failed:", e);
       }
     }
 
     if (!imgBytes && !referenceImageUrl && selectedModel.provider === "lovable" && selectedModel.lovableModel) {
-      console.log(`[FALLBACK] Lovable AI (${selectedModel.lovableModel}): "${enhancedPrompt}"`);
+      console.log(`[PRIMARY] Nano Banana 2 (${selectedModel.lovableModel}): "${enhancedPrompt}"`);
       try {
         const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel);
         if (generated) {
@@ -596,111 +518,7 @@ serve(async (req) => {
       }
     }
 
-    // ===== FALLBACK: Leonardo (supports init image) =====
-    if (!imgBytes && LEONARDO_API_KEY) {
-      const leonardoModelId = selectedModel.leonardoId || IMAGE_MODELS.phoenix.leonardoId!;
-      console.log(`[FALLBACK] Leonardo AI (model: ${leonardoModelId}): "${enhancedPrompt}"${referenceImageUrl ? " [with reference]" : ""}`);
-      try {
-        const createRes = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${LEONARDO_API_KEY}`,
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify({
-            prompt: enhancedPrompt,
-            modelId: leonardoModelId,
-            width: dims.width,
-            height: dims.height,
-            num_images: 1,
-            alchemy: true,
-            photoReal: style === "photoreal",
-            presetStyle: style === "cinematic" ? "CINEMATIC" : style === "anime" ? "ANIME" : "NONE",
-            ...(initImageId ? { init_image_id: initImageId, isInitImage: true } : {}),
-          }),
-        });
-
-        if (!createRes.ok) {
-          const errText = await createRes.text();
-          console.error("Leonardo create error:", createRes.status, errText);
-          throw new Error(`Leonardo create failed: ${createRes.status}`);
-        }
-
-        const createData = await createRes.json();
-        const generationId = createData.sdGenerationJob?.generationId;
-        if (!generationId) throw new Error("No generation ID from Leonardo");
-
-        for (let i = 0; i < 30; i++) {
-          await new Promise((r) => setTimeout(r, 3000));
-          const pollRes = await fetch(`https://cloud.leonardo.ai/api/rest/v1/generations/${generationId}`, {
-            headers: { Authorization: `Bearer ${LEONARDO_API_KEY}`, Accept: "application/json" },
-          });
-          if (!pollRes.ok) continue;
-          const pollData = await pollRes.json();
-          const gen = pollData.generations_by_pk;
-          if (gen?.status === "COMPLETE" && gen.generated_images?.[0]?.url) {
-            const dlRes = await fetch(gen.generated_images[0].url);
-            if (dlRes.ok) {
-              imgBytes = new Uint8Array(await dlRes.arrayBuffer());
-              imgMime = "image/png";
-            }
-            break;
-          }
-          if (gen?.status === "FAILED") throw new Error("Leonardo generation failed");
-        }
-      } catch (e) {
-        console.error("Leonardo AI failed:", e);
-      }
-    }
-
-    // (Gemini reference fallback already handled above as primary)
-
-    // ===== FALLBACK 1: Stability AI =====
-    if (!imgBytes && STABILITY_API_KEY) {
-      console.log(`[FALLBACK] Stability AI: "${enhancedPrompt}"`);
-      try {
-        const formData = new FormData();
-        formData.append("prompt", enhancedPrompt);
-        formData.append("output_format", "png");
-
-        const response = await fetch("https://api.stability.ai/v2beta/stable-image/generate/sd3", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${STABILITY_API_KEY}`,
-            Accept: "image/*",
-          },
-          body: formData,
-        });
-
-        if (response.ok) {
-          imgBytes = new Uint8Array(await response.arrayBuffer());
-          imgMime = "image/png";
-        } else {
-          const errText = await response.text();
-          console.error("Stability AI error:", response.status, errText);
-        }
-      } catch (e) {
-        console.error("Stability AI failed:", e);
-      }
-    }
-
-    // ===== FALLBACK 2: Pollinations.ai (free, no key) =====
-    if (!imgBytes) {
-      console.log("[FALLBACK] Pollinations.ai");
-      try {
-        const polUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(enhancedPrompt)}?width=${dims.width}&height=${dims.height}&nologo=true`;
-        const polRes = await fetch(polUrl);
-        if (polRes.ok) {
-          imgBytes = new Uint8Array(await polRes.arrayBuffer());
-          imgMime = "image/jpeg";
-        }
-      } catch (e) {
-        console.error("Pollinations failed:", e);
-      }
-    }
-
-    if (!imgBytes) throw new Error("All image generation providers failed. Please try again.");
+    if (!imgBytes) throw new Error("Nano Banana 2 image generation failed. Please try again.");
 
     const ref = await uploadAndSave(admin, userId, prompt, style, aspectRatio, imgBytes, imgMime);
 

@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PanelLeft, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation';
+import { Conversation, ConversationContent } from '@/components/ai-elements/conversation';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { WelcomeScreen, WELCOME_SHORTCUTS } from './WelcomeScreen';
@@ -112,6 +112,7 @@ export const ChatContainer = () => {
   const abortControllerRef = useRef<AbortController | null>(null);
   const voiceCallRef = useRef<VoiceCallHandle | null>(null);
   const inputDockRef = useRef<HTMLDivElement | null>(null);
+  const messagesRef = useRef<any[]>([]);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -124,6 +125,10 @@ export const ChatContainer = () => {
     startNewChat: startNewChatDb,
     setMessages,
   } = useConversations();
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   // Temporary chat mode — messages stay local, never persisted.
   const [tempChatMode, setTempChatMode] = useState(false);
@@ -201,7 +206,7 @@ export const ChatContainer = () => {
       const nodes = root.querySelectorAll<HTMLElement>('*');
       for (const node of Array.from(nodes)) {
         const cs = getComputedStyle(node);
-        if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && node.scrollHeight > node.clientHeight + 4) return node;
+        if (cs.overflowY === 'auto' || cs.overflowY === 'scroll') return node;
       }
       return null;
     };
@@ -212,8 +217,11 @@ export const ChatContainer = () => {
       const distance = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
       setShowScrollToBottom(distance > 200);
     };
-    updateAffordance();
+    requestAnimationFrame(updateAffordance);
     viewport.addEventListener('scroll', updateAffordance, { passive: true });
+    window.addEventListener('resize', updateAffordance);
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateAffordance) : null;
+    observer?.observe(viewport);
     return () => viewport.removeEventListener('scroll', updateAffordance);
   }, [messages, streamingContent]);
 
@@ -467,6 +475,33 @@ export const ChatContainer = () => {
     return data?.image ?? null;
   };
 
+  const isImageTransportError = (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error || '');
+    return /failed to send a request to the edge function|functionsfetcherror|networkerror|load failed|fetch failed/i.test(message);
+  };
+
+  const conversationHasGeneratedMedia = async (conversationId: string, sinceMs: number) => {
+    const localHit = messagesRef.current.some((m) => {
+      const createdAt = new Date(m.created_at || 0).getTime();
+      return m.conversation_id === conversationId && m.role === 'assistant' && createdAt >= sinceMs - 5000 && Array.isArray(m.file_urls) && m.file_urls.length > 0;
+    });
+    if (localHit) return true;
+
+    try {
+      const { data } = await supabase
+        .from('messages')
+        .select('id, file_urls, created_at')
+        .eq('conversation_id', conversationId)
+        .eq('role', 'assistant')
+        .gte('created_at', new Date(sinceMs - 5000).toISOString())
+        .order('created_at', { ascending: false })
+        .limit(5);
+      return (data || []).some((m: any) => Array.isArray(m.file_urls) && m.file_urls.length > 0);
+    } catch {
+      return false;
+    }
+  };
+
   const handleImageGenerate = async (opts: ImageGenOptions) => {
     let convId = currentConversation?.id;
     if (!convId) {
@@ -482,6 +517,8 @@ export const ChatContainer = () => {
     
     // Run generation in background (don't await)
     (async () => {
+      const generationStartedAt = Date.now();
+      let keepPendingForRealtime = false;
       setIsGeneratingImage(true);
       setTypingLabel('Generating image…');
       try {
@@ -494,10 +531,22 @@ export const ChatContainer = () => {
           await addMessage(capturedConvId, 'assistant', `I couldn't generate that image. Please try again.`);
         }
       } catch (error) {
-        await addMessage(capturedConvId, 'assistant', `I couldn't generate that image. ${error instanceof Error ? error.message : 'Please try again.'}`);
+        keepPendingForRealtime = isImageTransportError(error);
+        if (!keepPendingForRealtime && !(await conversationHasGeneratedMedia(capturedConvId, generationStartedAt))) {
+          await addMessage(capturedConvId, 'assistant', `I couldn't generate that image. ${error instanceof Error ? error.message : 'Please try again.'}`);
+        }
       } finally {
-        setIsGeneratingImage(false);
-        setTypingLabel(undefined);
+        if (keepPendingForRealtime) {
+          window.setTimeout(async () => {
+            if (!(await conversationHasGeneratedMedia(capturedConvId, generationStartedAt))) {
+              setIsGeneratingImage(false);
+              setTypingLabel(undefined);
+            }
+          }, 8 * 60 * 1000);
+        } else {
+          setIsGeneratingImage(false);
+          setTypingLabel(undefined);
+        }
       }
     })();
   };
@@ -1044,6 +1093,8 @@ export const ChatContainer = () => {
           setTypingMode('typing');
 
           (async () => {
+            const generationStartedAt = Date.now();
+            let keepPendingForRealtime = false;
             try {
               // Use first attached media as reference (image first, then video)
               const referenceMediaUrl = imageUrls[0] ?? videoFileUrls[0];
@@ -1060,10 +1111,22 @@ export const ChatContainer = () => {
                 await addMessage(capturedConvId, 'assistant', `I couldn't generate that image. Please try again.`);
               }
             } catch (error) {
-              await addMessage(capturedConvId, 'assistant', `Image generation failed. ${error instanceof Error ? error.message : 'Please try again.'}`);
+              keepPendingForRealtime = isImageTransportError(error);
+              if (!keepPendingForRealtime && !(await conversationHasGeneratedMedia(capturedConvId, generationStartedAt))) {
+                await addMessage(capturedConvId, 'assistant', `Image generation failed. ${error instanceof Error ? error.message : 'Please try again.'}`);
+              }
             } finally {
-              setIsGeneratingImage(false);
-              setTypingLabel(undefined);
+              if (keepPendingForRealtime) {
+                window.setTimeout(async () => {
+                  if (!(await conversationHasGeneratedMedia(capturedConvId, generationStartedAt))) {
+                    setIsGeneratingImage(false);
+                    setTypingLabel(undefined);
+                  }
+                }, 8 * 60 * 1000);
+              } else {
+                setIsGeneratingImage(false);
+                setTypingLabel(undefined);
+              }
             }
           })();
         } else if (finalDirective?.type === 'video') {
@@ -1191,9 +1254,10 @@ export const ChatContainer = () => {
   // Smaller base offset on mobile so the composer sits closer to the bottom edge
   // (avoids the "floating" / elevated look). Desktop keeps a slightly larger pad.
   const isMobileViewport = typeof window !== 'undefined' && window.innerWidth < 768;
-  const composerBaseOffset = keyboardInset > 0 ? 4 : (isMobileViewport ? 10 : 28);
+  const composerBaseOffset = keyboardInset > 0 ? 8 : (isMobileViewport ? 16 : 28);
   const composerOffset = keyboardInset + composerBaseOffset;
   const scrollBottomPadding = inputDockHeight + composerOffset + (keyboardInset > 0 ? 6 : 14);
+  const messageStackMinHeight = `calc(100dvh - ${scrollBottomPadding + 72}px)`;
 
   const handleAnalyzeFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const list = e.target.files;
@@ -1324,7 +1388,7 @@ export const ChatContainer = () => {
                   <WelcomeScreen onAnalyzeDocs={() => setShowAnalyzePopup(true)} onVisualize={() => setShowVisualizePopup(true)} profileName={profile?.full_name} />
                 </motion.div>
               ) : (
-                <motion.div key="messages" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto pt-[calc(env(safe-area-inset-top,0px)+2.75rem)] lg:pt-6 min-w-0 overflow-x-hidden">
+                <motion.div key="messages" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto pt-[calc(env(safe-area-inset-top,0px)+2.75rem)] lg:pt-6 min-w-0 overflow-x-hidden flex flex-col justify-end" style={{ minHeight: messageStackMinHeight }}>
                   {displayMessages.map((msg, msgIndex) => {
                   const userMessages = displayMessages.filter(m => m.role === 'user');
                   const userMsgIndex = userMessages.findIndex(m => m.id === msg.id);
@@ -1366,14 +1430,13 @@ export const ChatContainer = () => {
               )}
             </AnimatePresence>
           </ConversationContent>
-          <ConversationScrollButton />
         </Conversation>
         </div>
 
         <AnimatePresence>
           {showScrollToBottom && (
-            <motion.div initial={{ opacity: 0, scale: 0.9, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 10 }} className="fixed right-4 z-30" style={{ bottom: `${Math.max(88, scrollBottomPadding - 12)}px` }}>
-              <Button variant="secondary" size="icon" className="rounded-full shadow-lg"
+            <motion.div initial={{ opacity: 0, scale: 0.9, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 10 }} className="fixed right-4 z-40" style={{ bottom: `calc(env(safe-area-inset-bottom, 0px) + ${Math.max(82, inputDockHeight + composerBaseOffset + 14)}px)` }}>
+              <Button variant="secondary" size="icon" className="rounded-full shadow-xl border border-border/70 bg-card/90 backdrop-blur-xl"
                 onClick={() => { const viewport = viewportRef.current; if (viewport) viewport.scrollTop = viewport.scrollHeight; }}
                 aria-label="Scroll to bottom">
                 <ArrowDown className="h-5 w-5" />
