@@ -483,9 +483,8 @@ serve(async (req) => {
     const enhancedPrompt = stylePrompt ? `${prompt}, ${stylePrompt}` : prompt;
     const dims = ASPECT_RATIO_MAP[aspectRatio] || ASPECT_RATIO_MAP["1:1"];
 
-    // Resolve model: allow Pro/Ultimate to pick, otherwise use Nano Banana 2 by default
-    const canSelectModel = tier === "pro" || tier === "ultimate" || userEmail === CEO_EMAIL;
-    const selectedModelKey = canSelectModel && modelId && IMAGE_MODELS[modelId] ? modelId : DEFAULT_MODEL;
+    // Image generation is currently locked to Nano Banana 2 only.
+    const selectedModelKey = DEFAULT_MODEL;
     const selectedModel = IMAGE_MODELS[selectedModelKey] || IMAGE_MODELS[DEFAULT_MODEL];
 
     let imgBytes: Uint8Array | null = null;
