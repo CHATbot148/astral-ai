@@ -39,6 +39,7 @@ export function useGeminiLive() {
   const connectAbortRef = useRef<AbortController | null>(null);
   const sessionReadyRef = useRef(false);
   const connectedOnceRef = useRef(false);
+  const healthIntervalRef = useRef<number | null>(null);
 
   const requestMicrophoneAccess = useCallback(async () => {
     if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
@@ -70,6 +71,10 @@ export function useGeminiLive() {
   }, []);
 
   const cleanup = useCallback(() => {
+    if (healthIntervalRef.current) {
+      window.clearInterval(healthIntervalRef.current);
+      healthIntervalRef.current = null;
+    }
     if (wsRef.current) {
       wsRef.current.onclose = null;
       wsRef.current.onerror = null;
@@ -173,6 +178,23 @@ export function useGeminiLive() {
       outputGainRef.current = outputGain;
       modelAnalyser.connect(outputGain);
       outputGain.connect(audioCtx.destination);
+
+      if (healthIntervalRef.current) window.clearInterval(healthIntervalRef.current);
+      healthIntervalRef.current = window.setInterval(() => {
+        if (!sessionReadyRef.current) return;
+        if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+        const liveTrack = streamRef.current?.getAudioTracks()?.[0];
+        if (!liveTrack || liveTrack.readyState === 'ended') {
+          setError('Microphone stopped. Restart the call to reconnect.');
+          setStatus('error');
+          try { wsRef.current?.close(); } catch {}
+          return;
+        }
+        if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED || wsRef.current.readyState === WebSocket.CLOSING) {
+          setError('Voice call connection dropped. Restart the call to reconnect.');
+          setStatus('error');
+        }
+      }, 2500);
     } catch (err: any) {
       setError(`Microphone access error: ${err.message}`);
       setStatus('error');
@@ -264,6 +286,10 @@ export function useGeminiLive() {
 
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
+        if (msg.type === 'ping') {
+          try { ws.send(JSON.stringify({ type: 'pong' })); } catch {}
+          return;
+        }
         if (msg.type === 'connected') {
           window.clearTimeout(connectTimeout);
           sessionReadyRef.current = true;
@@ -319,7 +345,8 @@ export function useGeminiLive() {
           setError((prev) => prev || 'Voice call disconnected before it became active.');
           setStatus('error');
         } else {
-          setStatus('idle');
+          setError('Voice call connection dropped. Restart the call to reconnect.');
+          setStatus('error');
         }
         cleanup();
       };
