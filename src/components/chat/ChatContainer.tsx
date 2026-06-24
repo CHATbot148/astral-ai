@@ -222,7 +222,11 @@ export const ChatContainer = () => {
     window.addEventListener('resize', updateAffordance);
     const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateAffordance) : null;
     observer?.observe(viewport);
-    return () => viewport.removeEventListener('scroll', updateAffordance);
+    return () => {
+      viewport.removeEventListener('scroll', updateAffordance);
+      window.removeEventListener('resize', updateAffordance);
+      observer?.disconnect();
+    };
   }, [messages, streamingContent]);
 
   useEffect(() => {
