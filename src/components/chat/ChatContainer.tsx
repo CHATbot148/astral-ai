@@ -429,7 +429,7 @@ export const ChatContainer = () => {
     return error.message || fallback;
   };
 
-  const generateImageWithOptions = async (opts: ImageGenOptions): Promise<string | null> => {
+  const generateImageWithOptions = async (opts: ImageGenOptions, conversationIdOverride?: string): Promise<string | null> => {
     let referenceMediaUrl = opts.referenceMediaUrl ?? opts.referenceImageUrl;
 
     if (!referenceMediaUrl && opts.reference?.kind === 'image') {
@@ -461,7 +461,7 @@ export const ChatContainer = () => {
 
     // Image generation is locked to Nano Banana 2 (Replicate models disabled while
     // we recharge credits). Always call generate-image with the forced model id.
-    const conversationIdForGen = currentConversation?.id;
+    const conversationIdForGen = conversationIdOverride || currentConversation?.id;
     const { data, error } = await supabase.functions.invoke('generate-image', {
       body: {
         prompt: opts.prompt,
@@ -474,7 +474,7 @@ export const ChatContainer = () => {
         conversationId: conversationIdForGen,
       },
     });
-    if (error) throw error;
+    if (error) throw new Error(await extractFunctionErrorMessage(error, error.message || 'Image generation failed'));
     if (data?.error) throw new Error(data.error);
     return data?.image ?? null;
   };
@@ -516,7 +516,6 @@ export const ChatContainer = () => {
     await addMessage(convId, 'user', `Generate an image: ${opts.prompt}`);
     
     // Fire-and-forget: close dialog immediately, generate in background
-    toast({ title: '🎨 Generating image in background', description: "You'll be notified when it's ready." });
     const capturedConvId = convId;
     
     // Run generation in background (don't await)
@@ -526,11 +525,10 @@ export const ChatContainer = () => {
       setIsGeneratingImage(true);
       setTypingLabel('Generating image…');
       try {
-        const generatedImage = await generateImageWithOptions(opts);
+        const generatedImage = await generateImageWithOptions(opts, capturedConvId);
         if (generatedImage) {
           // Server inserts the assistant message itself (via realtime) when a
           // conversationId was passed, so we skip the client insert to avoid duplicates.
-          toast({ title: '✅ Image ready!', description: opts.prompt.slice(0, 60) });
         } else {
           await addMessage(capturedConvId, 'assistant', `I couldn't generate that image. Please try again.`);
         }
@@ -1108,7 +1106,7 @@ export const ChatContainer = () => {
                 aspectRatio: '1:1', 
                 quality: 'balanced',
                 referenceMediaUrl,
-              });
+              }, capturedConvId);
               if (generatedImage) {
                 // Server inserts the assistant message via realtime (see generate-image).
               } else {
@@ -1258,10 +1256,9 @@ export const ChatContainer = () => {
   // Smaller base offset on mobile so the composer sits closer to the bottom edge
   // (avoids the "floating" / elevated look). Desktop keeps a slightly larger pad.
   const isMobileViewport = typeof window !== 'undefined' && window.innerWidth < 768;
-  const composerBaseOffset = keyboardInset > 0 ? 8 : (isMobileViewport ? 16 : 28);
+  const composerBaseOffset = keyboardInset > 0 ? 12 : (isMobileViewport ? 18 : 28);
   const composerOffset = keyboardInset + composerBaseOffset;
   const scrollBottomPadding = inputDockHeight + composerOffset + (keyboardInset > 0 ? 6 : 14);
-  const messageStackMinHeight = `calc(100dvh - ${scrollBottomPadding + 72}px)`;
 
   const handleAnalyzeFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const list = e.target.files;
@@ -1392,7 +1389,7 @@ export const ChatContainer = () => {
                   <WelcomeScreen onAnalyzeDocs={() => setShowAnalyzePopup(true)} onVisualize={() => setShowVisualizePopup(true)} profileName={profile?.full_name} />
                 </motion.div>
               ) : (
-                <motion.div key="messages" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto pt-[calc(env(safe-area-inset-top,0px)+2.75rem)] lg:pt-6 min-w-0 overflow-x-hidden flex flex-col justify-end" style={{ minHeight: messageStackMinHeight }}>
+                <motion.div key="messages" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full max-w-4xl mx-auto pt-[calc(env(safe-area-inset-top,0px)+2.75rem)] lg:pt-6 min-w-0 overflow-x-hidden flex flex-col">
                   {displayMessages.map((msg, msgIndex) => {
                   const userMessages = displayMessages.filter(m => m.role === 'user');
                   const userMsgIndex = userMessages.findIndex(m => m.id === msg.id);
@@ -1491,7 +1488,7 @@ export const ChatContainer = () => {
               onSend={handleSend}
               isLoading={isLoading}
               disabled={!user}
-              onStop={(isLoading || isGeneratingImage || isGeneratingVideo) ? stopGeneration : undefined}
+              onStop={isLoading ? stopGeneration : undefined}
               editValue={editingMessageContent}
               onClearEdit={clearEditState}
               onStartCall={user ? handleStartVoiceCall : undefined}
