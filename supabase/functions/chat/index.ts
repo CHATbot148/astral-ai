@@ -207,6 +207,65 @@ function appendToStream(upstreamBody: ReadableStream<Uint8Array>, extraContent: 
   });
 }
 
+function oneShotTextToSse(text: string, extraContent = ""): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const payload = `${text || ""}${extraContent || ""}`;
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: payload } }] })}\n\n`));
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      controller.close();
+    },
+  });
+}
+
+function openAiMessagesToGeminiContents(messages: Array<{ role: string; content: any }>) {
+  return messages
+    .map((msg) => {
+      const text = typeof msg.content === "string"
+        ? msg.content
+        : Array.isArray(msg.content)
+          ? msg.content.filter((part: any) => part?.type === "text").map((part: any) => part.text).join("\n")
+          : "";
+      if (!text.trim()) return null;
+      return { role: msg.role === "assistant" ? "model" : "user", parts: [{ text }] };
+    })
+    .filter(Boolean);
+}
+
+async function callGeminiStudioProFallback(
+  apiKey: string,
+  systemContent: string,
+  formattedMessages: Array<{ role: string; content: any }>,
+): Promise<string | null> {
+  const studioModels = ["gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-2.5-pro", "gemini-2.5-flash"];
+  const contents = openAiMessagesToGeminiContents(formattedMessages);
+  for (const model of studioModels) {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: systemContent }] },
+        contents,
+        generationConfig: { maxOutputTokens: 8192, temperature: 0.7 },
+      }),
+    });
+
+    if (!res.ok) {
+      console.error("Astraz Pro Gemini Studio fallback error:", model, res.status, await res.text().catch(() => ""));
+      continue;
+    }
+
+    const data = await res.json();
+    const parts = data?.candidates?.[0]?.content?.parts;
+    const text = Array.isArray(parts)
+      ? parts.map((part: any) => part?.text || "").join("").trim()
+      : "";
+    if (text) return text;
+  }
+  return null;
+}
+
 // Detect if user is asking about something visual that benefits from inline images
 function needsVisualContext(text: string): { needed: boolean; query: string } {
   const lowerText = text.toLowerCase();
