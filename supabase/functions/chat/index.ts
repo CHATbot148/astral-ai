@@ -207,6 +207,65 @@ function appendToStream(upstreamBody: ReadableStream<Uint8Array>, extraContent: 
   });
 }
 
+function oneShotTextToSse(text: string, extraContent = ""): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const payload = `${text || ""}${extraContent || ""}`;
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: payload } }] })}\n\n`));
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      controller.close();
+    },
+  });
+}
+
+function openAiMessagesToGeminiContents(messages: Array<{ role: string; content: any }>) {
+  return messages
+    .map((msg) => {
+      const text = typeof msg.content === "string"
+        ? msg.content
+        : Array.isArray(msg.content)
+          ? msg.content.filter((part: any) => part?.type === "text").map((part: any) => part.text).join("\n")
+          : "";
+      if (!text.trim()) return null;
+      return { role: msg.role === "assistant" ? "model" : "user", parts: [{ text }] };
+    })
+    .filter(Boolean);
+}
+
+async function callGeminiStudioProFallback(
+  apiKey: string,
+  systemContent: string,
+  formattedMessages: Array<{ role: string; content: any }>,
+): Promise<string | null> {
+  const studioModels = ["gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-2.5-pro", "gemini-2.5-flash"];
+  const contents = openAiMessagesToGeminiContents(formattedMessages);
+  for (const model of studioModels) {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: systemContent }] },
+        contents,
+        generationConfig: { maxOutputTokens: 8192, temperature: 0.7 },
+      }),
+    });
+
+    if (!res.ok) {
+      console.error("Astraz Pro Gemini Studio fallback error:", model, res.status, await res.text().catch(() => ""));
+      continue;
+    }
+
+    const data = await res.json();
+    const parts = data?.candidates?.[0]?.content?.parts;
+    const text = Array.isArray(parts)
+      ? parts.map((part: any) => part?.text || "").join("").trim()
+      : "";
+    if (text) return text;
+  }
+  return null;
+}
+
 // Detect if user is asking about something visual that benefits from inline images
 function needsVisualContext(text: string): { needed: boolean; query: string } {
   const lowerText = text.toLowerCase();
@@ -1093,7 +1152,7 @@ IMPORTANT RESPONSE GUIDELINES:
       });
     }
 
-    // === ASTRAZ PRO (Gemini via user's Google AI Studio API key) ===
+    // === ASTRAZ PRO (best Gemini through Lovable AI, with Google AI Studio fallback) ===
     if (requestedModel === "astraz-pro" && userId && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
       const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
       const { data: sub } = await admin
@@ -1130,38 +1189,43 @@ IMPORTANT RESPONSE GUIDELINES:
         .update({ pro_messages_used: used + 1, pro_reset_at: resetAt?.toISOString() ?? null })
         .eq("user_id", userId);
 
-      if (!LOVABLE_API_KEY) {
-        return new Response(JSON.stringify({
-          error: "Astraz Pro is not configured.",
-          code: "pro_not_configured",
-        }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const proModels = ["google/gemini-3.1-pro-preview", "google/gemini-3.5-flash", "google/gemini-2.5-pro"];
+      let lastProError = "";
+      if (LOVABLE_API_KEY) {
+        for (const proModel of proModels) {
+          const proRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+            method: "POST",
+            headers: { "Lovable-API-Key": LOVABLE_API_KEY, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: proModel,
+              messages: [{ role: "system", content: systemContent }, ...formattedMessages],
+              stream: true,
+              max_tokens: 8192,
+            }),
+          });
+
+          if (proRes.ok && proRes.body) {
+            const finalBody = rawVideoCards ? appendToStream(proRes.body, rawVideoCards) : proRes.body;
+            return new Response(finalBody, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
+          }
+
+          lastProError = await proRes.text().catch(() => `HTTP ${proRes.status}`);
+          console.error("Astraz Pro gateway error:", proModel, proRes.status, lastProError);
+        }
       }
 
-      const proModels = ["google/gemini-3.1-pro-preview", "google/gemini-2.5-pro", "openai/gpt-5-mini"];
-      let lastProError = "";
-      for (const proModel of proModels) {
-        const proRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: proModel,
-            messages: [{ role: "system", content: systemContent }, ...formattedMessages],
-            stream: true,
-            max_tokens: 8192,
-          }),
-        });
-
-        if (proRes.ok && proRes.body) {
-          const finalBody = rawVideoCards ? appendToStream(proRes.body, rawVideoCards) : proRes.body;
-          return new Response(finalBody, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
+      const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+      if (GEMINI_API_KEY) {
+        const fallbackText = await callGeminiStudioProFallback(GEMINI_API_KEY, systemContent, formattedMessages);
+        if (fallbackText) {
+          return new Response(oneShotTextToSse(fallbackText, rawVideoCards), {
+            headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
+          });
         }
-
-        lastProError = await proRes.text().catch(() => `HTTP ${proRes.status}`);
-        console.error("Astraz Pro gateway error:", proModel, proRes.status, lastProError);
       }
 
       return new Response(JSON.stringify({
-        error: "Astraz Pro is temporarily unavailable. Switch to standard Astraz and try again in a moment.",
+        error: "Astraz Pro is temporarily unavailable. Try again in a moment.",
         code: "pro_gateway_error",
         detail: lastProError.slice(0, 240),
       }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
