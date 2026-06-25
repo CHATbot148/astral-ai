@@ -309,13 +309,18 @@ export function useGeminiLive() {
         }
         if (msg.type === 'connected') {
           window.clearTimeout(connectTimeout);
+          const audioCaptureAlreadyRunning = !!processorRef.current;
           reconnectAttemptRef.current = 0;
           lastServerMessageAtRef.current = Date.now();
           sessionReadyRef.current = true;
           connectedOnceRef.current = true;
           setStatus('connected');
-          startAudioCapture(config.stream);
-          playInitiatedSound();
+          if (!audioCaptureAlreadyRunning) {
+            startAudioCapture(config.stream);
+            playInitiatedSound();
+          } else if (audioCtxRef.current?.state === 'suspended') {
+            audioCtxRef.current.resume().catch(() => {});
+          }
           return;
         }
         if (msg.type === 'error') {
