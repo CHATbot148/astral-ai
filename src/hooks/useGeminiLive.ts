@@ -40,6 +40,10 @@ export function useGeminiLive() {
   const sessionReadyRef = useRef(false);
   const connectedOnceRef = useRef(false);
   const healthIntervalRef = useRef<number | null>(null);
+  const lastServerMessageAtRef = useRef(0);
+  const reconnectAttemptRef = useRef(0);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const lastConnectConfigRef = useRef<{ systemInstruction: string; voiceName: string; onTerminationTriggered?: () => void } | null>(null);
 
   const requestMicrophoneAccess = useCallback(async () => {
     if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
@@ -74,6 +78,10 @@ export function useGeminiLive() {
     if (healthIntervalRef.current) {
       window.clearInterval(healthIntervalRef.current);
       healthIntervalRef.current = null;
+    }
+    if (reconnectTimerRef.current) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
     }
     if (wsRef.current) {
       wsRef.current.onclose = null;
@@ -185,14 +193,17 @@ export function useGeminiLive() {
         if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
         const liveTrack = streamRef.current?.getAudioTracks()?.[0];
         if (!liveTrack || liveTrack.readyState === 'ended') {
-          setError('Microphone stopped. Restart the call to reconnect.');
-          setStatus('error');
-          try { wsRef.current?.close(); } catch {}
+          if (shouldReconnectRef.current) {
+            try { wsRef.current?.close(); } catch {}
+          } else {
+            setError('Microphone stopped. Restart the call to reconnect.');
+            setStatus('error');
+          }
           return;
         }
         if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED || wsRef.current.readyState === WebSocket.CLOSING) {
-          setError('Voice call connection dropped. Restart the call to reconnect.');
-          setStatus('error');
+          if (!shouldReconnectRef.current) return;
+          setStatus('connecting');
         }
       }, 2500);
     } catch (err: any) {
@@ -242,13 +253,19 @@ export function useGeminiLive() {
 
   const connect = useCallback(
     async (config: { systemInstruction: string; voiceName: string; onTerminationTriggered?: () => void; stream?: MediaStream }) => {
-      setTranscripts([]);
+      const isReconnect = connectedOnceRef.current && !!config.stream;
+      if (!isReconnect) setTranscripts([]);
       setError(null);
       setUserVolume(0);
       setModelVolume(0);
       setStatus('connecting');
-      connectedOnceRef.current = false;
+      if (!isReconnect) connectedOnceRef.current = false;
       shouldReconnectRef.current = true;
+      lastConnectConfigRef.current = {
+        systemInstruction: config.systemInstruction,
+        voiceName: config.voiceName,
+        onTerminationTriggered: config.onTerminationTriggered,
+      };
       const connectAbort = new AbortController();
       connectAbortRef.current = connectAbort;
       if (config.stream) {
@@ -292,6 +309,8 @@ export function useGeminiLive() {
         }
         if (msg.type === 'connected') {
           window.clearTimeout(connectTimeout);
+          reconnectAttemptRef.current = 0;
+          lastServerMessageAtRef.current = Date.now();
           sessionReadyRef.current = true;
           connectedOnceRef.current = true;
           setStatus('connected');
@@ -310,6 +329,7 @@ export function useGeminiLive() {
         }
 
         // Audio
+        lastServerMessageAtRef.current = Date.now();
         const audioData = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
         if (audioData) playAudioChunk(audioData);
 
@@ -341,6 +361,17 @@ export function useGeminiLive() {
         window.clearTimeout(connectTimeout);
         sessionReadyRef.current = false;
         if (!shouldReconnectRef.current) return;
+        if (connectedOnceRef.current && reconnectAttemptRef.current < 2) {
+          const attempt = ++reconnectAttemptRef.current;
+          setStatus('connecting');
+          setError(null);
+          reconnectTimerRef.current = window.setTimeout(() => {
+            const cfg = lastConnectConfigRef.current;
+            if (!cfg || !shouldReconnectRef.current) return;
+            connect({ ...cfg, stream: streamRef.current || undefined });
+          }, attempt * 900);
+          return;
+        }
         if (!connectedOnceRef.current) {
           setError((prev) => prev || 'Voice call disconnected before it became active.');
           setStatus('error');
