@@ -255,16 +255,17 @@ async function generateWithLovable(
     messageContent = prompt;
   }
 
-  const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  const response = await fetch("https://ai.gateway.lovable.dev/v1/images/generations", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${LOVABLE_API_KEY}`,
+      "Lovable-API-Key": LOVABLE_API_KEY,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
       model,
       messages: [{ role: "user", content: messageContent }],
       modalities: ["image", "text"],
+      stream: false,
     }),
   });
 
@@ -275,7 +276,10 @@ async function generateWithLovable(
   }
 
   const data = await response.json();
-  const imageDataUrl = data?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+  const b64 = data?.data?.[0]?.b64_json;
+  const imageDataUrl = typeof b64 === "string"
+    ? `data:image/png;base64,${b64}`
+    : data?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
   if (!imageDataUrl || typeof imageDataUrl !== "string" || !imageDataUrl.startsWith("data:image/")) {
     return null;
   }
@@ -308,34 +312,37 @@ async function generateWithGeminiStudioImage(
     },
   ];
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${GEMINI_API_KEY}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts }],
-        generationConfig: { maxOutputTokens: 1024, temperature: 0.4 },
-      }),
+  const models = ["gemini-3.1-flash-image", "gemini-2.5-flash-image"];
+  for (const studioModel of models) {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${studioModel}:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts }],
+          generationConfig: { maxOutputTokens: 1024, temperature: 0.4 },
+        }),
+      }
+    );
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("Gemini Studio image edit failed:", studioModel, res.status, errText);
+      continue;
     }
-  );
 
-  if (!res.ok) {
-    const errText = await res.text();
-    console.error("Gemini Studio image edit failed:", res.status, errText);
-    return null;
-  }
+    const data = await res.json();
+    const candidateParts = data?.candidates?.[0]?.content?.parts;
+    if (!Array.isArray(candidateParts)) continue;
 
-  const data = await res.json();
-  const candidateParts = data?.candidates?.[0]?.content?.parts;
-  if (!Array.isArray(candidateParts)) return null;
-
-  for (const part of candidateParts) {
-    const inline = part?.inlineData || part?.inline_data;
-    if (inline?.data && (inline?.mimeType || inline?.mime_type)) {
-      const outMime = inline.mimeType || inline.mime_type || "image/png";
-      const outBytes = base64ToBytes(String(inline.data));
-      return { bytes: outBytes, mime: outMime };
+    for (const part of candidateParts) {
+      const inline = part?.inlineData || part?.inline_data;
+      if (inline?.data && (inline?.mimeType || inline?.mime_type)) {
+        const outMime = inline.mimeType || inline.mime_type || "image/png";
+        const outBytes = base64ToBytes(String(inline.data));
+        return { bytes: outBytes, mime: outMime };
+      }
     }
   }
 
@@ -348,34 +355,37 @@ async function generateWithGeminiStudioTextToImage(
   const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
   if (!GEMINI_API_KEY) return null;
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${GEMINI_API_KEY}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 1024, temperature: 0.6 },
-      }),
+  const models = ["gemini-3.1-flash-image", "gemini-2.5-flash-image"];
+  for (const studioModel of models) {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${studioModel}:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 1024, temperature: 0.6 },
+        }),
+      }
+    );
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("Gemini Studio text-to-image failed:", studioModel, res.status, errText);
+      continue;
     }
-  );
 
-  if (!res.ok) {
-    const errText = await res.text();
-    console.error("Gemini Studio text-to-image failed:", res.status, errText);
-    return null;
-  }
+    const data = await res.json();
+    const candidateParts = data?.candidates?.[0]?.content?.parts;
+    if (!Array.isArray(candidateParts)) continue;
 
-  const data = await res.json();
-  const candidateParts = data?.candidates?.[0]?.content?.parts;
-  if (!Array.isArray(candidateParts)) return null;
-
-  for (const part of candidateParts) {
-    const inline = part?.inlineData || part?.inline_data;
-    if (inline?.data && (inline?.mimeType || inline?.mime_type)) {
-      const outMime = inline.mimeType || inline.mime_type || "image/png";
-      const outBytes = base64ToBytes(String(inline.data));
-      return { bytes: outBytes, mime: outMime };
+    for (const part of candidateParts) {
+      const inline = part?.inlineData || part?.inline_data;
+      if (inline?.data && (inline?.mimeType || inline?.mime_type)) {
+        const outMime = inline.mimeType || inline.mime_type || "image/png";
+        const outBytes = base64ToBytes(String(inline.data));
+        return { bytes: outBytes, mime: outMime };
+      }
     }
   }
   return null;
@@ -404,7 +414,7 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) throw new Error("Backend is not configured");
-    if (!LOVABLE_API_KEY) {
+    if (!LOVABLE_API_KEY && !Deno.env.get("GEMINI_API_KEY")) {
       throw new Error("Image generation API key not configured");
     }
 
@@ -502,6 +512,14 @@ serve(async (req) => {
       } catch (e) {
         console.error("Nano Banana 2 reference generation failed:", e);
       }
+      if (!imgBytes) {
+        console.log(`[FALLBACK] Gemini Studio reference generation: "${enhancedPrompt}"`);
+        const generated = await generateWithGeminiStudioImage(enhancedPrompt, referenceImageUrl);
+        if (generated) {
+          imgBytes = generated.bytes;
+          imgMime = generated.mime;
+        }
+      }
     }
 
     if (!imgBytes && !referenceImageUrl && selectedModel.provider === "lovable" && selectedModel.lovableModel) {
@@ -514,6 +532,14 @@ serve(async (req) => {
         }
       } catch (e) {
         console.error("Lovable AI failed:", e);
+      }
+      if (!imgBytes) {
+        console.log(`[FALLBACK] Gemini Studio text-to-image: "${enhancedPrompt}"`);
+        const generated = await generateWithGeminiStudioTextToImage(enhancedPrompt);
+        if (generated) {
+          imgBytes = generated.bytes;
+          imgMime = generated.mime;
+        }
       }
     }
 
