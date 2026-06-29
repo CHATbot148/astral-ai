@@ -45,7 +45,7 @@ serve(async (req) => {
     }
 
     if (!MISTRAL_API_KEY) {
-      const fallbackTitle = message.slice(0, 15).trim() || "New Chat";
+      const fallbackTitle = message.split(/\s+/).slice(0, 5).join(' ').slice(0, 40).trim() || "New Chat";
       return new Response(
         JSON.stringify({ title: fallbackTitle }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -63,17 +63,23 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: "Generate a very short title (max 15 characters) that summarizes the user's message. Return ONLY the title, nothing else. No quotes, no punctuation at the end. Be creative but concise."
+            content:
+              "You generate a short, descriptive chat title (3–6 words, max 40 characters) that captures the TOPIC of the user's first message. " +
+              "Rules: Use Title Case. No quotes, no emojis, no trailing punctuation. Do NOT use generic words like 'Chat', 'Conversation', 'Help', 'Question', 'New Chat', 'Untitled'. " +
+              "Do NOT echo the user's literal phrasing if it's a greeting or filler — infer the underlying topic instead. " +
+              "Examples: 'How do photosynthesis work?' -> 'Photosynthesis Explained'. 'help me debug my react code' -> 'React Debug Help'. " +
+              "'write a poem about the sea' -> 'Poem About The Sea'. 'who won the world cup' -> 'World Cup Winners'. " +
+              "Return ONLY the title."
           },
           { role: "user", content: message }
         ],
-        max_tokens: 20,
-        temperature: 0.7,
+        max_tokens: 24,
+        temperature: 0.5,
       }),
     });
 
     if (!response.ok) {
-      const fallbackTitle = message.slice(0, 15).trim() || "New Chat";
+      const fallbackTitle = message.split(/\s+/).slice(0, 5).join(' ').slice(0, 40).trim() || "New Chat";
       return new Response(
         JSON.stringify({ title: fallbackTitle }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -81,9 +87,16 @@ serve(async (req) => {
     }
 
     const data = await response.json();
-    let title = data.choices?.[0]?.message?.content?.trim() || message.slice(0, 15);
-    title = title.slice(0, 15).trim();
+    let title = data.choices?.[0]?.message?.content?.trim() || message.slice(0, 40);
+    // Strip quotes, leading/trailing punctuation, and cap to 40 chars
+    title = title.replace(/^["'`""]+|["'`""]+$/g, '').trim();
+    title = title.slice(0, 40).trim();
     title = title.replace(/[.!?,;:]+$/, '');
+    // Guard against generic fallbacks the model sometimes returns
+    if (!title || /^(new chat|chat|conversation|untitled|help|question|message)$/i.test(title)) {
+      title = message.split(/\s+/).slice(0, 5).join(' ').slice(0, 40).trim() || "New Chat";
+    }
+
 
     return new Response(
       JSON.stringify({ title: title || "New Chat" }),

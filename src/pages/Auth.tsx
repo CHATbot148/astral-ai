@@ -2,9 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mail, Lock, User, ArrowRight, Loader2, ArrowLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Mail, Lock, User, Loader2, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { useTheme } from '@/hooks/useTheme';
@@ -12,7 +10,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { lovable } from '@/integrations/lovable';
 import { z } from 'zod';
 import astrazLogo from '@/assets/astraz-logo.png';
-import astrazFullLogo from '@/assets/astraz-full-logo.png';
 
 const emailSchema = z.string().email('Please enter a valid email address');
 const passwordSchema = z.string().min(6, 'Password must be at least 6 characters');
@@ -27,259 +24,133 @@ const Auth = () => {
   const [name, setName] = useState('');
   const [otp, setOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sendingOtp, setSendingOtp] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string; otp?: string; newPassword?: string }>({});
 
-  const { user, signIn, signInWithGoogle } = useAuth();
+  const { user, signIn } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { theme, setTheme } = useTheme();
 
-  useEffect(() => {
-    if (user) {
-      navigate('/');
-    }
-  }, [user, navigate]);
+  useEffect(() => { if (user) navigate('/'); }, [user, navigate]);
 
   const validateForm = () => {
     const newErrors: { email?: string; password?: string } = {};
-    
-    try {
-      emailSchema.parse(email);
-    } catch (e) {
-      if (e instanceof z.ZodError) {
-        newErrors.email = e.errors[0].message;
-      }
+    try { emailSchema.parse(email); } catch (e) {
+      if (e instanceof z.ZodError) newErrors.email = e.errors[0].message;
     }
-
-    try {
-      passwordSchema.parse(password);
-    } catch (e) {
-      if (e instanceof z.ZodError) {
-        newErrors.password = e.errors[0].message;
-      }
+    try { passwordSchema.parse(password); } catch (e) {
+      if (e instanceof z.ZodError) newErrors.password = e.errors[0].message;
     }
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleSendOtp = async () => {
     if (!validateForm()) return;
-
     setSendingOtp(true);
     try {
-      const { data, error } = await supabase.functions.invoke('send-otp', {
-        body: { email, name },
-      });
-
+      const { data, error } = await supabase.functions.invoke('send-otp', { body: { email, name } });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-
-      toast({
-        title: 'Verification code sent!',
-        description: 'Check your email for the 6-digit code.',
-      });
+      toast({ title: 'Verification code sent', description: 'Check your email for the 6-digit code.' });
       setStep('verify-otp');
     } catch (error) {
-      toast({
-        title: 'Failed to send code',
-        description: error instanceof Error ? error.message : 'Please try again',
-        variant: 'destructive',
-      });
-    } finally {
-      setSendingOtp(false);
-    }
+      toast({ title: 'Failed to send code', description: error instanceof Error ? error.message : 'Please try again', variant: 'destructive' });
+    } finally { setSendingOtp(false); }
   };
 
   const handleVerifyOtp = async () => {
-    if (otp.length !== 6) {
-      setErrors({ otp: 'Please enter the 6-digit code' });
-      return;
-    }
-
+    if (otp.length !== 6) { setErrors({ otp: 'Please enter the 6-digit code' }); return; }
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('verify-otp', {
-        body: { email, otp, password, name },
-      });
-
+      const { data, error } = await supabase.functions.invoke('verify-otp', { body: { email, otp, password, name } });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-
-      toast({
-        title: 'Welcome to Astraz!',
-        description: 'Your account has been created. Please log in.',
-      });
-
-      // Switch to login mode
-      setIsLogin(true);
-      setStep('credentials');
-      setOtp('');
+      toast({ title: 'Welcome to Astraz', description: 'Your account is ready. Sign in to continue.' });
+      setIsLogin(true); setStep('credentials'); setOtp('');
     } catch (error) {
-      toast({
-        title: 'Verification failed',
-        description: error instanceof Error ? error.message : 'Invalid code',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoading(false);
-    }
+      toast({ title: 'Verification failed', description: error instanceof Error ? error.message : 'Invalid code', variant: 'destructive' });
+    } finally { setLoading(false); }
   };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
-
     setLoading(true);
     try {
       const { error } = await signIn(email, password);
       if (error) {
-        if (error.message.includes('Invalid login credentials')) {
-          toast({
-            title: 'Login failed',
-            description: 'Invalid email or password. Please try again.',
-            variant: 'destructive',
-          });
-        } else {
-          toast({
-            title: 'Login failed',
-            description: error.message,
-            variant: 'destructive',
-          });
-        }
+        toast({ title: 'Login failed', description: error.message.includes('Invalid login credentials') ? 'Invalid email or password.' : error.message, variant: 'destructive' });
       }
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Something went wrong. Please try again.',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoading(false);
-    }
+    } catch {
+      toast({ title: 'Error', description: 'Something went wrong. Please try again.', variant: 'destructive' });
+    } finally { setLoading(false); }
   };
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
     try {
-      const { error } = await lovable.auth.signInWithOAuth('google', {
-        redirect_uri: window.location.origin,
-      });
+      const { error } = await lovable.auth.signInWithOAuth('google', { redirect_uri: window.location.origin });
       if (error) {
-        toast({
-          title: 'Google sign in failed',
-          description: error.message,
-          variant: 'destructive',
-        });
+        toast({ title: 'Google sign in failed', description: error.message, variant: 'destructive' });
         setLoading(false);
       }
     } catch (error) {
-      toast({
-        title: 'Google sign in failed',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive',
-      });
+      toast({ title: 'Google sign in failed', description: error instanceof Error ? error.message : 'Unknown error', variant: 'destructive' });
       setLoading(false);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isLogin) {
-      await handleLogin(e);
-    } else {
-      await handleSendOtp();
-    }
-  };
-
-  const resendOtp = async () => {
-    await handleSendOtp();
+    if (isLogin) await handleLogin(e); else await handleSendOtp();
   };
 
   const handleForgotPassword = async () => {
-    try {
-      emailSchema.parse(email);
-    } catch (e) {
-      if (e instanceof z.ZodError) {
-        setErrors({ email: e.errors[0].message });
-        return;
-      }
+    try { emailSchema.parse(email); } catch (e) {
+      if (e instanceof z.ZodError) { setErrors({ email: e.errors[0].message }); return; }
     }
-
     setSendingOtp(true);
     try {
-      const { data, error } = await supabase.functions.invoke('send-otp', {
-        body: { email, isPasswordReset: true },
-      });
-
+      const { data, error } = await supabase.functions.invoke('send-otp', { body: { email, isPasswordReset: true } });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-
-      toast({
-        title: 'Reset code sent!',
-        description: 'Check your email for the 6-digit code.',
-      });
+      toast({ title: 'Reset code sent', description: 'Check your email for the 6-digit code.' });
       setStep('reset-password');
     } catch (error) {
-      toast({
-        title: 'Failed to send code',
-        description: error instanceof Error ? error.message : 'Please try again',
-        variant: 'destructive',
-      });
-    } finally {
-      setSendingOtp(false);
-    }
+      toast({ title: 'Failed to send code', description: error instanceof Error ? error.message : 'Please try again', variant: 'destructive' });
+    } finally { setSendingOtp(false); }
   };
 
   const handleResetPassword = async () => {
-    if (otp.length !== 6) {
-      setErrors({ otp: 'Please enter the 6-digit code' });
-      return;
+    if (otp.length !== 6) { setErrors({ otp: 'Please enter the 6-digit code' }); return; }
+    try { passwordSchema.parse(newPassword); } catch (e) {
+      if (e instanceof z.ZodError) { setErrors({ newPassword: e.errors[0].message }); return; }
     }
-
-    try {
-      passwordSchema.parse(newPassword);
-    } catch (e) {
-      if (e instanceof z.ZodError) {
-        setErrors({ newPassword: e.errors[0].message });
-        return;
-      }
-    }
-
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('verify-otp', {
-        body: { email, otp, newPassword, isPasswordReset: true },
-      });
-
+      const { data, error } = await supabase.functions.invoke('verify-otp', { body: { email, otp, newPassword, isPasswordReset: true } });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-
-      toast({
-        title: 'Password reset successful!',
-        description: 'You can now log in with your new password.',
-      });
-
-      setStep('credentials');
-      setIsLogin(true);
-      setOtp('');
-      setNewPassword('');
-      setPassword('');
+      toast({ title: 'Password reset successful', description: 'Sign in with your new password.' });
+      setStep('credentials'); setIsLogin(true); setOtp(''); setNewPassword(''); setPassword('');
     } catch (error) {
-      toast({
-        title: 'Reset failed',
-        description: error instanceof Error ? error.message : 'Invalid code',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoading(false);
-    }
+      toast({ title: 'Reset failed', description: error instanceof Error ? error.message : 'Invalid code', variant: 'destructive' });
+    } finally { setLoading(false); }
   };
 
+  // Reusable input class — glass field, dark+light adaptive
+  const fieldClass =
+    'w-full h-14 px-5 rounded-2xl text-[15px] bg-slate-100/60 dark:bg-white/[0.04] border border-transparent ' +
+    'text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 ' +
+    'focus:outline-none focus:bg-white dark:focus:bg-white/[0.06] focus:border-indigo-500/60 ' +
+    'focus:ring-4 focus:ring-indigo-500/15 transition-all';
+
   return (
-    <main className="min-h-screen flex flex-col md:flex-row">
+    <main className="min-h-[100dvh] w-full flex items-center justify-center p-5 sm:p-6 relative overflow-hidden bg-indigo-50/50 dark:bg-slate-950">
       <Helmet>
         <title>Sign In | Astraz AI Assistant</title>
         <meta name="description" content="Sign in or create an Astraz account to chat with AI, generate images and videos, and access your conversations across devices." />
@@ -288,458 +159,307 @@ const Auth = () => {
         <meta property="og:description" content="Sign in or create an Astraz account to chat with AI, generate images and videos, and access your conversations across devices." />
         <meta property="og:url" content="https://astraz.lovable.app/auth" />
       </Helmet>
-      {/* Left side - Form */}
-      <div className="order-1 w-full md:w-1/2 lg:w-1/3 flex items-center justify-center p-6 bg-card relative overflow-hidden">
-        {/* Mobile-only animated aurora orbs */}
-        <div className="md:hidden absolute inset-0 pointer-events-none">
-          <div className="absolute -top-24 -left-24 w-72 h-72 rounded-full bg-xai-purple/25 blur-3xl animate-pulse" />
-          <div className="absolute -bottom-32 -right-24 w-80 h-80 rounded-full bg-xai-cyan/20 blur-3xl animate-pulse" style={{ animationDelay: '1.5s' }} />
-          <div className="absolute top-1/3 right-1/4 w-40 h-40 rounded-full bg-primary/15 blur-2xl" />
-        </div>
 
-        <motion.div
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.5 }}
-          className="w-full max-w-md relative z-10"
-        >
-          {/* Logo */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.5 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.1, type: 'spring' }}
-            className="flex items-center justify-center md:justify-start gap-4 mb-8"
-          >
-            <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-br from-xai-purple to-xai-cyan rounded-full blur-2xl opacity-40 md:hidden" />
-              <img src={astrazLogo} alt="Astraz AI Assistant Logo" className="relative w-24 h-24 object-contain drop-shadow-[0_0_16px_hsl(270_80%_60%/0.45)]" />
-            </div>
-            <span className="text-3xl font-display font-bold xai-gradient-text">Astraz</span>
-          </motion.div>
+      {/* Ambient orbs */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute -top-[15%] -left-[15%] w-[65%] h-[65%] rounded-full bg-indigo-500/25 dark:bg-indigo-600/15 blur-[120px]" />
+        <div className="absolute -bottom-[20%] -right-[15%] w-[65%] h-[65%] rounded-full bg-cyan-400/25 dark:bg-cyan-500/12 blur-[120px]" />
+        {/* Giant blurred Astraz logo as backdrop */}
+        <img
+          src={astrazLogo}
+          alt=""
+          aria-hidden="true"
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[140%] max-w-none h-auto opacity-[0.06] dark:opacity-[0.08] blur-3xl select-none"
+        />
+      </div>
 
+      <motion.div
+        initial={{ opacity: 0, y: 16, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+        className="relative z-10 w-full max-w-[400px]"
+      >
+        <div className="backdrop-blur-2xl bg-white/75 dark:bg-slate-900/55 border border-white/60 dark:border-white/10 rounded-[2.25rem] p-7 sm:p-8 shadow-[0_24px_80px_-20px_rgba(79,70,229,0.35)] dark:shadow-[0_24px_80px_-20px_rgba(0,0,0,0.6)]">
+
+          {/* Brand header */}
+          <div className="text-center mb-7">
+            <button
+              type="button"
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              aria-label="Toggle theme"
+              className="inline-block mb-3 active:scale-95 transition-transform"
+            >
+              <img src={astrazLogo} alt="Astraz" className="w-16 h-16 mx-auto object-contain drop-shadow-[0_0_20px_hsl(244_76%_59%/0.45)]" />
+            </button>
+            <h1 className="font-display text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Astraz</h1>
+            <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
+              Your intelligent companion
+            </p>
+          </div>
 
           <AnimatePresence mode="wait">
-            {step === 'credentials' ? (
+            {step === 'credentials' && (
               <motion.div
                 key="credentials"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.25 }}
               >
-                {/* Title */}
-                <div className="mb-8">
-                  <h1 className="text-3xl font-display font-bold mb-2">
-                    {isLogin ? 'Welcome back' : 'Create Your Account'}
-                  </h1>
-                  <p className="text-muted-foreground">
-                    {isLogin
-                      ? 'Sign in to continue to Astraz'
-                      : 'Sign Up to Astraz to continue.'}
-                  </p>
+                {/* Segmented Sign in / Sign up */}
+                <div className="flex p-1.5 bg-slate-200/60 dark:bg-slate-800/50 rounded-2xl mb-7">
+                  {(['signin', 'signup'] as const).map((mode) => {
+                    const active = (mode === 'signin') === isLogin;
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => { setIsLogin(mode === 'signin'); setErrors({}); }}
+                        className={`flex-1 py-2.5 text-sm font-semibold rounded-xl transition-all ${
+                          active
+                            ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-sm'
+                            : 'text-slate-500 dark:text-slate-400'
+                        }`}
+                      >
+                        {mode === 'signin' ? 'Sign in' : 'Sign up'}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Google */}
+                <button
+                  type="button"
+                  onClick={handleGoogleSignIn}
+                  disabled={loading}
+                  className="w-full h-14 px-4 mb-5 bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl flex items-center justify-center gap-3 text-[15px] font-semibold text-slate-700 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 active:scale-[0.98] transition-all disabled:opacity-60"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                  </svg>
+                  Continue with Google
+                </button>
+
+                {/* Divider */}
+                <div className="relative mb-5 text-center">
+                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200 dark:border-slate-800" /></div>
+                  <span className="relative px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 bg-white/75 dark:bg-slate-900/55">
+                    Or with email
+                  </span>
                 </div>
 
                 {/* Form */}
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  {!isLogin && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                    >
-                      <div className="relative">
-                        <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          type="text"
-                          placeholder="Full name (optional)"
-                          value={name}
-                          onChange={(e) => setName(e.target.value)}
-                          className="pl-10 h-12"
-                        />
-                      </div>
-                    </motion.div>
-                  )}
+                <form onSubmit={handleSubmit} className="space-y-3.5">
+                  <AnimatePresence>
+                    {!isLogin && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                      >
+                        <div className="relative">
+                          <User className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                          <input
+                            type="text"
+                            placeholder="Full name (optional)"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            className={`${fieldClass} pl-11`}
+                            autoComplete="name"
+                          />
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
                   <div>
                     <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                      <input
                         type="email"
+                        inputMode="email"
+                        autoComplete="email"
                         placeholder="Email address"
                         value={email}
-                        onChange={(e) => {
-                          setEmail(e.target.value);
-                          setErrors(prev => ({ ...prev, email: undefined }));
-                        }}
-                        className={`pl-10 h-12 ${errors.email ? 'border-destructive' : ''}`}
+                        onChange={(e) => { setEmail(e.target.value); setErrors(p => ({ ...p, email: undefined })); }}
+                        className={`${fieldClass} pl-11 ${errors.email ? 'border-destructive/70' : ''}`}
                       />
                     </div>
-                    {errors.email && (
-                      <p className="text-sm text-destructive mt-1">{errors.email}</p>
-                    )}
+                    {errors.email && <p className="text-xs text-destructive mt-1.5 ml-1">{errors.email}</p>}
                   </div>
 
                   <div>
                     <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        type="password"
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        autoComplete={isLogin ? 'current-password' : 'new-password'}
                         placeholder="Password"
                         value={password}
-                        onChange={(e) => {
-                          setPassword(e.target.value);
-                          setErrors(prev => ({ ...prev, password: undefined }));
-                        }}
-                        className={`pl-10 h-12 ${errors.password ? 'border-destructive' : ''}`}
+                        onChange={(e) => { setPassword(e.target.value); setErrors(p => ({ ...p, password: undefined })); }}
+                        className={`${fieldClass} pl-11 pr-12 ${errors.password ? 'border-destructive/70' : ''}`}
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(s => !s)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
                     </div>
-                    {errors.password && (
-                      <p className="text-sm text-destructive mt-1">{errors.password}</p>
-                    )}
+                    {errors.password && <p className="text-xs text-destructive mt-1.5 ml-1">{errors.password}</p>}
                   </div>
 
                   {isLogin && (
-                    <div className="text-right">
+                    <div className="flex justify-end">
                       <button
                         type="button"
                         onClick={() => setStep('forgot-password')}
-                        className="text-sm text-xai-cyan hover:underline"
+                        className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-500"
                       >
                         Forgot password?
                       </button>
                     </div>
                   )}
 
-                  <Button
+                  <button
                     type="submit"
-                    className="w-full h-12 bg-gradient-to-r from-xai-cyan to-xai-purple text-white hover:opacity-90"
                     disabled={loading || sendingOtp}
+                    className="w-full h-14 mt-2 rounded-2xl bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-400 text-white font-bold text-[15px] shadow-[0_10px_30px_-10px_hsl(244_76%_59%/0.6)] active:scale-[0.98] transition-all disabled:opacity-70 flex items-center justify-center"
                   >
-                    {(loading || sendingOtp) ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <>
-                        {isLogin ? 'Sign in' : 'Continue'}
-                        <ArrowRight className="h-4 w-4 ml-2" />
-                      </>
-                    )}
-                  </Button>
+                    {(loading || sendingOtp)
+                      ? <Loader2 className="h-5 w-5 animate-spin" />
+                      : (isLogin ? 'Sign in' : 'Create account')}
+                  </button>
                 </form>
 
-                {/* Divider */}
-                <div className="relative my-6">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-border" />
-                  </div>
-                  <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-card px-2 text-muted-foreground">OR</span>
-                  </div>
-                </div>
-
-                {/* Google Sign In */}
-                <Button
-                  variant="outline"
-                  className="w-full h-12"
-                  onClick={handleGoogleSignIn}
-                  disabled={loading}
-                >
-                  <svg className="h-5 w-5 mr-2" viewBox="0 0 24 24">
-                    <path
-                      fill="#4285F4"
-                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                    />
-                    <path
-                      fill="#EA4335"
-                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                    />
-                  </svg>
-                  Continue with Google
-                </Button>
-
-                {/* Switch Mode */}
-                <p className="text-center mt-6 text-muted-foreground">
-                  {isLogin ? "Don't have an account?" : 'Already have an account?'}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsLogin(!isLogin);
-                      setErrors({});
-                    }}
-                    className="text-xai-cyan hover:underline ml-1 font-medium"
-                  >
-                    {isLogin ? 'Sign up' : 'Log in'}
-                  </button>
+                <p className="mt-6 text-center text-[10.5px] leading-relaxed text-slate-400 dark:text-slate-500 px-3">
+                  By continuing you agree to our{' '}
+                  <a href="/privacy-policy" className="text-slate-600 dark:text-slate-300 underline underline-offset-2">Privacy Policy</a>.
                 </p>
               </motion.div>
-            ) : step === 'verify-otp' ? (
+            )}
+
+            {step === 'verify-otp' && (
               <motion.div
                 key="verify-otp"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
+                initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
               >
-                {/* OTP Verification */}
-                <div className="mb-8">
-                  <h1 className="text-3xl font-display font-bold mb-2">
-                    Verify Your Email
-                  </h1>
-                  <p className="text-muted-foreground">
-                    We sent a 6-digit code to <span className="text-foreground font-medium">{email}</span>
-                  </p>
+                <div className="mb-6 text-center">
+                  <h2 className="font-display text-xl font-bold text-slate-900 dark:text-white mb-1">Verify your email</h2>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Code sent to <span className="text-slate-800 dark:text-slate-200 font-medium">{email}</span></p>
                 </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <Input
-                      type="text"
-                      placeholder="Enter 6-digit code"
-                      value={otp}
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/\D/g, '').slice(0, 6);
-                        setOtp(val);
-                        setErrors(prev => ({ ...prev, otp: undefined }));
-                      }}
-                      className={`h-14 text-center text-2xl tracking-[0.5em] font-mono ${errors.otp ? 'border-destructive' : ''}`}
-                      maxLength={6}
-                    />
-                    {errors.otp && (
-                      <p className="text-sm text-destructive mt-1">{errors.otp}</p>
-                    )}
-                  </div>
-
-                  <Button
-                    onClick={handleVerifyOtp}
-                    className="w-full h-12 bg-gradient-to-r from-xai-cyan to-xai-purple text-white hover:opacity-90"
-                    disabled={loading || otp.length !== 6}
-                  >
-                    {loading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      'Verify & Create Account'
-                    )}
-                  </Button>
-
-                  <div className="flex items-center justify-between text-sm">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setStep('credentials');
-                        setOtp('');
-                      }}
-                      className="text-muted-foreground hover:text-foreground"
-                    >
-                      ← Back
-                    </button>
-                    <button
-                      type="button"
-                      onClick={resendOtp}
-                      disabled={sendingOtp}
-                      className="text-xai-cyan hover:underline disabled:opacity-50"
-                    >
-                      {sendingOtp ? 'Sending...' : 'Resend code'}
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            ) : step === 'forgot-password' ? (
-              <motion.div
-                key="forgot-password"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-              >
-                <div className="mb-8">
-                  <h1 className="text-3xl font-display font-bold mb-2">
-                    Forgot Password
-                  </h1>
-                  <p className="text-muted-foreground">
-                    Enter your email to receive a password reset code
-                  </p>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        type="email"
-                        placeholder="Email address"
-                        value={email}
-                        onChange={(e) => {
-                          setEmail(e.target.value);
-                          setErrors(prev => ({ ...prev, email: undefined }));
-                        }}
-                        className={`pl-10 h-12 ${errors.email ? 'border-destructive' : ''}`}
-                      />
-                    </div>
-                    {errors.email && (
-                      <p className="text-sm text-destructive mt-1">{errors.email}</p>
-                    )}
-                  </div>
-
-                  <Button
-                    onClick={handleForgotPassword}
-                    className="w-full h-12 bg-gradient-to-r from-xai-cyan to-xai-purple text-white hover:opacity-90"
-                    disabled={sendingOtp}
-                  >
-                    {sendingOtp ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <>
-                        Send Reset Code
-                        <ArrowRight className="h-4 w-4 ml-2" />
-                      </>
-                    )}
-                  </Button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStep('credentials');
-                      setErrors({});
-                    }}
-                    className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                    Back to login
+                <input
+                  type="text" inputMode="numeric" maxLength={6}
+                  placeholder="000000" value={otp}
+                  onChange={(e) => { setOtp(e.target.value.replace(/\D/g, '').slice(0, 6)); setErrors(p => ({ ...p, otp: undefined })); }}
+                  className={`${fieldClass} h-16 text-center text-2xl tracking-[0.45em] font-mono ${errors.otp ? 'border-destructive/70' : ''}`}
+                />
+                {errors.otp && <p className="text-xs text-destructive mt-1.5 ml-1">{errors.otp}</p>}
+                <button
+                  onClick={handleVerifyOtp}
+                  disabled={loading || otp.length !== 6}
+                  className="w-full h-14 mt-4 rounded-2xl bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 text-white font-bold disabled:opacity-50 active:scale-[0.98] transition-all flex items-center justify-center"
+                >
+                  {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Verify & create account'}
+                </button>
+                <div className="flex items-center justify-between text-sm mt-4">
+                  <button onClick={() => { setStep('credentials'); setOtp(''); }} className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 inline-flex items-center gap-1">
+                    <ArrowLeft className="h-3.5 w-3.5" /> Back
+                  </button>
+                  <button onClick={handleSendOtp} disabled={sendingOtp} className="text-indigo-600 dark:text-indigo-400 font-semibold disabled:opacity-50">
+                    {sendingOtp ? 'Sending…' : 'Resend code'}
                   </button>
                 </div>
               </motion.div>
-            ) : (
-              <motion.div
-                key="reset-password"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-              >
-                <div className="mb-8">
-                  <h1 className="text-3xl font-display font-bold mb-2">
-                    Reset Password
-                  </h1>
-                  <p className="text-muted-foreground">
-                    Enter the code sent to <span className="text-foreground font-medium">{email}</span>
-                  </p>
+            )}
+
+            {step === 'forgot-password' && (
+              <motion.div key="forgot" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                <div className="mb-6 text-center">
+                  <h2 className="font-display text-xl font-bold text-slate-900 dark:text-white mb-1">Forgot password?</h2>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Enter your email to receive a reset code.</p>
                 </div>
+                <div className="relative mb-3">
+                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <input
+                    type="email" inputMode="email" placeholder="Email address" value={email}
+                    onChange={(e) => { setEmail(e.target.value); setErrors(p => ({ ...p, email: undefined })); }}
+                    className={`${fieldClass} pl-11 ${errors.email ? 'border-destructive/70' : ''}`}
+                  />
+                </div>
+                {errors.email && <p className="text-xs text-destructive mb-2 ml-1">{errors.email}</p>}
+                <button
+                  onClick={handleForgotPassword} disabled={sendingOtp}
+                  className="w-full h-14 mt-2 rounded-2xl bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 text-white font-bold disabled:opacity-60 active:scale-[0.98] transition-all flex items-center justify-center"
+                >
+                  {sendingOtp ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Send reset code'}
+                </button>
+                <button onClick={() => { setStep('credentials'); setErrors({}); }} className="mt-4 inline-flex items-center gap-1 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
+                  <ArrowLeft className="h-4 w-4" /> Back to sign in
+                </button>
+              </motion.div>
+            )}
 
-                <div className="space-y-4">
-                  <div>
-                    <Input
-                      type="text"
-                      placeholder="Enter 6-digit code"
-                      value={otp}
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/\D/g, '').slice(0, 6);
-                        setOtp(val);
-                        setErrors(prev => ({ ...prev, otp: undefined }));
-                      }}
-                      className={`h-14 text-center text-2xl tracking-[0.5em] font-mono ${errors.otp ? 'border-destructive' : ''}`}
-                      maxLength={6}
+            {step === 'reset-password' && (
+              <motion.div key="reset" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                <div className="mb-6 text-center">
+                  <h2 className="font-display text-xl font-bold text-slate-900 dark:text-white mb-1">Reset password</h2>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Enter the code sent to <span className="text-slate-800 dark:text-slate-200 font-medium">{email}</span></p>
+                </div>
+                <div className="space-y-3.5">
+                  <input
+                    type="text" inputMode="numeric" maxLength={6}
+                    placeholder="000000" value={otp}
+                    onChange={(e) => { setOtp(e.target.value.replace(/\D/g, '').slice(0, 6)); setErrors(p => ({ ...p, otp: undefined })); }}
+                    className={`${fieldClass} h-16 text-center text-2xl tracking-[0.45em] font-mono ${errors.otp ? 'border-destructive/70' : ''}`}
+                  />
+                  {errors.otp && <p className="text-xs text-destructive ml-1">{errors.otp}</p>}
+                  <div className="relative">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <input
+                      type="password" placeholder="New password" value={newPassword}
+                      onChange={(e) => { setNewPassword(e.target.value); setErrors(p => ({ ...p, newPassword: undefined })); }}
+                      className={`${fieldClass} pl-11 ${errors.newPassword ? 'border-destructive/70' : ''}`}
                     />
-                    {errors.otp && (
-                      <p className="text-sm text-destructive mt-1">{errors.otp}</p>
-                    )}
                   </div>
-
-                  <div>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        type="password"
-                        placeholder="New password"
-                        value={newPassword}
-                        onChange={(e) => {
-                          setNewPassword(e.target.value);
-                          setErrors(prev => ({ ...prev, newPassword: undefined }));
-                        }}
-                        className={`pl-10 h-12 ${errors.newPassword ? 'border-destructive' : ''}`}
-                      />
-                    </div>
-                    {errors.newPassword && (
-                      <p className="text-sm text-destructive mt-1">{errors.newPassword}</p>
-                    )}
-                  </div>
-
-                  <Button
-                    onClick={handleResetPassword}
-                    className="w-full h-12 bg-gradient-to-r from-xai-cyan to-xai-purple text-white hover:opacity-90"
-                    disabled={loading || otp.length !== 6}
+                  {errors.newPassword && <p className="text-xs text-destructive ml-1">{errors.newPassword}</p>}
+                  <button
+                    onClick={handleResetPassword} disabled={loading || otp.length !== 6}
+                    className="w-full h-14 rounded-2xl bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 text-white font-bold disabled:opacity-60 active:scale-[0.98] transition-all flex items-center justify-center"
                   >
-                    {loading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      'Reset Password'
-                    )}
-                  </Button>
-
+                    {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Reset password'}
+                  </button>
                   <div className="flex items-center justify-between text-sm">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setStep('forgot-password');
-                        setOtp('');
-                        setNewPassword('');
-                      }}
-                      className="text-muted-foreground hover:text-foreground"
-                    >
-                      ← Back
+                    <button onClick={() => { setStep('forgot-password'); setOtp(''); setNewPassword(''); }} className="text-slate-500 dark:text-slate-400 inline-flex items-center gap-1">
+                      <ArrowLeft className="h-3.5 w-3.5" /> Back
                     </button>
-                    <button
-                      type="button"
-                      onClick={handleForgotPassword}
-                      disabled={sendingOtp}
-                      className="text-xai-cyan hover:underline disabled:opacity-50"
-                    >
-                      {sendingOtp ? 'Sending...' : 'Resend code'}
+                    <button onClick={handleForgotPassword} disabled={sendingOtp} className="text-indigo-600 dark:text-indigo-400 font-semibold disabled:opacity-50">
+                      {sendingOtp ? 'Sending…' : 'Resend code'}
                     </button>
                   </div>
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
-        </motion.div>
-      </div>
+        </div>
 
-      {/* Right side - Full logo image */}
-      <div
-        className="hidden md:flex order-2 md:w-1/2 lg:w-2/3 relative overflow-hidden items-center justify-center bg-background"
-      >
-        <img
-          src={astrazFullLogo}
-          alt="Astraz"
-          className="absolute inset-0 w-full h-full object-cover object-center"
-        />
-
-        <div className="absolute inset-0 bg-gradient-to-t from-background/55 via-transparent to-background/20" />
-
-        {/* Invisible theme toggle over the icon area */}
-        <button
-          onClick={() => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'dark' : 'dark')}
-          className="absolute top-[26%] left-1/2 -translate-x-1/2 w-[22%] max-w-[180px] aspect-square z-20 cursor-pointer"
-          aria-label="Toggle theme"
-          style={{ background: 'transparent', border: 'none' }}
-        />
-
-        {/* Made by Astrinique */}
-        <motion.a
-          href="https://astrinique.vercel.app"
-          target="_blank"
-          rel="noopener noreferrer"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="absolute top-[62%] left-1/2 -translate-x-1/2 z-10 inline-flex items-center rounded-full border border-border/50 bg-background/35 px-6 py-3 text-sm md:text-base lg:text-lg font-display font-semibold tracking-[0.18em] text-foreground/90 backdrop-blur-md shadow-[0_12px_40px_hsl(var(--background)/0.35)] hover:bg-background/45 transition-all"
-        >
-          Made by <span className="ml-2 xai-gradient-text">Astrinique</span>
-        </motion.a>
-      </div>
-
+        {/* Attribution */}
+        <div className="mt-6 text-center">
+          <a
+            href="https://astrinique.vercel.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors"
+          >
+            Made by Astrinique
+          </a>
+        </div>
+      </motion.div>
     </main>
   );
 };

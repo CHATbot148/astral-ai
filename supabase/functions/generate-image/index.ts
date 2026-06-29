@@ -490,8 +490,20 @@ serve(async (req) => {
     }
 
     const stylePrompt = STYLE_PROMPTS[style] || "";
-    const enhancedPrompt = stylePrompt ? `${prompt}, ${stylePrompt}` : prompt;
+    // Beef up the visual prompt so the model gets rich, specific guidance
+    // (a short user prompt like "gaming logo" produces weak output otherwise).
+    const userPrompt = String(prompt).trim();
+    const enhancedPrompt = [
+      `High-quality professional image generation.`,
+      ``,
+      `Subject: ${userPrompt}`,
+      stylePrompt ? `Style: ${stylePrompt}.` : `Style: clean, premium, photoreal lighting.`,
+      `Composition: well-balanced, clear focal subject, ${aspectRatio} aspect ratio.`,
+      `Quality requirements: sharp details, crisp focus, premium lighting, cinematic visual quality, well-balanced colors, high resolution look.`,
+      `Avoid: distorted text, gibberish lettering, warped faces, extra fingers, extra limbs, mangled hands, messy artifacts, low-resolution textures, watermarks.`,
+    ].join("\n");
     const dims = ASPECT_RATIO_MAP[aspectRatio] || ASPECT_RATIO_MAP["1:1"];
+
 
     // Image generation is currently locked to Nano Banana 2 only.
     const selectedModelKey = DEFAULT_MODEL;

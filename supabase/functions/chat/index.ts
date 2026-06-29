@@ -1189,38 +1189,66 @@ IMPORTANT RESPONSE GUIDELINES:
         .update({ pro_messages_used: used + 1, pro_reset_at: resetAt?.toISOString() ?? null })
         .eq("user_id", userId);
 
-      const proModels = ["google/gemini-3.1-pro-preview", "google/gemini-3.5-flash", "google/gemini-2.5-pro"];
+      // Try Gemini Studio direct FIRST (faster, fewer rate-limit hangs than the gateway
+      // for Pro), then fall back to the Lovable AI gateway. Each attempt has an
+      // explicit timeout so a stuck connection cannot freeze the request forever.
+      const PRO_TIMEOUT_MS = 22_000;
+      const withTimeout = (ms: number) => {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), ms);
+        return { signal: ctrl.signal, clear: () => clearTimeout(t) };
+      };
+
+      const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
       let lastProError = "";
-      if (LOVABLE_API_KEY) {
-        for (const proModel of proModels) {
-          const proRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-            method: "POST",
-            headers: { "Lovable-API-Key": LOVABLE_API_KEY, "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model: proModel,
-              messages: [{ role: "system", content: systemContent }, ...formattedMessages],
-              stream: true,
-              max_tokens: 8192,
-            }),
-          });
 
-          if (proRes.ok && proRes.body) {
-            const finalBody = rawVideoCards ? appendToStream(proRes.body, rawVideoCards) : proRes.body;
-            return new Response(finalBody, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
+      // 1. Gemini Studio direct (best Gemini chat models: 3.1 Pro, 3.5 Flash)
+      if (GEMINI_API_KEY) {
+        try {
+          const fallbackText = await Promise.race<string | null>([
+            callGeminiStudioProFallback(GEMINI_API_KEY, systemContent, formattedMessages),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), PRO_TIMEOUT_MS)),
+          ]);
+          if (fallbackText) {
+            return new Response(oneShotTextToSse(fallbackText, rawVideoCards), {
+              headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
+            });
           }
-
-          lastProError = await proRes.text().catch(() => `HTTP ${proRes.status}`);
-          console.error("Astraz Pro gateway error:", proModel, proRes.status, lastProError);
+        } catch (e) {
+          lastProError = e instanceof Error ? e.message : String(e);
+          console.error("Astraz Pro Studio direct failed:", lastProError);
         }
       }
 
-      const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-      if (GEMINI_API_KEY) {
-        const fallbackText = await callGeminiStudioProFallback(GEMINI_API_KEY, systemContent, formattedMessages);
-        if (fallbackText) {
-          return new Response(oneShotTextToSse(fallbackText, rawVideoCards), {
-            headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
-          });
+      // 2. Lovable AI gateway as a streaming fallback
+      const proModels = ["google/gemini-3.1-pro-preview", "google/gemini-3.5-flash", "google/gemini-2.5-pro"];
+      if (LOVABLE_API_KEY) {
+        for (const proModel of proModels) {
+          const t = withTimeout(PRO_TIMEOUT_MS);
+          try {
+            const proRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+              method: "POST",
+              headers: { "Lovable-API-Key": LOVABLE_API_KEY, "Content-Type": "application/json" },
+              signal: t.signal,
+              body: JSON.stringify({
+                model: proModel,
+                messages: [{ role: "system", content: systemContent }, ...formattedMessages],
+                stream: true,
+                max_tokens: 8192,
+              }),
+            });
+            t.clear();
+            if (proRes.ok && proRes.body) {
+              const finalBody = rawVideoCards ? appendToStream(proRes.body, rawVideoCards) : proRes.body;
+              return new Response(finalBody, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
+            }
+            lastProError = await proRes.text().catch(() => `HTTP ${proRes.status}`);
+            console.error("Astraz Pro gateway error:", proModel, proRes.status, lastProError);
+          } catch (e) {
+            t.clear();
+            lastProError = e instanceof Error ? e.message : String(e);
+            console.error("Astraz Pro gateway attempt timed out:", proModel, lastProError);
+          }
         }
       }
 
@@ -1230,6 +1258,7 @@ IMPORTANT RESPONSE GUIDELINES:
         detail: lastProError.slice(0, 240),
       }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
+
 
     if (!MISTRAL_API_KEY) {
       throw new Error("MISTRAL_API_KEY is not configured");
