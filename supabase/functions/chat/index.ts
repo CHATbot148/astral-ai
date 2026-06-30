@@ -238,7 +238,7 @@ async function callGeminiStudioProFallback(
   systemContent: string,
   formattedMessages: Array<{ role: string; content: any }>,
 ): Promise<string | null> {
-  const studioModels = ["gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-2.5-flash", "gemini-2.5-pro"];
+  const studioModels = ["gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-2.5-flash"];
   const contents = openAiMessagesToGeminiContents(formattedMessages);
   for (const model of studioModels) {
     let res: Response;
