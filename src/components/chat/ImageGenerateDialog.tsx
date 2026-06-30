@@ -54,6 +54,16 @@ const SUGGESTIONS = [
   "An astronaut walking on Mars",
 ];
 
+const inferAspectRatio = (value: string): ImageGenOptions["aspectRatio"] => {
+  const text = value.toLowerCase();
+  if (/\b(story|reel|shorts|tiktok|phone wallpaper|lock screen|vertical|portrait|poster|flyer)\b/.test(text)) return "9:16";
+  if (/\b(youtube thumbnail|banner|cover photo|desktop wallpaper|landscape|wide|cinematic|16:?9)\b/.test(text)) return "16:9";
+  if (/\b(product photo|catalog|website hero|editorial|camera photo|realistic photo)\b/.test(text)) return "3:2";
+  if (/\b(document|certificate|paper|book cover|album cover)\b/.test(text)) return "4:3";
+  if (/\b(logo|app icon|profile picture|avatar|badge|sticker|emblem|mascot)\b/.test(text)) return "1:1";
+  return "1:1";
+};
+
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
 const fadeUp = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.3 } } };
 
@@ -62,6 +72,7 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   const [prompt, setPrompt] = useState(initialPrompt);
   const [style, setStyle] = useState<ImageGenOptions["style"]>("photoreal");
   const [aspectRatio, setAspectRatio] = useState<ImageGenOptions["aspectRatio"]>("1:1");
+  const [ratioManuallySet, setRatioManuallySet] = useState(false);
   const selectedModel = "nano_banana_2";
   const canSelectModel = false;
   const [isWorking, setIsWorking] = useState(false);
@@ -72,7 +83,16 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   const [refPreview, setRefPreview] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { if (initialPrompt) setPrompt(initialPrompt); }, [initialPrompt]);
+  useEffect(() => {
+    if (!initialPrompt) return;
+    setPrompt(initialPrompt);
+    setAspectRatio(inferAspectRatio(initialPrompt));
+    setRatioManuallySet(false);
+  }, [initialPrompt]);
+
+  useEffect(() => {
+    if (!ratioManuallySet) setAspectRatio(inferAspectRatio(prompt));
+  }, [prompt, ratioManuallySet]);
 
   useEffect(() => {
     if (!isWorking) { setProgress(0); return; }
@@ -175,7 +195,7 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
               <p className="text-xs font-medium text-muted-foreground">Ratio</p>
               <div className="flex flex-wrap gap-1.5">
                 {ASPECTS.map((a) => (
-                  <button key={a.value} onClick={() => setAspectRatio(a.value)} disabled={isWorking}
+                  <button key={a.value} onClick={() => { setAspectRatio(a.value); setRatioManuallySet(true); }} disabled={isWorking}
                     className={cn(
                       "px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all",
                       aspectRatio === a.value
