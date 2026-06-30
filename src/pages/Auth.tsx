@@ -16,6 +16,8 @@ const passwordSchema = z.string().min(6, 'Password must be at least 6 characters
 
 type AuthStep = 'credentials' | 'verify-otp' | 'forgot-password' | 'reset-password';
 
+const authSpring = { type: 'spring', stiffness: 420, damping: 34, mass: 0.7 } as const;
+
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [step, setStep] = useState<AuthStep>('credentials');
@@ -109,6 +111,12 @@ const Auth = () => {
     if (isLogin) await handleLogin(e); else await handleSendOtp();
   };
 
+  const switchAuthMode = (nextIsLogin: boolean) => {
+    if (nextIsLogin === isLogin) return;
+    setErrors({});
+    setIsLogin(nextIsLogin);
+  };
+
   const handleForgotPassword = async () => {
     try { emailSchema.parse(email); } catch (e) {
       if (e instanceof z.ZodError) { setErrors({ email: e.errors[0].message }); return; }
@@ -179,7 +187,11 @@ const Auth = () => {
         transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
         className="relative z-10 w-full max-w-[400px]"
       >
-        <div className="backdrop-blur-2xl bg-white/75 dark:bg-slate-900/55 border border-white/60 dark:border-white/10 rounded-[2.25rem] p-7 sm:p-8 shadow-[0_24px_80px_-20px_rgba(79,70,229,0.35)] dark:shadow-[0_24px_80px_-20px_rgba(0,0,0,0.6)]">
+        <motion.div
+          layout
+          transition={authSpring}
+          className="backdrop-blur-2xl bg-white/75 dark:bg-slate-900/55 border border-white/60 dark:border-white/10 rounded-[2.25rem] p-7 sm:p-8 shadow-[0_24px_80px_-20px_rgba(79,70,229,0.35)] dark:shadow-[0_24px_80px_-20px_rgba(0,0,0,0.6)]"
+        >
 
           {/* Brand header */}
           <div className="text-center mb-7">
@@ -207,25 +219,28 @@ const Auth = () => {
                 transition={{ duration: 0.25 }}
               >
                 {/* Segmented Sign in / Sign up */}
-                <div className="flex p-1.5 bg-slate-200/60 dark:bg-slate-800/50 rounded-2xl mb-7">
+                <motion.div layout className="flex p-1.5 bg-slate-200/60 dark:bg-slate-800/50 rounded-2xl mb-7">
                   {(['signin', 'signup'] as const).map((mode) => {
                     const active = (mode === 'signin') === isLogin;
                     return (
                       <button
                         key={mode}
                         type="button"
-                        onClick={() => { setIsLogin(mode === 'signin'); setErrors({}); }}
-                        className={`flex-1 py-2.5 text-sm font-semibold rounded-xl transition-all ${
-                          active
-                            ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-sm'
-                            : 'text-slate-500 dark:text-slate-400'
-                        }`}
+                        onClick={() => switchAuthMode(mode === 'signin')}
+                        className={`relative flex-1 py-2.5 text-sm font-semibold rounded-xl transition-colors ${active ? 'text-indigo-600 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}
                       >
-                        {mode === 'signin' ? 'Sign in' : 'Sign up'}
+                        {active && (
+                          <motion.span
+                            layoutId="auth-mode-pill"
+                            className="absolute inset-0 rounded-xl bg-white dark:bg-slate-700 shadow-sm"
+                            transition={authSpring}
+                          />
+                        )}
+                        <span className="relative z-10">{mode === 'signin' ? 'Sign in' : 'Sign up'}</span>
                       </button>
                     );
                   })}
-                </div>
+                </motion.div>
 
                 {/* Google */}
                 <button
@@ -252,13 +267,17 @@ const Auth = () => {
                 </div>
 
                 {/* Form */}
-                <form onSubmit={handleSubmit} className="space-y-3.5">
-                  <AnimatePresence>
+                <motion.form layout onSubmit={handleSubmit} className="space-y-3.5" transition={authSpring}>
+                  <AnimatePresence initial={false} mode="popLayout">
                     {!isLogin && (
                       <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
+                        key="full-name"
+                        layout
+                        initial={{ opacity: 0, height: 0, y: -10, filter: 'blur(6px)' }}
+                        animate={{ opacity: 1, height: 'auto', y: 0, filter: 'blur(0px)' }}
+                        exit={{ opacity: 0, height: 0, y: -10, filter: 'blur(6px)' }}
+                        transition={authSpring}
+                        className="overflow-hidden"
                       >
                         <div className="relative">
                           <User className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -275,7 +294,7 @@ const Auth = () => {
                     )}
                   </AnimatePresence>
 
-                  <div>
+                  <motion.div layout transition={authSpring}>
                     <div className="relative">
                       <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                       <input
@@ -289,9 +308,9 @@ const Auth = () => {
                       />
                     </div>
                     {errors.email && <p className="text-xs text-destructive mt-1.5 ml-1">{errors.email}</p>}
-                  </div>
+                  </motion.div>
 
-                  <div>
+                  <motion.div layout transition={authSpring}>
                     <div className="relative">
                       <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                       <input
@@ -312,10 +331,19 @@ const Auth = () => {
                       </button>
                     </div>
                     {errors.password && <p className="text-xs text-destructive mt-1.5 ml-1">{errors.password}</p>}
-                  </div>
+                  </motion.div>
 
-                  {isLogin && (
-                    <div className="flex justify-end">
+                  <AnimatePresence initial={false} mode="popLayout">
+                    {isLogin && (
+                    <motion.div
+                      key="forgot-link"
+                      layout
+                      initial={{ opacity: 0, height: 0, y: -6 }}
+                      animate={{ opacity: 1, height: 'auto', y: 0 }}
+                      exit={{ opacity: 0, height: 0, y: -6 }}
+                      transition={authSpring}
+                      className="flex justify-end overflow-hidden"
+                    >
                       <button
                         type="button"
                         onClick={() => setStep('forgot-password')}
@@ -323,8 +351,9 @@ const Auth = () => {
                       >
                         Forgot password?
                       </button>
-                    </div>
-                  )}
+                    </motion.div>
+                    )}
+                  </AnimatePresence>
 
                   <button
                     type="submit"
@@ -335,7 +364,7 @@ const Auth = () => {
                       ? <Loader2 className="h-5 w-5 animate-spin" />
                       : (isLogin ? 'Sign in' : 'Create account')}
                   </button>
-                </form>
+                </motion.form>
 
                 <p className="mt-6 text-center text-[10.5px] leading-relaxed text-slate-400 dark:text-slate-500 px-3">
                   By continuing you agree to our{' '}
@@ -446,7 +475,7 @@ const Auth = () => {
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
+        </motion.div>
 
         {/* Attribution */}
         <div className="mt-6 text-center">
