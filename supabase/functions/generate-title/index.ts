@@ -44,8 +44,26 @@ serve(async (req) => {
       );
     }
 
+    const fitTitle = (value: string, max = 15) => {
+      const cleaned = value
+        .replace(/^generate\s+(?:an?\s+)?(?:image|picture|photo)\s*(?:of|for)?\s*/i, "")
+        .replace(/[^\p{L}\p{N}\s'-]/gu, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!cleaned) return "New Chat";
+      if (cleaned.length <= max) return cleaned;
+      const words = cleaned.split(" ").filter(Boolean);
+      let out = "";
+      for (const word of words) {
+        const next = out ? `${out} ${word}` : word;
+        if (next.length > max) break;
+        out = next;
+      }
+      return out || cleaned.slice(0, max).trim() || "New Chat";
+    };
+
     if (!MISTRAL_API_KEY) {
-      const fallbackTitle = message.split(/\s+/).slice(0, 5).join(' ').slice(0, 40).trim() || "New Chat";
+      const fallbackTitle = fitTitle(message);
       return new Response(
         JSON.stringify({ title: fallbackTitle }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -64,22 +82,22 @@ serve(async (req) => {
           {
             role: "system",
             content:
-              "You generate a short, descriptive chat title (3–6 words, max 40 characters) that captures the TOPIC of the user's first message. " +
-              "Rules: Use Title Case. No quotes, no emojis, no trailing punctuation. Do NOT use generic words like 'Chat', 'Conversation', 'Help', 'Question', 'New Chat', 'Untitled'. " +
+              "You generate a compact, descriptive chat title (1–3 words, max 15 characters) that captures the TOPIC of the user's first message. " +
+              "Rules: Use Title Case. Prefer complete words that fit under 15 characters; never return an incomplete/truncated word. No quotes, no emojis, no trailing punctuation. Do NOT use generic words like 'Chat', 'Conversation', 'Help', 'Question', 'New Chat', 'Untitled'. " +
               "Do NOT echo the user's literal phrasing if it's a greeting or filler — infer the underlying topic instead. " +
-              "Examples: 'How do photosynthesis work?' -> 'Photosynthesis Explained'. 'help me debug my react code' -> 'React Debug Help'. " +
-              "'write a poem about the sea' -> 'Poem About The Sea'. 'who won the world cup' -> 'World Cup Winners'. " +
+              "Examples: 'How do photosynthesis work?' -> 'Photosynthesis'. 'help me debug my react code' -> 'React Debug'. " +
+              "'write a poem about the sea' -> 'Sea Poem'. 'who won the world cup' -> 'World Cup'. " +
               "Return ONLY the title."
           },
           { role: "user", content: message }
         ],
-        max_tokens: 24,
+        max_tokens: 12,
         temperature: 0.5,
       }),
     });
 
     if (!response.ok) {
-      const fallbackTitle = message.split(/\s+/).slice(0, 5).join(' ').slice(0, 40).trim() || "New Chat";
+      const fallbackTitle = fitTitle(message);
       return new Response(
         JSON.stringify({ title: fallbackTitle }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -87,14 +105,14 @@ serve(async (req) => {
     }
 
     const data = await response.json();
-    let title = data.choices?.[0]?.message?.content?.trim() || message.slice(0, 40);
-    // Strip quotes, leading/trailing punctuation, and cap to 40 chars
+    let title = data.choices?.[0]?.message?.content?.trim() || message;
+    // Strip quotes and leading/trailing punctuation, then fit under 15 chars
     title = title.replace(/^["'`""]+|["'`""]+$/g, '').trim();
-    title = title.slice(0, 40).trim();
     title = title.replace(/[.!?,;:]+$/, '');
+    title = fitTitle(title);
     // Guard against generic fallbacks the model sometimes returns
     if (!title || /^(new chat|chat|conversation|untitled|help|question|message)$/i.test(title)) {
-      title = message.split(/\s+/).slice(0, 5).join(' ').slice(0, 40).trim() || "New Chat";
+      title = fitTitle(message);
     }
 
 
