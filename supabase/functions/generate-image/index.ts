@@ -7,9 +7,9 @@ const corsHeaders = {
 };
 
 const STYLE_PROMPTS: Record<string, string> = {
-  photoreal: "ultra realistic photograph, 8k, high detail, professional photography",
-  cinematic: "cinematic shot, dramatic lighting, film grain, movie still, epic composition",
-  anime: "anime style, detailed illustration, vibrant colors, Studio Ghibli inspired",
+  photoreal: "ultra realistic professional photograph, natural lens rendering, real materials, tactile surface detail, accurate reflections, high-end commercial photography",
+  cinematic: "cinematic shot, motivated practical lighting, realistic production design, filmic color grade, subtle film grain, premium movie-still composition",
+  anime: "high-detail anime illustration, strong composition, expressive lighting, clean linework, vibrant but controlled colors",
   sketch: "pencil sketch, hand drawn, detailed line art, artistic illustration",
   none: "",
 };
@@ -22,6 +22,14 @@ const ASPECT_RATIO_MAP: Record<string, { width: number; height: number }> = {
   "9:16": { width: 768, height: 1344 },
   "4:3": { width: 1152, height: 896 },
   "3:4": { width: 896, height: 1152 },
+};
+
+const ASPECT_LABELS: Record<string, string> = {
+  "1:1": "square 1:1",
+  "16:9": "wide landscape 16:9",
+  "9:16": "vertical portrait 9:16",
+  "4:3": "classic landscape 4:3",
+  "3:2": "professional camera 3:2",
 };
 
 // Provider model mapping
@@ -391,6 +399,82 @@ async function generateWithGeminiStudioTextToImage(
   return null;
 }
 
+async function generateWithLeonardo(
+  prompt: string,
+  width: number,
+  height: number,
+  referenceImageUrl?: string,
+): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  const apiKey = Deno.env.get("LEONARDO_API_KEY_NEW") || Deno.env.get("LEONARDO_API_KEY");
+  if (!apiKey) return null;
+
+  let initImageUrl: string | undefined;
+  if (referenceImageUrl) {
+    initImageUrl = referenceImageUrl.startsWith("storage:")
+      ? await resolveStorageRefToSignedUrl(referenceImageUrl)
+      : referenceImageUrl;
+  }
+
+  const body: Record<string, unknown> = {
+    prompt,
+    modelId: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3",
+    width,
+    height,
+    num_images: 1,
+    alchemy: true,
+    photoReal: true,
+    presetStyle: "CINEMATIC",
+    public: false,
+  };
+
+  if (initImageUrl) {
+    body.init_image_url = initImageUrl;
+    body.init_strength = 0.35;
+  }
+
+  const res = await fetch("https://cloud.leonardo.ai/api/rest/v1/generations", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    console.error("Leonardo image generation failed:", res.status, await res.text().catch(() => ""));
+    return null;
+  }
+
+  const created = await res.json();
+  const generationId = created?.sdGenerationJob?.generationId || created?.generationId || created?.generation?.id;
+  if (!generationId) return null;
+
+  for (let i = 0; i < 36; i++) {
+    await new Promise((r) => setTimeout(r, 5000));
+    const poll = await fetch(`https://cloud.leonardo.ai/api/rest/v1/generations/${generationId}`, {
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+    });
+    if (!poll.ok) continue;
+    const data = await poll.json();
+    const generation = data?.generations_by_pk || data?.generation || data;
+    const status = String(generation?.status || "").toUpperCase();
+    const imageUrl = generation?.generated_images?.[0]?.url || generation?.assets?.[0]?.url;
+    if ((status === "COMPLETE" || status === "SUCCEEDED" || imageUrl) && imageUrl) {
+      const imgRes = await fetch(imageUrl);
+      if (!imgRes.ok) return null;
+      return {
+        bytes: new Uint8Array(await imgRes.arrayBuffer()),
+        mime: imgRes.headers.get("content-type") || "image/png",
+      };
+    }
+    if (["FAILED", "ERROR", "CANCELED"].includes(status)) return null;
+  }
+
+  return null;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -493,14 +577,19 @@ serve(async (req) => {
     // Beef up the visual prompt so the model gets rich, specific guidance
     // (a short user prompt like "gaming logo" produces weak output otherwise).
     const userPrompt = String(prompt).trim();
+    const referenceUrl = referenceImageUrl || referenceMediaUrl;
+    const isReferenceEdit = Boolean(referenceUrl);
     const enhancedPrompt = [
-      `High-quality professional image generation.`,
+      isReferenceEdit ? `High-quality professional reference image edit.` : `High-quality professional image generation.`,
       ``,
       `Subject: ${userPrompt}`,
-      stylePrompt ? `Style: ${stylePrompt}.` : `Style: clean, premium, photoreal lighting.`,
-      `Composition: well-balanced, clear focal subject, ${aspectRatio} aspect ratio.`,
-      `Quality requirements: sharp details, crisp focus, premium lighting, cinematic visual quality, well-balanced colors, high resolution look.`,
-      `Avoid: distorted text, gibberish lettering, warped faces, extra fingers, extra limbs, mangled hands, messy artifacts, low-resolution textures, watermarks.`,
+      stylePrompt ? `Style: ${stylePrompt}.` : `Style: clean, premium, realistic lighting and polished design.`,
+      `Composition: well-balanced, clear focal subject, ${ASPECT_LABELS[aspectRatio] || aspectRatio} frame, no unwanted cropping.`,
+      `Realism requirements: physically plausible lighting, real-world materials, authentic product/brand design details when the user explicitly requests a real brand, accurate shadows, natural camera depth, clean background integration, premium color grading.`,
+      isReferenceEdit
+        ? `Reference edit rules: preserve the original subject identity, pose, layout, background, colors, logos, typography, and all unrelated details. Change only what the user requested, keep the rest visually consistent with the reference image.`
+        : `Design rules: make the scene specific and believable, with coherent objects, readable composition, and no generic filler details.`,
+      `Avoid: distorted text, gibberish lettering, warped faces, extra fingers, extra limbs, mangled hands, messy artifacts, low-resolution textures, unwanted watermarks, random logos not requested by the user.`,
     ].join("\n");
     const dims = ASPECT_RATIO_MAP[aspectRatio] || ASPECT_RATIO_MAP["1:1"];
 
@@ -513,10 +602,10 @@ serve(async (req) => {
     let imgMime = "image/png";
 
     // Image generation is locked to Nano Banana 2 only while other media credits are paused.
-    if (referenceImageUrl) {
+    if (referenceUrl) {
       console.log(`[PRIMARY] Nano Banana 2 reference generation: "${enhancedPrompt}"`);
       try {
-        const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel!, referenceImageUrl);
+        const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel!, referenceUrl);
         if (generated) {
           imgBytes = generated.bytes;
           imgMime = generated.mime;
@@ -526,7 +615,15 @@ serve(async (req) => {
       }
       if (!imgBytes) {
         console.log(`[FALLBACK] Gemini Studio reference generation: "${enhancedPrompt}"`);
-        const generated = await generateWithGeminiStudioImage(enhancedPrompt, referenceImageUrl);
+        const generated = await generateWithGeminiStudioImage(enhancedPrompt, referenceUrl);
+        if (generated) {
+          imgBytes = generated.bytes;
+          imgMime = generated.mime;
+        }
+      }
+      if (!imgBytes) {
+        console.log(`[FALLBACK] Leonardo reference generation: "${enhancedPrompt}"`);
+        const generated = await generateWithLeonardo(enhancedPrompt, dims.width, dims.height, referenceUrl);
         if (generated) {
           imgBytes = generated.bytes;
           imgMime = generated.mime;
@@ -534,7 +631,7 @@ serve(async (req) => {
       }
     }
 
-    if (!imgBytes && !referenceImageUrl && selectedModel.provider === "lovable" && selectedModel.lovableModel) {
+    if (!imgBytes && !referenceUrl && selectedModel.provider === "lovable" && selectedModel.lovableModel) {
       console.log(`[PRIMARY] Nano Banana 2 (${selectedModel.lovableModel}): "${enhancedPrompt}"`);
       try {
         const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel);
@@ -553,9 +650,17 @@ serve(async (req) => {
           imgMime = generated.mime;
         }
       }
+      if (!imgBytes) {
+        console.log(`[FALLBACK] Leonardo text-to-image: "${enhancedPrompt}"`);
+        const generated = await generateWithLeonardo(enhancedPrompt, dims.width, dims.height);
+        if (generated) {
+          imgBytes = generated.bytes;
+          imgMime = generated.mime;
+        }
+      }
     }
 
-    if (!imgBytes) throw new Error("Nano Banana 2 image generation failed. Please try again.");
+    if (!imgBytes) throw new Error("Image generation providers are temporarily unavailable or quota-limited. Please try again shortly.");
 
     const ref = await uploadAndSave(admin, userId, prompt, style, aspectRatio, imgBytes, imgMime);
 
