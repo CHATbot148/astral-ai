@@ -241,18 +241,24 @@ async function callGeminiStudioProFallback(
   const studioModels = ["gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-2.5-flash", "gemini-2.5-pro"];
   const contents = openAiMessagesToGeminiContents(formattedMessages);
   for (const model of studioModels) {
-    const ctrl = new AbortController();
-    const timeout = setTimeout(() => ctrl.abort(), 7_500);
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: ctrl.signal,
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemContent }] },
-        contents,
-        generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
-      }),
-    }).finally(() => clearTimeout(timeout));
+    let res: Response;
+    try {
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 7_500);
+      res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: ctrl.signal,
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemContent }] },
+          contents,
+          generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
+        }),
+      }).finally(() => clearTimeout(timeout));
+    } catch (e) {
+      console.error("Astraz Pro Gemini Studio fallback error:", model, e instanceof Error ? e.message : String(e));
+      continue;
+    }
 
     if (!res.ok) {
       console.error("Astraz Pro Gemini Studio fallback error:", model, res.status, await res.text().catch(() => ""));
