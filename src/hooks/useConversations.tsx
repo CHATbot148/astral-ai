@@ -138,6 +138,25 @@ export const useConversations = () => {
     await fetchMessages(conversation.id);
   };
 
+  const fitTitle = (value: string, max = 15) => {
+    const cleaned = value
+      .replace(/^generate\s+(?:an?\s+)?(?:image|picture|photo)\s*(?:of|for)?\s*/i, '')
+      .replace(/[^\p{L}\p{N}\s'-]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!cleaned) return 'New Chat';
+    if (cleaned.length <= max) return cleaned;
+
+    const words = cleaned.split(' ').filter(Boolean);
+    let out = '';
+    for (const word of words) {
+      const next = out ? `${out} ${word}` : word;
+      if (next.length > max) break;
+      out = next;
+    }
+    return out || cleaned.slice(0, max).trim() || 'New Chat';
+  };
+
   const generateSmartTitle = async (message: string): Promise<string> => {
     try {
       const { data, error } = await supabase.functions.invoke('generate-title', {
@@ -145,12 +164,12 @@ export const useConversations = () => {
       });
       
       if (error || !data?.title) {
-        return message.slice(0, 15).trim() || 'New Chat';
+        return fitTitle(message);
       }
       
-      return data.title.slice(0, 15);
+      return fitTitle(data.title);
     } catch {
-      return message.slice(0, 15).trim() || 'New Chat';
+      return fitTitle(message);
     }
   };
 
@@ -220,10 +239,10 @@ export const useConversations = () => {
       if (role === 'user') {
         const updates: { updated_at: string; title?: string } = { updated_at: new Date().toISOString() };
         
-        // Update title to first message if it's still "New Chat" - limit to 15 chars
+        // Update title to first message if it's still "New Chat" - fit within action buttons
         const conv = conversations.find(c => c.id === conversationId);
         if (conv?.title === 'New Chat') {
-          updates.title = content.slice(0, 15);
+          updates.title = fitTitle(content);
         }
 
         await supabase
