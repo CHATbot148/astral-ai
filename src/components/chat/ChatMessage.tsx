@@ -517,7 +517,7 @@ const FileImageWithLoader = ({ url, index, isUser, onPreview, onDownload }: { ur
         type="button"
         className={cn(
           "rounded-lg overflow-hidden border border-border bg-secondary cursor-pointer",
-          isUser ? "w-20 h-20" : "w-64 max-w-full",
+          isUser ? "w-20 h-20" : "max-w-full",
           !loaded && "absolute inset-0 opacity-0"
         )}
         onClick={() => onPreview(url)}
@@ -525,7 +525,7 @@ const FileImageWithLoader = ({ url, index, isUser, onPreview, onDownload }: { ur
         <img
           src={url}
           alt={`${!isUser ? 'Generated image' : 'Attachment'} ${index + 1}`}
-          className={cn("w-full h-full", isUser ? "object-cover" : "object-contain max-h-72")}
+          className={cn(isUser ? "h-full w-full object-cover" : "block h-auto max-h-[72vh] w-auto max-w-full object-contain")}
           onLoad={() => setLoaded(true)}
           onError={(e) => { e.currentTarget.style.display = 'none'; }}
         />

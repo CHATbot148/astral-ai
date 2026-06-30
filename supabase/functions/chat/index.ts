@@ -238,18 +238,27 @@ async function callGeminiStudioProFallback(
   systemContent: string,
   formattedMessages: Array<{ role: string; content: any }>,
 ): Promise<string | null> {
-  const studioModels = ["gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-2.5-pro", "gemini-2.5-flash"];
+  const studioModels = ["gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-2.5-flash"];
   const contents = openAiMessagesToGeminiContents(formattedMessages);
   for (const model of studioModels) {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemContent }] },
-        contents,
-        generationConfig: { maxOutputTokens: 8192, temperature: 0.7 },
-      }),
-    });
+    let res: Response;
+    try {
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 7_500);
+      res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: ctrl.signal,
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemContent }] },
+          contents,
+          generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
+        }),
+      }).finally(() => clearTimeout(timeout));
+    } catch (e) {
+      console.error("Astraz Pro Gemini Studio fallback error:", model, e instanceof Error ? e.message : String(e));
+      continue;
+    }
 
     if (!res.ok) {
       console.error("Astraz Pro Gemini Studio fallback error:", model, res.status, await res.text().catch(() => ""));
@@ -1185,14 +1194,16 @@ IMPORTANT RESPONSE GUIDELINES:
           resetAt: resetAt?.toISOString(),
         }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
-      await admin.from("subscriptions")
-        .update({ pro_messages_used: used + 1, pro_reset_at: resetAt?.toISOString() ?? null })
-        .eq("user_id", userId);
+      const markProUsed = async () => {
+        await admin.from("subscriptions")
+          .update({ pro_messages_used: used + 1, pro_reset_at: resetAt?.toISOString() ?? null })
+          .eq("user_id", userId);
+      };
 
       // Try Gemini Studio direct FIRST (faster, fewer rate-limit hangs than the gateway
       // for Pro), then fall back to the Lovable AI gateway. Each attempt has an
       // explicit timeout so a stuck connection cannot freeze the request forever.
-      const PRO_TIMEOUT_MS = 22_000;
+      const PRO_TIMEOUT_MS = 18_000;
       const withTimeout = (ms: number) => {
         const ctrl = new AbortController();
         const t = setTimeout(() => ctrl.abort(), ms);
@@ -1210,6 +1221,7 @@ IMPORTANT RESPONSE GUIDELINES:
             new Promise<null>((resolve) => setTimeout(() => resolve(null), PRO_TIMEOUT_MS)),
           ]);
           if (fallbackText) {
+            await markProUsed();
             return new Response(oneShotTextToSse(fallbackText, rawVideoCards), {
               headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
             });
@@ -1221,7 +1233,7 @@ IMPORTANT RESPONSE GUIDELINES:
       }
 
       // 2. Lovable AI gateway as a streaming fallback
-      const proModels = ["google/gemini-3.1-pro-preview", "google/gemini-3.5-flash", "google/gemini-2.5-pro"];
+      const proModels = ["google/gemini-3.5-flash", "google/gemini-3.1-pro-preview", "google/gemini-2.5-pro"];
       if (LOVABLE_API_KEY) {
         for (const proModel of proModels) {
           const t = withTimeout(PRO_TIMEOUT_MS);
@@ -1239,6 +1251,7 @@ IMPORTANT RESPONSE GUIDELINES:
             });
             t.clear();
             if (proRes.ok && proRes.body) {
+              await markProUsed();
               const finalBody = rawVideoCards ? appendToStream(proRes.body, rawVideoCards) : proRes.body;
               return new Response(finalBody, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
             }
@@ -1252,8 +1265,31 @@ IMPORTANT RESPONSE GUIDELINES:
         }
       }
 
+      // Final safety net: if Pro providers are quota-limited/unavailable, still reply
+      // with the standard Astraz model instead of leaving the chat hanging.
+      if (MISTRAL_API_KEY) {
+        try {
+          const fallbackRes = await fetch("https://api.mistral.ai/v1/chat/completions", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${MISTRAL_API_KEY}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: "mistral-large-latest",
+              messages: [{ role: "system", content: systemContent }, ...formattedMessages],
+              stream: true,
+              max_tokens: 2048,
+            }),
+          });
+          if (fallbackRes.ok && fallbackRes.body) {
+            const finalBody = rawVideoCards ? appendToStream(fallbackRes.body, rawVideoCards) : fallbackRes.body;
+            return new Response(finalBody, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
+          }
+        } catch (e) {
+          console.error("Astraz Pro standard fallback failed:", e);
+        }
+      }
+
       return new Response(JSON.stringify({
-        error: "Astraz Pro is temporarily unavailable. Try again in a moment.",
+        error: "Astraz Pro is temporarily unavailable because the Pro providers are quota-limited right now. Standard Astraz fallback also failed.",
         code: "pro_gateway_error",
         detail: lastProError.slice(0, 240),
       }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });

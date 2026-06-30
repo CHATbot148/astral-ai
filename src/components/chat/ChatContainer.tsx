@@ -700,6 +700,16 @@ export const ChatContainer = () => {
       .trim();
   };
 
+  const inferImageAspectRatio = (text: string, hasReference = false): ImageGenOptions['aspectRatio'] => {
+    const value = text.toLowerCase();
+    if (/\b(story|reel|shorts|tiktok|phone wallpaper|lock screen|vertical|portrait|poster|flyer)\b/.test(value)) return '9:16';
+    if (/\b(youtube thumbnail|banner|cover photo|desktop wallpaper|landscape|wide|cinematic|16:?9)\b/.test(value)) return '16:9';
+    if (/\b(product photo|catalog|website hero|editorial|camera photo|realistic photo)\b/.test(value)) return '3:2';
+    if (/\b(document|certificate|paper|book cover|album cover)\b/.test(value)) return '4:3';
+    if (/\b(logo|app icon|profile picture|avatar|badge|sticker|emblem|mascot)\b/.test(value)) return '1:1';
+    return hasReference ? '3:2' : '1:1';
+  };
+
   const handleSend = async (content: string, files?: File[]) => {
     if (editingMessageId && currentConversation?.id) {
       const messageIndex = messages.findIndex(m => m.id === editingMessageId);
@@ -938,6 +948,8 @@ export const ChatContainer = () => {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
 
+      const selectedChatModel = (typeof window !== 'undefined' ? localStorage.getItem('astraz_selected_model') : null) === 'astraz-pro' ? 'astraz-pro' : 'astraz';
+
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
         method: 'POST',
         headers: {
@@ -958,7 +970,7 @@ export const ChatContainer = () => {
           aiMode: getAISettings().mode,
           customPrompt: getAISettings().customPrompt,
           followUpQuestions: getAISettings().followUpQuestions,
-          model: (typeof window !== 'undefined' ? localStorage.getItem('astraz_selected_model') : null) === 'astraz-pro' ? 'astraz-pro' : 'astraz',
+          model: selectedChatModel,
 
         }),
         signal: abortControllerRef.current?.signal,
@@ -977,34 +989,35 @@ export const ChatContainer = () => {
       let buffer = '';
       const settings = getAISettings();
       const showTyping = settings.typingAnimation;
-      const typingStyle = settings.typingStyle || 'typewriter';
+      const typingStyle = selectedChatModel === 'astraz-pro' ? 'normal' : (settings.typingStyle || 'typewriter');
       setStreamingStyle(typingStyle);
 
       // Queues for animated styles
       let charQueue: string[] = [];
       let wordQueue: string[] = [];
       let displayedContent = '';
+      let queuedVisibleLength = 0;
       let animInterval: ReturnType<typeof setInterval> | null = null;
       let generationDirective: { type: 'image' | 'video'; prompt: string } | null = null;
 
       if (showTyping && typingStyle === 'typewriter') {
         animInterval = setInterval(() => {
-          const batch = charQueue.splice(0, 3);
+          const batch = charQueue.splice(0, 12);
           if (batch.length > 0) {
             displayedContent += batch.join('');
             setStreamingContent(displayedContent);
           }
-        }, 15);
+        }, 24);
       }
 
       if (showTyping && typingStyle === 'word_by_word') {
         animInterval = setInterval(() => {
           if (wordQueue.length > 0) {
-            const nextWord = wordQueue.shift()!;
-            displayedContent += nextWord;
+            const nextWords = wordQueue.splice(0, 3).join('');
+            displayedContent += nextWords;
             setStreamingContent(displayedContent);
           }
-        }, 60);
+        }, 50);
       }
 
       // line_fade & slide_down: we stream full content but ChatMessage handles per-line animation
@@ -1052,14 +1065,16 @@ export const ChatContainer = () => {
 
               if (showTyping) {
                 if (typingStyle === 'typewriter') {
-                  const safeDelta = visibleContent.slice(displayedContent.length);
+                  const safeDelta = visibleContent.slice(queuedVisibleLength);
                   if (safeDelta) charQueue.push(...safeDelta.split(''));
+                  queuedVisibleLength = visibleContent.length;
                 } else if (typingStyle === 'word_by_word') {
-                  const safeDelta = visibleContent.slice(displayedContent.length);
+                  const safeDelta = visibleContent.slice(queuedVisibleLength);
                   if (safeDelta) {
                     const words = safeDelta.match(/\S+\s*/g) || [safeDelta];
                     wordQueue.push(...words);
                   }
+                  queuedVisibleLength = visibleContent.length;
                 } else {
                   setStreamingContent(visibleContent);
                 }
@@ -1103,7 +1118,7 @@ export const ChatContainer = () => {
               const generatedImage = await generateImageWithOptions({ 
                 prompt: imgPrompt, 
                 style: 'photoreal', 
-                aspectRatio: '1:1', 
+                aspectRatio: inferImageAspectRatio(imgPrompt, Boolean(referenceMediaUrl)), 
                 quality: 'balanced',
                 referenceMediaUrl,
               }, capturedConvId);
