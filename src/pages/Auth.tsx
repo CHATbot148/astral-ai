@@ -17,6 +17,8 @@ const passwordSchema = z.string().min(6, 'Password must be at least 6 characters
 type AuthStep = 'credentials' | 'verify-otp' | 'forgot-password' | 'reset-password';
 
 const authSpring = { type: 'spring', stiffness: 420, damping: 34, mass: 0.7 } as const;
+const modeButtonClass = (active: boolean) =>
+  `relative z-10 flex-1 py-2.5 text-sm font-semibold rounded-xl transition-colors duration-300 ${active ? 'text-indigo-600 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`;
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -158,7 +160,7 @@ const Auth = () => {
     'focus:ring-4 focus:ring-indigo-500/15 transition-all';
 
   return (
-    <main className="min-h-[100dvh] w-full flex items-center justify-center p-5 sm:p-6 relative overflow-hidden bg-indigo-50/50 dark:bg-slate-950">
+    <main className="min-h-[100dvh] w-full md:grid md:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)] flex items-center justify-center p-5 sm:p-6 md:p-0 relative overflow-hidden bg-indigo-50/50 dark:bg-slate-950 md:bg-background">
       <Helmet>
         <title>Sign In | Astraz AI Assistant</title>
         <meta name="description" content="Sign in or create an Astraz account to chat with AI, generate images and videos, and access your conversations across devices." />
@@ -168,8 +170,8 @@ const Auth = () => {
         <meta property="og:url" content="https://astraz.lovable.app/auth" />
       </Helmet>
 
-      {/* Ambient orbs */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      {/* Mobile glass backdrop */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden md:hidden">
         <div className="absolute -top-[15%] -left-[15%] w-[65%] h-[65%] rounded-full bg-indigo-500/25 dark:bg-indigo-600/15 blur-[120px]" />
         <div className="absolute -bottom-[20%] -right-[15%] w-[65%] h-[65%] rounded-full bg-cyan-400/25 dark:bg-cyan-500/12 blur-[120px]" />
         {/* Giant blurred Astraz logo as backdrop */}
@@ -181,16 +183,33 @@ const Auth = () => {
         />
       </div>
 
+      {/* Desktop layout restored: large screens keep the classic two-pane auth screen. */}
+      <section className="relative hidden md:flex h-full min-h-[100dvh] flex-col justify-between overflow-hidden border-r border-border bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 p-10 text-white dark:from-slate-950 dark:via-indigo-950 dark:to-slate-900">
+        <div className="absolute inset-0 opacity-30" style={{ background: 'radial-gradient(circle at 20% 15%, hsl(var(--xai-cyan) / 0.45), transparent 32%), radial-gradient(circle at 85% 80%, hsl(var(--xai-purple) / 0.4), transparent 34%)' }} />
+        <div className="relative z-10 flex items-center gap-3">
+          <img src={astrazLogo} alt="Astraz" className="h-12 w-12 object-contain drop-shadow-[0_0_24px_hsl(var(--xai-cyan)/0.45)]" />
+          <div>
+            <p className="font-display text-2xl font-bold">Astraz</p>
+            <p className="text-xs uppercase tracking-[0.24em] text-white/55">Astrinique</p>
+          </div>
+        </div>
+        <div className="relative z-10 max-w-xl">
+          <h2 className="font-display text-5xl font-bold leading-tight tracking-normal">Your intelligent companion.</h2>
+          <p className="mt-5 max-w-md text-base leading-7 text-white/70">Sign in to continue your conversations, generate media, read files, and keep your Astraz workspace synced.</p>
+        </div>
+        <a href="https://astrinique.vercel.app" target="_blank" rel="noopener noreferrer" className="relative z-10 text-[11px] font-bold uppercase tracking-[0.3em] text-white/45 hover:text-white transition-colors">Made by Astrinique</a>
+      </section>
+
       <motion.div
         initial={{ opacity: 0, y: 16, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-        className="relative z-10 w-full max-w-[400px]"
+        className="relative z-10 w-full max-w-[400px] md:max-w-md md:justify-self-center"
       >
         <motion.div
           layout
           transition={authSpring}
-          className="backdrop-blur-2xl bg-white/75 dark:bg-slate-900/55 border border-white/60 dark:border-white/10 rounded-[2.25rem] p-7 sm:p-8 shadow-[0_24px_80px_-20px_rgba(79,70,229,0.35)] dark:shadow-[0_24px_80px_-20px_rgba(0,0,0,0.6)]"
+          className="backdrop-blur-2xl bg-white/75 dark:bg-slate-900/55 md:bg-card md:dark:bg-card border border-white/60 dark:border-white/10 md:border-border rounded-[2.25rem] md:rounded-3xl p-7 sm:p-8 shadow-[0_24px_80px_-20px_rgba(79,70,229,0.35)] dark:shadow-[0_24px_80px_-20px_rgba(0,0,0,0.6)] md:shadow-2xl"
         >
 
           {/* Brand header */}
@@ -219,28 +238,18 @@ const Auth = () => {
                 transition={{ duration: 0.25 }}
               >
                 {/* Segmented Sign in / Sign up */}
-                <motion.div layout className="flex p-1.5 bg-slate-200/60 dark:bg-slate-800/50 rounded-2xl mb-7">
-                  {(['signin', 'signup'] as const).map((mode) => {
-                    const active = (mode === 'signin') === isLogin;
-                    return (
-                      <button
-                        key={mode}
-                        type="button"
-                        onClick={() => switchAuthMode(mode === 'signin')}
-                        className={`relative flex-1 py-2.5 text-sm font-semibold rounded-xl transition-colors ${active ? 'text-indigo-600 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}
-                      >
-                        {active && (
-                          <motion.span
-                            layoutId="auth-mode-pill"
-                            className="absolute inset-0 rounded-xl bg-white dark:bg-slate-700 shadow-sm"
-                            transition={authSpring}
-                          />
-                        )}
-                        <span className="relative z-10">{mode === 'signin' ? 'Sign in' : 'Sign up'}</span>
-                      </button>
-                    );
-                  })}
-                </motion.div>
+                <div className="relative grid grid-cols-2 p-1.5 bg-slate-200/60 dark:bg-slate-800/50 rounded-2xl mb-7 overflow-hidden">
+                  <span
+                    aria-hidden="true"
+                    className={`absolute left-1.5 top-1.5 bottom-1.5 w-[calc(50%-0.375rem)] rounded-xl bg-white dark:bg-slate-700 shadow-sm transition-transform duration-300 ease-[cubic-bezier(.22,1,.36,1)] will-change-transform ${isLogin ? 'translate-x-0' : 'translate-x-[calc(100%+0.75rem)]'}`}
+                  />
+                  <button type="button" onClick={() => switchAuthMode(true)} className={modeButtonClass(isLogin)}>
+                    Sign in
+                  </button>
+                  <button type="button" onClick={() => switchAuthMode(false)} className={modeButtonClass(!isLogin)}>
+                    Sign up
+                  </button>
+                </div>
 
                 {/* Google */}
                 <button
@@ -268,31 +277,23 @@ const Auth = () => {
 
                 {/* Form */}
                 <motion.form layout onSubmit={handleSubmit} className="space-y-3.5" transition={authSpring}>
-                  <AnimatePresence initial={false} mode="popLayout">
-                    {!isLogin && (
-                      <motion.div
-                        key="full-name"
-                        layout
-                        initial={{ opacity: 0, height: 0, y: -10, filter: 'blur(6px)' }}
-                        animate={{ opacity: 1, height: 'auto', y: 0, filter: 'blur(0px)' }}
-                        exit={{ opacity: 0, height: 0, y: -10, filter: 'blur(6px)' }}
-                        transition={authSpring}
-                        className="overflow-hidden"
-                      >
-                        <div className="relative">
-                          <User className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                          <input
-                            type="text"
-                            placeholder="Full name (optional)"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            className={`${fieldClass} pl-11`}
-                            autoComplete="name"
-                          />
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                  <div className={`grid transition-[grid-template-rows,opacity,transform,filter] duration-300 ease-[cubic-bezier(.22,1,.36,1)] ${isLogin ? 'grid-rows-[0fr] opacity-0 -translate-y-2 blur-sm' : 'grid-rows-[1fr] opacity-100 translate-y-0 blur-0'}`}>
+                    <div className="overflow-hidden">
+                      <div className="relative pb-0.5">
+                        <User className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Full name (optional)"
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                          className={`${fieldClass} pl-11`}
+                          autoComplete="name"
+                          tabIndex={isLogin ? -1 : 0}
+                          aria-hidden={isLogin}
+                        />
+                      </div>
+                    </div>
+                  </div>
 
                   <motion.div layout transition={authSpring}>
                     <div className="relative">
@@ -478,7 +479,7 @@ const Auth = () => {
         </motion.div>
 
         {/* Attribution */}
-        <div className="mt-6 text-center">
+        <div className="mt-6 text-center md:hidden">
           <a
             href="https://astrinique.vercel.app"
             target="_blank"

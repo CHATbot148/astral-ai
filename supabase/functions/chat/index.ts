@@ -275,6 +275,113 @@ async function callGeminiStudioProFallback(
   return null;
 }
 
+function geminiStudioSseToOpenAiSse(upstreamBody: ReadableStream<Uint8Array>, extraContent = ""): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  const reader = upstreamBody.getReader();
+  let buffer = "";
+
+  const emitText = (controller: ReadableStreamDefaultController<Uint8Array>, text: string) => {
+    if (!text) return;
+    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`));
+  };
+
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      while (true) {
+        const newlineIndex = buffer.indexOf("\n");
+        if (newlineIndex === -1) break;
+        let line = buffer.slice(0, newlineIndex);
+        buffer = buffer.slice(newlineIndex + 1);
+        if (line.endsWith("\r")) line = line.slice(0, -1);
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === "[DONE]") continue;
+        try {
+          const parsed = JSON.parse(payload);
+          const parts = parsed?.candidates?.[0]?.content?.parts;
+          if (Array.isArray(parts)) {
+            for (const part of parts) emitText(controller, part?.text || "");
+          }
+        } catch {
+          // ignore malformed keepalive/event chunks
+        }
+      }
+
+      const { done, value } = await reader.read();
+      if (done) {
+        if (extraContent) emitText(controller, extraContent);
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+        return;
+      }
+      buffer += decoder.decode(value, { stream: true });
+    },
+    cancel() {
+      reader.cancel();
+    },
+  });
+}
+
+async function callGeminiStudioProStream(
+  apiKey: string,
+  systemContent: string,
+  formattedMessages: Array<{ role: string; content: any }>,
+  signal?: AbortSignal,
+): Promise<Response | null> {
+  const studioModels = ["gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-2.5-flash"];
+  const contents = openAiMessagesToGeminiContents(formattedMessages);
+  for (const model of studioModels) {
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal,
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemContent }] },
+          contents,
+          generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
+        }),
+      });
+      if (res.ok && res.body) return res;
+      console.error("Astraz Pro Gemini Studio stream error:", model, res.status, await res.text().catch(() => ""));
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") throw e;
+      console.error("Astraz Pro Gemini Studio stream failed:", model, e instanceof Error ? e.message : String(e));
+    }
+  }
+  return null;
+}
+
+async function callOpenRouterFreeFallback(
+  apiKey: string,
+  systemContent: string,
+  formattedMessages: Array<{ role: string; content: any }>,
+  signal?: AbortSignal,
+): Promise<Response | null> {
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": "https://astraz.online",
+      "X-Title": "Astraz",
+    },
+    signal,
+    body: JSON.stringify({
+      model: "openrouter/free",
+      messages: [{ role: "system", content: systemContent }, ...formattedMessages],
+      stream: true,
+      max_tokens: 4096,
+      temperature: 0.7,
+    }),
+  });
+
+  if (res.ok && res.body) return res;
+  console.error("OpenRouter free fallback error:", res.status, await res.text().catch(() => ""));
+  return null;
+}
+
 // Detect if user is asking about something visual that benefits from inline images
 function needsVisualContext(text: string): { needed: boolean; query: string } {
   const lowerText = text.toLowerCase();
@@ -338,6 +445,7 @@ serve(async (req) => {
     const { messages, fileContext, timeZone, clientTimeISO, aiMode, customPrompt, followUpQuestions, isVoiceMode, noStream, forceWebSearch, webSearchQuery, model: requestedModel } = await req.json();
     const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -1213,22 +1321,22 @@ IMPORTANT RESPONSE GUIDELINES:
       const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
       let lastProError = "";
 
-      // 1. Gemini Studio direct (best Gemini chat models: 3.1 Pro, 3.5 Flash)
+      // 1. Gemini Studio direct streaming (best Gemini chat models: 3.1 Pro, 3.5 Flash)
       if (GEMINI_API_KEY) {
+        const t = withTimeout(PRO_TIMEOUT_MS);
         try {
-          const fallbackText = await Promise.race<string | null>([
-            callGeminiStudioProFallback(GEMINI_API_KEY, systemContent, formattedMessages),
-            new Promise<null>((resolve) => setTimeout(() => resolve(null), PRO_TIMEOUT_MS)),
-          ]);
-          if (fallbackText) {
+          const streamRes = await callGeminiStudioProStream(GEMINI_API_KEY, systemContent, formattedMessages, t.signal);
+          t.clear();
+          if (streamRes?.body) {
             await markProUsed();
-            return new Response(oneShotTextToSse(fallbackText, rawVideoCards), {
+            return new Response(geminiStudioSseToOpenAiSse(streamRes.body, rawVideoCards), {
               headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
             });
           }
         } catch (e) {
+          t.clear();
           lastProError = e instanceof Error ? e.message : String(e);
-          console.error("Astraz Pro Studio direct failed:", lastProError);
+          console.error("Astraz Pro Studio stream failed:", lastProError);
         }
       }
 
@@ -1262,6 +1370,25 @@ IMPORTANT RESPONSE GUIDELINES:
             lastProError = e instanceof Error ? e.message : String(e);
             console.error("Astraz Pro gateway attempt timed out:", proModel, lastProError);
           }
+        }
+      }
+
+      // 3. OpenRouter free router fallback. OpenRouter documents openrouter/free
+      // as a free-model router that selects a capable free model for the request.
+      if (OPENROUTER_API_KEY) {
+        const t = withTimeout(PRO_TIMEOUT_MS);
+        try {
+          const openRouterRes = await callOpenRouterFreeFallback(OPENROUTER_API_KEY, systemContent, formattedMessages, t.signal);
+          t.clear();
+          if (openRouterRes?.body) {
+            await markProUsed();
+            const finalBody = rawVideoCards ? appendToStream(openRouterRes.body, rawVideoCards) : openRouterRes.body;
+            return new Response(finalBody, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
+          }
+        } catch (e) {
+          t.clear();
+          lastProError = e instanceof Error ? e.message : String(e);
+          console.error("OpenRouter free fallback failed:", lastProError);
         }
       }
 

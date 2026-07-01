@@ -65,6 +65,7 @@ export const AttachmentChip = ({
   const typeLabel = formatLabel(mimeType, name);
   const isImage = (mimeType || '').startsWith('image/');
   const isVideo = (mimeType || '').startsWith('video/');
+  const isTextPreview = !!thumbnailUrl && !isImage && !isVideo;
 
   return (
     <motion.div
@@ -91,6 +92,10 @@ export const AttachmentChip = ({
         )}>
           {thumbnailUrl && (isImage || isVideo) ? (
             <img src={thumbnailUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          ) : isTextPreview ? (
+            <div className="absolute inset-0 bg-background/95 px-1.5 py-1 text-[5px] leading-tight text-foreground/80 overflow-hidden whitespace-pre-wrap">
+              {thumbnailUrl}
+            </div>
           ) : (
             <div className="absolute inset-0 flex items-center justify-center text-white">
               <Icon className="h-5 w-5" strokeWidth={2.2} />

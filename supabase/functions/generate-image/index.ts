@@ -37,6 +37,7 @@ const IMAGE_MODELS: Record<
   string,
   { provider: "lovable" | "leonardo"; lovableModel?: string; leonardoId?: string }
 > = {
+  nano_banana: { provider: "lovable", lovableModel: "google/gemini-2.5-flash-image" },
   nano_banana_2: { provider: "lovable", lovableModel: "google/gemini-3.1-flash-image" },
   seedream_4_5: { provider: "leonardo", leonardoId: "b24e16ff-06e3-43eb-8d33-4c419f36e1b7" },
   lucid_origin: { provider: "leonardo", leonardoId: "5c232a9e-9061-4777-980a-ddc8e65647c6" },
@@ -44,7 +45,7 @@ const IMAGE_MODELS: Record<
   phoenix: { provider: "leonardo", leonardoId: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3" },
 };
 
-const DEFAULT_MODEL = "nano_banana_2";
+const DEFAULT_MODEL = "nano_banana";
 const VIDEO_REFERENCE_PATTERN = /\.(mp4|webm|mov|avi|mkv|m4v|gif)(\?|$)/i;
 
 const isLikelyVideoReference = (ref: string) => ref.startsWith("data:video/") || VIDEO_REFERENCE_PATTERN.test(ref);
@@ -320,7 +321,7 @@ async function generateWithGeminiStudioImage(
     },
   ];
 
-  const models = ["gemini-3.1-flash-image", "gemini-2.5-flash-image"];
+  const models = ["gemini-2.5-flash-image", "gemini-3.1-flash-image"];
   for (const studioModel of models) {
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${studioModel}:generateContent?key=${GEMINI_API_KEY}`,
@@ -363,7 +364,7 @@ async function generateWithGeminiStudioTextToImage(
   const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
   if (!GEMINI_API_KEY) return null;
 
-  const models = ["gemini-3.1-flash-image", "gemini-2.5-flash-image"];
+  const models = ["gemini-2.5-flash-image", "gemini-3.1-flash-image"];
   for (const studioModel of models) {
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${studioModel}:generateContent?key=${GEMINI_API_KEY}`,
@@ -594,16 +595,16 @@ serve(async (req) => {
     const dims = ASPECT_RATIO_MAP[aspectRatio] || ASPECT_RATIO_MAP["1:1"];
 
 
-    // Image generation is currently locked to Nano Banana 2 only.
-    const selectedModelKey = DEFAULT_MODEL;
+    // Free tier image generation uses normal Nano Banana unless a supported model is passed.
+    const requestedModelKey = typeof modelId === "string" && IMAGE_MODELS[modelId] ? modelId : DEFAULT_MODEL;
+    const selectedModelKey = requestedModelKey;
     const selectedModel = IMAGE_MODELS[selectedModelKey] || IMAGE_MODELS[DEFAULT_MODEL];
 
     let imgBytes: Uint8Array | null = null;
     let imgMime = "image/png";
 
-    // Image generation is locked to Nano Banana 2 only while other media credits are paused.
     if (referenceUrl) {
-      console.log(`[PRIMARY] Nano Banana 2 reference generation: "${enhancedPrompt}"`);
+      console.log(`[PRIMARY] ${selectedModelKey} reference generation (${selectedModel.lovableModel}): "${enhancedPrompt}"`);
       try {
         const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel!, referenceUrl);
         if (generated) {
@@ -611,7 +612,7 @@ serve(async (req) => {
           imgMime = generated.mime;
         }
       } catch (e) {
-        console.error("Nano Banana 2 reference generation failed:", e);
+        console.error("Nano Banana reference generation failed:", e);
       }
       if (!imgBytes) {
         console.log(`[FALLBACK] Gemini Studio reference generation: "${enhancedPrompt}"`);
@@ -632,7 +633,7 @@ serve(async (req) => {
     }
 
     if (!imgBytes && !referenceUrl && selectedModel.provider === "lovable" && selectedModel.lovableModel) {
-      console.log(`[PRIMARY] Nano Banana 2 (${selectedModel.lovableModel}): "${enhancedPrompt}"`);
+      console.log(`[PRIMARY] ${selectedModelKey} (${selectedModel.lovableModel}): "${enhancedPrompt}"`);
       try {
         const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel);
         if (generated) {

@@ -77,7 +77,8 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
     const generatePreviews = async () => {
       const previews = await Promise.all(
         files.map(async (file) => {
-          if (file.type.startsWith('image/')) {
+      const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      if (file.type.startsWith('image/')) {
             return new Promise<{ file: File; preview: string | null }>((resolve) => {
               const reader = new FileReader();
               reader.onload = (e) => resolve({ file, preview: e.target?.result as string });
@@ -88,7 +89,15 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
           if (file.type.startsWith('video/')) {
             return { file, preview: URL.createObjectURL(file) };
           }
+      if (['txt', 'md', 'markdown', 'csv', 'json', 'xml', 'yml', 'yaml', 'log'].includes(ext)) {
+        try {
+          const text = await file.text();
+          return { file, preview: text.slice(0, 240) || null };
+        } catch {
           return { file, preview: null };
+        }
+      }
+      return { file, preview: null };
         })
       );
       setFilePreviews((prev) => {
@@ -367,7 +376,7 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
         )}
       </AnimatePresence>
 
-      <input ref={fileInputRef} type="file" multiple onChange={handleFileChange} className="hidden" accept="image/*,video/*,.pdf,.doc,.docx,.txt" />
+      <input ref={fileInputRef} type="file" multiple onChange={handleFileChange} className="hidden" accept="image/*,video/*,.pdf,.doc,.docx,.txt,.md,.csv,.json,.xml,.yml,.yaml,.rtf,.xlsx,.pptx" />
 
       {/* Modern unified input bar - floating glass */}
       <div className="relative">

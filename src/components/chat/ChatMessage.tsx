@@ -1007,7 +1007,7 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
 
   const isImageLike = (url: string) => {
     if (url.startsWith('data:image/')) return true;
-    if (url.startsWith('storage:')) return url.match(/\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$/i);
+    if (url.startsWith('storage:')) return /\.(jpg|jpeg|png|gif|webp|svg|bmp|avif|heic|heif)(\?.*)?$/i.test(url);
     return url.match(/\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$/i) || (url.includes('supabase') && url.includes('storage') && !url.match(/\.(mp4|webm|mov|m4v)(\?.*)?$/i));
   };
 
@@ -1140,9 +1140,14 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
                   let filename = 'Attachment';
                   let ext = '';
                   try {
-                    const u = new URL(url);
-                    const pathname = decodeURIComponent(u.pathname);
-                    filename = pathname.split('/').pop() || 'Attachment';
+                    if (url.startsWith('storage:')) {
+                      filename = decodeURIComponent(url.split('/').pop() || 'Attachment');
+                    } else {
+                      const u = new URL(url);
+                      const pathname = decodeURIComponent(u.pathname);
+                      filename = pathname.split('/').pop() || 'Attachment';
+                    }
+                    filename = filename.replace(/^\d+-/, '');
                     ext = (filename.split('.').pop() || '').toLowerCase();
                   } catch { /* ignore */ }
                   const isPdf = ext === 'pdf';
