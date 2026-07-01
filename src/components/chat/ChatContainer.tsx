@@ -459,8 +459,7 @@ export const ChatContainer = () => {
       }
     }
 
-    // Image generation is locked to Nano Banana 2 (Replicate models disabled while
-    // we recharge credits). Always call generate-image with the forced model id.
+    // Free tier now uses normal Nano Banana (Gemini 2.5 Flash Image).
     const conversationIdForGen = conversationIdOverride || currentConversation?.id;
     const { data, error } = await supabase.functions.invoke('generate-image', {
       body: {
@@ -469,7 +468,7 @@ export const ChatContainer = () => {
         aspectRatio: opts.aspectRatio,
         referenceMediaUrl,
         referenceImageUrl: referenceMediaUrl,
-        modelId: 'nano_banana_2',
+        modelId: 'nano_banana',
         appInForeground: isAppInForeground(),
         conversationId: conversationIdForGen,
       },
@@ -992,36 +991,9 @@ export const ChatContainer = () => {
       const typingStyle = selectedChatModel === 'astraz-pro' ? 'normal' : (settings.typingStyle || 'typewriter');
       setStreamingStyle(typingStyle);
 
-      // Queues for animated styles
-      let charQueue: string[] = [];
-      let wordQueue: string[] = [];
-      let displayedContent = '';
-      let queuedVisibleLength = 0;
-      let animInterval: ReturnType<typeof setInterval> | null = null;
+      // Keep UI reveal synced to the actual stream. Extra client-side queues made
+      // Astraz feel delayed after the model had already responded.
       let generationDirective: { type: 'image' | 'video'; prompt: string } | null = null;
-
-      if (showTyping && typingStyle === 'typewriter') {
-        animInterval = setInterval(() => {
-          const batch = charQueue.splice(0, 12);
-          if (batch.length > 0) {
-            displayedContent += batch.join('');
-            setStreamingContent(displayedContent);
-          }
-        }, 24);
-      }
-
-      if (showTyping && typingStyle === 'word_by_word') {
-        animInterval = setInterval(() => {
-          if (wordQueue.length > 0) {
-            const nextWords = wordQueue.splice(0, 3).join('');
-            displayedContent += nextWords;
-            setStreamingContent(displayedContent);
-          }
-        }, 50);
-      }
-
-      // line_fade & slide_down: we stream full content but ChatMessage handles per-line animation
-      // normal: stream full content directly (ChatGPT-like)
 
       while (true) {
         const { done, value } = await reader.read();
@@ -1063,24 +1035,7 @@ export const ChatContainer = () => {
 
               const visibleContent = stripRenderableDirectives(fullContent);
 
-              if (showTyping) {
-                if (typingStyle === 'typewriter') {
-                  const safeDelta = visibleContent.slice(queuedVisibleLength);
-                  if (safeDelta) charQueue.push(...safeDelta.split(''));
-                  queuedVisibleLength = visibleContent.length;
-                } else if (typingStyle === 'word_by_word') {
-                  const safeDelta = visibleContent.slice(queuedVisibleLength);
-                  if (safeDelta) {
-                    const words = safeDelta.match(/\S+\s*/g) || [safeDelta];
-                    wordQueue.push(...words);
-                  }
-                  queuedVisibleLength = visibleContent.length;
-                } else {
-                  setStreamingContent(visibleContent);
-                }
-              } else {
-                setStreamingContent(visibleContent);
-              }
+              setStreamingContent(visibleContent);
             }
           } catch {
             buffer = line + '\n' + buffer;
@@ -1089,12 +1044,6 @@ export const ChatContainer = () => {
         }
       }
 
-      // Flush remaining queues
-      if (animInterval) {
-        clearInterval(animInterval);
-        if (charQueue.length > 0) displayedContent += charQueue.join('');
-        if (wordQueue.length > 0) displayedContent += wordQueue.join('');
-      }
       setStreamingContent('');
 
       if (fullContent) {
