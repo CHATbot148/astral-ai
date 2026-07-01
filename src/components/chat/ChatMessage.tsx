@@ -1024,8 +1024,6 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
         return;
       }
 
-      setResolvedFiles(fileUrls);
-
       const resolved = await Promise.all(
         fileUrls.map((u) => resolveFileUrl(u, { expiresIn: 60 * 60 * 24 * 7 }))
       );
