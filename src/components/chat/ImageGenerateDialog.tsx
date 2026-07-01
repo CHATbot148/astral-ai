@@ -45,7 +45,7 @@ const ASPECTS: Array<{ value: ImageGenOptions["aspectRatio"]; label: string }> =
 ];
 
 const IMAGE_MODELS: Array<{ value: string; label: string; hint: string }> = [
-  { value: "nano_banana_2", label: "Nano Banana 2", hint: "Fast + sharp" },
+  { value: "nano_banana", label: "Nano Banana", hint: "Gemini 2.5 Flash Image" },
 ];
 
 const SUGGESTIONS = [
@@ -73,7 +73,7 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   const [style, setStyle] = useState<ImageGenOptions["style"]>("photoreal");
   const [aspectRatio, setAspectRatio] = useState<ImageGenOptions["aspectRatio"]>("1:1");
   const [ratioManuallySet, setRatioManuallySet] = useState(false);
-  const selectedModel = "nano_banana_2";
+  const selectedModel = "nano_banana";
   const canSelectModel = false;
   const [isWorking, setIsWorking] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -121,7 +121,7 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
       aspectRatio: override?.aspectRatio ?? aspectRatio,
       quality: "balanced",
       reference: reference || undefined,
-      modelId: canSelectModel ? selectedModel : "nano_banana_2",
+      modelId: canSelectModel ? selectedModel : "nano_banana",
     };
     if (!opts.prompt) return;
     setLast(opts);
@@ -209,10 +209,10 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
             </div>
           </motion.div>
 
-          {/* Model — locked to Nano Banana 2 */}
+          {/* Model — locked to free-tier Nano Banana */}
           <motion.div variants={fadeUp} className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border/50 bg-secondary/30 text-xs text-muted-foreground">
             <Sparkles className="h-3.5 w-3.5 text-xai-cyan" />
-            <span>Model: <span className="font-medium text-foreground">Nano Banana 2</span> · Fast + sharp</span>
+            <span>Model: <span className="font-medium text-foreground">Nano Banana</span> · Gemini 2.5 Flash Image</span>
           </motion.div>
 
 
