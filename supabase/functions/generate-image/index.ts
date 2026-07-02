@@ -720,21 +720,17 @@ serve(async (req) => {
       };
 
       const dailyLimit = userEmail === CEO_EMAIL ? 20 : (tierLimits[tier] || 5);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const { count } = await admin
-        .from("generated_images")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", userId)
-        .gte("created_at", today.toISOString());
+      const today = new Date().toISOString().split("T")[0];
+      const usedToday = await getDailyImageUsage(admin, userId, today);
 
-      if ((count || 0) >= dailyLimit) {
+      if (usedToday >= dailyLimit) {
         return new Response(
           JSON.stringify({
             error: `Daily image limit reached (${dailyLimit}/day). Upgrade your plan for more.`,
             limit_reached: true,
             remaining: 0,
             limit: dailyLimit,
+            used: usedToday,
           }),
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
@@ -846,6 +842,10 @@ serve(async (req) => {
     if (!imgBytes) throw new Error("Image generation providers are temporarily unavailable or quota-limited. Please try again shortly.");
 
     const ref = await uploadAndSave(admin, userId, prompt, style, aspectRatio, imgBytes, imgMime);
+
+    if (userId !== "anonymous") {
+      await incrementDailyImageUsage(admin, userId, new Date().toISOString().split("T")[0]);
+    }
 
     // If a conversationId is provided, insert the assistant message directly so the
     // image appears in chat via realtime even if the client request timed out.
