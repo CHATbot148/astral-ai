@@ -95,10 +95,6 @@ function compactPromptForUrl(prompt: string, max = 1800): string {
   return cleaned.length > max ? cleaned.slice(0, max) : cleaned;
 }
 
-function isQuotaOrCreditError(errorText: string, status?: number): boolean {
-  return status === 402 || status === 429 || /quota|rate.?limit|resource_exhausted|not enough credits|payment_required/i.test(errorText);
-}
-
 async function downloadImageFromUrl(url: string): Promise<{ bytes: Uint8Array; mime: string } | null> {
   const imgRes = await fetch(url);
   if (!imgRes.ok) return null;
@@ -675,7 +671,7 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) throw new Error("Backend is not configured");
-    if (!LOVABLE_API_KEY && !Deno.env.get("GEMINI_API_KEY")) {
+    if (!LOVABLE_API_KEY && !Deno.env.get("GEMINI_API_KEY") && !Deno.env.get("POLLINATIONS_API_KEY") && !Deno.env.get("HUGGINGFACE_API_TOKEN")) {
       throw new Error("Image generation API key not configured");
     }
 
@@ -770,7 +766,6 @@ serve(async (req) => {
     // Free tier image generation uses normal Nano Banana unless a supported model is passed.
     const requestedModelKey = typeof modelId === "string" && IMAGE_MODELS[modelId] ? modelId : DEFAULT_MODEL;
     const selectedModelKey = requestedModelKey;
-    const selectedModel = IMAGE_MODELS[selectedModelKey] || IMAGE_MODELS[DEFAULT_MODEL];
 
     let imgBytes: Uint8Array | null = null;
     let imgMime = "image/png";
