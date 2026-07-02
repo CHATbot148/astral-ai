@@ -736,61 +736,67 @@ serve(async (req) => {
     let imgBytes: Uint8Array | null = null;
     let imgMime = "image/png";
 
-    if (referenceUrl) {
-      console.log(`[PRIMARY] ${selectedModelKey} reference generation (${selectedModel.lovableModel}): "${enhancedPrompt}"`);
-      try {
-        const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel!, referenceUrl);
-        if (generated) {
-          imgBytes = generated.bytes;
-          imgMime = generated.mime;
-        }
-      } catch (e) {
-        console.error("Nano Banana reference generation failed:", e);
-      }
-      if (!imgBytes) {
-        console.log(`[FALLBACK] Gemini Studio reference generation: "${enhancedPrompt}"`);
-        const generated = await generateWithGeminiStudioImage(enhancedPrompt, referenceUrl);
-        if (generated) {
-          imgBytes = generated.bytes;
-          imgMime = generated.mime;
-        }
-      }
-      if (!imgBytes) {
-        console.log(`[FALLBACK] Leonardo reference generation: "${enhancedPrompt}"`);
-        const generated = await generateWithLeonardo(enhancedPrompt, dims.width, dims.height, referenceUrl);
-        if (generated) {
-          imgBytes = generated.bytes;
-          imgMime = generated.mime;
-        }
-      }
-    }
+    const useGenerated = (generated: { bytes: Uint8Array; mime: string } | null) => {
+      if (!generated) return false;
+      imgBytes = generated.bytes;
+      imgMime = generated.mime;
+      return true;
+    };
 
-    if (!imgBytes && !referenceUrl && selectedModel.provider === "lovable" && selectedModel.lovableModel) {
-      console.log(`[PRIMARY] ${selectedModelKey} (${selectedModel.lovableModel}): "${enhancedPrompt}"`);
+    const tryModel = async (key: string, ref?: string) => {
+      const model = IMAGE_MODELS[key];
+      if (!model) return false;
+      console.log(`[IMAGE] trying ${key} via ${model.provider}${ref ? " with reference" : ""}`);
       try {
-        const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel);
-        if (generated) {
-          imgBytes = generated.bytes;
-          imgMime = generated.mime;
+        if (model.provider === "pollinations" && model.pollinationsModel && !ref) {
+          return useGenerated(await generateWithPollinations(enhancedPrompt, model.pollinationsModel, dims.width, dims.height));
+        }
+        if (model.provider === "huggingface" && model.huggingFaceProviderId && !ref) {
+          return useGenerated(await generateWithHuggingFace(enhancedPrompt, model.huggingFaceProviderId, dims.width, dims.height));
+        }
+        if (model.provider === "lovable" && model.lovableModel) {
+          return useGenerated(await generateWithLovable(enhancedPrompt, model.lovableModel, ref));
+        }
+        if (model.provider === "leonardo") {
+          return useGenerated(await generateWithLeonardo(enhancedPrompt, dims.width, dims.height, ref, model.leonardoId));
         }
       } catch (e) {
-        console.error("Lovable AI failed:", e);
+        console.error(`Image model failed (${key}):`, e);
+      }
+      return false;
+    };
+
+    if (referenceUrl) {
+      const referenceFallbacks = Array.from(new Set([selectedModelKey, "nano_banana_2", "nano_banana", "phoenix"]));
+      for (const key of referenceFallbacks) {
+        if (await tryModel(key, referenceUrl)) break;
       }
       if (!imgBytes) {
-        console.log(`[FALLBACK] Gemini Studio text-to-image: "${enhancedPrompt}"`);
-        const generated = await generateWithGeminiStudioTextToImage(enhancedPrompt);
-        if (generated) {
-          imgBytes = generated.bytes;
-          imgMime = generated.mime;
-        }
+        console.log(`[FALLBACK] Gemini Studio reference generation`);
+        useGenerated(await generateWithGeminiStudioImage(enhancedPrompt, referenceUrl));
       }
+    } else {
+      const textFallbacks = Array.from(new Set([
+        selectedModelKey,
+        "pollinations_gpt_image_2",
+        "pollinations_nanobanana_pro",
+        "pollinations_seedream5",
+        "pollinations_ideogram_quality",
+        "hf_ideogram_4",
+        "hf_flux_krea",
+        "hf_qwen_image",
+        "nano_banana_2",
+        "nano_banana",
+        "phoenix",
+      ]));
+
+      for (const key of textFallbacks) {
+        if (await tryModel(key)) break;
+      }
+
       if (!imgBytes) {
-        console.log(`[FALLBACK] Leonardo text-to-image: "${enhancedPrompt}"`);
-        const generated = await generateWithLeonardo(enhancedPrompt, dims.width, dims.height);
-        if (generated) {
-          imgBytes = generated.bytes;
-          imgMime = generated.mime;
-        }
+        console.log(`[FALLBACK] Gemini Studio text-to-image`);
+        useGenerated(await generateWithGeminiStudioTextToImage(enhancedPrompt));
       }
     }
 
