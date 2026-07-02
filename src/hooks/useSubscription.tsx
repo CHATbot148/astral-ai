@@ -178,9 +178,9 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
     fetchDailyUsage();
   }, [fetchSubscription, fetchDailyUsage]);
 
-  const refreshUsage = async () => {
+  const refreshUsage = useCallback(async () => {
     await fetchDailyUsage();
-  };
+  }, [fetchDailyUsage]);
 
   const incrementImageUsage = async () => {
     if (!user) return;
