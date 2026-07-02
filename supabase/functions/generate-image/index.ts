@@ -136,6 +136,49 @@ async function uploadAndSave(
   return ref;
 }
 
+async function getDailyImageUsage(admin: any, userId: string, usageDate: string): Promise<number> {
+  const { data, error } = await admin
+    .from("daily_usage")
+    .select("images_generated")
+    .eq("user_id", userId)
+    .eq("usage_date", usageDate)
+    .maybeSingle();
+  if (error) {
+    console.error("Failed to read image usage:", error);
+    return 0;
+  }
+  return Number(data?.images_generated || 0);
+}
+
+async function incrementDailyImageUsage(admin: any, userId: string, usageDate: string) {
+  const { data: existing, error } = await admin
+    .from("daily_usage")
+    .select("id, images_generated, videos_generated")
+    .eq("user_id", userId)
+    .eq("usage_date", usageDate)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to read image usage for increment:", error);
+    return;
+  }
+
+  if (existing?.id) {
+    const nextImages = Number(existing.images_generated || 0) + 1;
+    const { error: updateError } = await admin
+      .from("daily_usage")
+      .update({ images_generated: nextImages, updated_at: new Date().toISOString() })
+      .eq("id", existing.id);
+    if (updateError) console.error("Failed to update image usage:", updateError);
+    return;
+  }
+
+  const { error: insertError } = await admin
+    .from("daily_usage")
+    .insert({ user_id: userId, usage_date: usageDate, images_generated: 1, videos_generated: 0 });
+  if (insertError) console.error("Failed to insert image usage:", insertError);
+}
+
 async function resolveStorageRefToSignedUrl(storageRef: string): Promise<string> {
   // Expects storage:bucket/path
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
