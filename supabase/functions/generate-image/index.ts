@@ -329,6 +329,107 @@ async function generateWithLovable(
   return { bytes: parsed.bytes, mime: parsed.mime || "image/png" };
 }
 
+async function generateWithPollinations(
+  prompt: string,
+  model: string,
+  width: number,
+  height: number,
+): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  const apiKey = Deno.env.get("POLLINATIONS_API_KEY");
+  if (!apiKey) return null;
+
+  const url = new URL(`https://gen.pollinations.ai/image/${encodeURIComponent(compactPromptForUrl(prompt))}`);
+  url.searchParams.set("model", model);
+  url.searchParams.set("width", String(width));
+  url.searchParams.set("height", String(height));
+  url.searchParams.set("nologo", "true");
+  url.searchParams.set("private", "true");
+  url.searchParams.set("enhance", "true");
+  url.searchParams.set("safe", "true");
+
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      Accept: "image/*,application/json",
+    },
+  });
+
+  const contentType = res.headers.get("content-type") || "";
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    console.error("Pollinations image generation failed:", model, res.status, errText);
+    return null;
+  }
+
+  if (contentType.startsWith("image/")) {
+    return { bytes: new Uint8Array(await res.arrayBuffer()), mime: contentType };
+  }
+
+  const data = await res.json().catch(() => null);
+  const imageUrl = data?.url || data?.image || data?.images?.[0]?.url;
+  if (typeof imageUrl === "string") {
+    if (imageUrl.startsWith("data:image/")) {
+      const parsed = parseDataUrl(imageUrl);
+      return { bytes: parsed.bytes, mime: parsed.mime || "image/png" };
+    }
+    return await downloadImageFromUrl(imageUrl);
+  }
+
+  return null;
+}
+
+async function generateWithHuggingFace(
+  prompt: string,
+  providerId: string,
+  width: number,
+  height: number,
+): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  const apiKey = Deno.env.get("HUGGINGFACE_API_TOKEN") || Deno.env.get("HF_TOKEN");
+  if (!apiKey) return null;
+
+  const res = await fetch(`https://router.huggingface.co/fal-ai/${providerId}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json,image/*",
+    },
+    body: JSON.stringify({
+      prompt,
+      image_size: { width, height },
+      num_images: 1,
+      num_inference_steps: 32,
+      guidance_scale: 4.5,
+      sync_mode: true,
+      enable_safety_checker: true,
+      output_format: "png",
+    }),
+  });
+
+  const contentType = res.headers.get("content-type") || "";
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    console.error("Hugging Face image generation failed:", providerId, res.status, errText);
+    return null;
+  }
+
+  if (contentType.startsWith("image/")) {
+    return { bytes: new Uint8Array(await res.arrayBuffer()), mime: contentType };
+  }
+
+  const data = await res.json().catch(() => null);
+  const imageUrl = data?.images?.[0]?.url || data?.image?.url || data?.url;
+  if (typeof imageUrl === "string") {
+    if (imageUrl.startsWith("data:image/")) {
+      const parsed = parseDataUrl(imageUrl);
+      return { bytes: parsed.bytes, mime: parsed.mime || "image/png" };
+    }
+    return await downloadImageFromUrl(imageUrl);
+  }
+
+  return null;
+}
+
 async function generateWithGeminiStudioImage(
   userInstruction: string,
   referenceImageUrl: string
