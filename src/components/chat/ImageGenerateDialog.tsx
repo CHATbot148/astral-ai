@@ -4,6 +4,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Sparkles, RotateCcw, Wand2, AlertCircle, Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSubscription } from "@/hooks/useSubscription";
@@ -44,8 +45,18 @@ const ASPECTS: Array<{ value: ImageGenOptions["aspectRatio"]; label: string }> =
   { value: "4:3", label: "4:3" },
 ];
 
+const DEFAULT_IMAGE_MODEL = "pollinations_gpt_image_2";
+
 const IMAGE_MODELS: Array<{ value: string; label: string; hint: string }> = [
-  { value: "nano_banana", label: "Nano Banana", hint: "Gemini 2.5 Flash Image" },
+  { value: "pollinations_gpt_image_2", label: "GPT Image 2", hint: "Pollinations · strongest default" },
+  { value: "pollinations_nanobanana_pro", label: "Nano Banana Pro", hint: "Pollinations · Gemini Pro image" },
+  { value: "pollinations_seedream5", label: "Seedream 5", hint: "Pollinations · premium creative" },
+  { value: "pollinations_ideogram_quality", label: "Ideogram v4 Quality", hint: "Pollinations · typography/design" },
+  { value: "hf_ideogram_4", label: "Ideogram 4", hint: "Hugging Face · high fidelity" },
+  { value: "hf_flux_krea", label: "FLUX Krea", hint: "Hugging Face · realistic detail" },
+  { value: "hf_qwen_image", label: "Qwen Image", hint: "Hugging Face · prompt adherence" },
+  { value: "nano_banana_2", label: "Nano Banana 2", hint: "Lovable AI · Gemini 3.1 Flash" },
+  { value: "nano_banana", label: "Nano Banana", hint: "Lovable AI · Gemini 2.5 Flash" },
 ];
 
 const SUGGESTIONS = [
@@ -68,13 +79,12 @@ const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
 const fadeUp = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.3 } } };
 
 export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPrompt = "" }: Props) => {
-  const { canGenerateImage, remainingImages, tier, tierConfig } = useSubscription();
+  const { canGenerateImage, remainingImages, tier, tierConfig, refreshUsage } = useSubscription();
   const [prompt, setPrompt] = useState(initialPrompt);
   const [style, setStyle] = useState<ImageGenOptions["style"]>("photoreal");
   const [aspectRatio, setAspectRatio] = useState<ImageGenOptions["aspectRatio"]>("1:1");
   const [ratioManuallySet, setRatioManuallySet] = useState(false);
-  const selectedModel = "nano_banana";
-  const canSelectModel = false;
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_IMAGE_MODEL);
   const [isWorking, setIsWorking] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +99,10 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
     setAspectRatio(inferAspectRatio(initialPrompt));
     setRatioManuallySet(false);
   }, [initialPrompt]);
+
+  useEffect(() => {
+    if (open) void refreshUsage();
+  }, [open, refreshUsage]);
 
   useEffect(() => {
     if (!ratioManuallySet) setAspectRatio(inferAspectRatio(prompt));
@@ -121,7 +135,7 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
       aspectRatio: override?.aspectRatio ?? aspectRatio,
       quality: "balanced",
       reference: reference || undefined,
-      modelId: canSelectModel ? selectedModel : "nano_banana",
+      modelId: override?.modelId ?? selectedModel,
     };
     if (!opts.prompt) return;
     setLast(opts);
@@ -209,10 +223,27 @@ export const ImageGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
             </div>
           </motion.div>
 
-          {/* Model — locked to free-tier Nano Banana */}
-          <motion.div variants={fadeUp} className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border/50 bg-secondary/30 text-xs text-muted-foreground">
-            <Sparkles className="h-3.5 w-3.5 text-xai-cyan" />
-            <span>Model: <span className="font-medium text-foreground">Nano Banana</span> · Gemini 2.5 Flash Image</span>
+          {/* Model */}
+          <motion.div variants={fadeUp} className="space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground">Model</p>
+            <Select value={selectedModel} onValueChange={setSelectedModel} disabled={isWorking}>
+              <SelectTrigger className="h-11 rounded-xl border-border/50 bg-secondary/30 text-xs">
+                <SelectValue placeholder="Choose an image model" />
+              </SelectTrigger>
+              <SelectContent className="z-[80] max-h-72">
+                {IMAGE_MODELS.map((model) => (
+                  <SelectItem key={model.value} value={model.value} className="py-2">
+                    <span className="flex items-center gap-2">
+                      <Sparkles className="h-3.5 w-3.5 text-xai-cyan" />
+                      <span className="flex flex-col">
+                        <span className="text-sm font-medium">{model.label}</span>
+                        <span className="text-[11px] text-muted-foreground">{model.hint}</span>
+                      </span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </motion.div>
 
 
