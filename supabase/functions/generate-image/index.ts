@@ -90,6 +90,23 @@ function base64ToBytes(base64: string): Uint8Array {
   return bytes;
 }
 
+function compactPromptForUrl(prompt: string, max = 1800): string {
+  const cleaned = prompt.replace(/\s+/g, " ").trim();
+  return cleaned.length > max ? cleaned.slice(0, max) : cleaned;
+}
+
+function isQuotaOrCreditError(errorText: string, status?: number): boolean {
+  return status === 402 || status === 429 || /quota|rate.?limit|resource_exhausted|not enough credits|payment_required/i.test(errorText);
+}
+
+async function downloadImageFromUrl(url: string): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  const imgRes = await fetch(url);
+  if (!imgRes.ok) return null;
+  const mime = imgRes.headers.get("content-type") || "image/png";
+  if (!mime.startsWith("image/")) return null;
+  return { bytes: new Uint8Array(await imgRes.arrayBuffer()), mime };
+}
+
 async function uploadAndSave(
   admin: any,
   userId: string,
