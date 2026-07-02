@@ -20,6 +20,7 @@ const ASPECT_RATIO_MAP: Record<string, { width: number; height: number }> = {
   "1:1": { width: 1024, height: 1024 },
   "16:9": { width: 1344, height: 768 },
   "9:16": { width: 768, height: 1344 },
+  "3:2": { width: 1152, height: 768 },
   "4:3": { width: 1152, height: 896 },
   "3:4": { width: 896, height: 1152 },
 };
@@ -35,8 +36,22 @@ const ASPECT_LABELS: Record<string, string> = {
 // Provider model mapping
 const IMAGE_MODELS: Record<
   string,
-  { provider: "lovable" | "leonardo"; lovableModel?: string; leonardoId?: string }
+  {
+    provider: "lovable" | "leonardo" | "pollinations" | "huggingface";
+    lovableModel?: string;
+    leonardoId?: string;
+    pollinationsModel?: string;
+    huggingFaceProviderId?: string;
+    huggingFaceModel?: string;
+  }
 > = {
+  pollinations_gpt_image_2: { provider: "pollinations", pollinationsModel: "gpt-image-2" },
+  pollinations_nanobanana_pro: { provider: "pollinations", pollinationsModel: "nanobanana-pro" },
+  pollinations_seedream5: { provider: "pollinations", pollinationsModel: "seedream5" },
+  pollinations_ideogram_quality: { provider: "pollinations", pollinationsModel: "ideogram-v4-quality" },
+  hf_ideogram_4: { provider: "huggingface", huggingFaceProviderId: "ideogram/v4", huggingFaceModel: "ideogram-ai/ideogram-4-fp8" },
+  hf_flux_krea: { provider: "huggingface", huggingFaceProviderId: "fal-ai/flux/krea", huggingFaceModel: "black-forest-labs/FLUX.1-Krea-dev" },
+  hf_qwen_image: { provider: "huggingface", huggingFaceProviderId: "fal-ai/qwen-image", huggingFaceModel: "Qwen/Qwen-Image" },
   nano_banana: { provider: "lovable", lovableModel: "google/gemini-2.5-flash-image" },
   nano_banana_2: { provider: "lovable", lovableModel: "google/gemini-3.1-flash-image" },
   seedream_4_5: { provider: "leonardo", leonardoId: "b24e16ff-06e3-43eb-8d33-4c419f36e1b7" },
@@ -45,7 +60,7 @@ const IMAGE_MODELS: Record<
   phoenix: { provider: "leonardo", leonardoId: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3" },
 };
 
-const DEFAULT_MODEL = "nano_banana";
+const DEFAULT_MODEL = "pollinations_gpt_image_2";
 const VIDEO_REFERENCE_PATTERN = /\.(mp4|webm|mov|avi|mkv|m4v|gif)(\?|$)/i;
 
 const isLikelyVideoReference = (ref: string) => ref.startsWith("data:video/") || VIDEO_REFERENCE_PATTERN.test(ref);
