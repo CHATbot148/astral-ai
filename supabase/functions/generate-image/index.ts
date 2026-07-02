@@ -20,6 +20,7 @@ const ASPECT_RATIO_MAP: Record<string, { width: number; height: number }> = {
   "1:1": { width: 1024, height: 1024 },
   "16:9": { width: 1344, height: 768 },
   "9:16": { width: 768, height: 1344 },
+  "3:2": { width: 1152, height: 768 },
   "4:3": { width: 1152, height: 896 },
   "3:4": { width: 896, height: 1152 },
 };
@@ -35,8 +36,22 @@ const ASPECT_LABELS: Record<string, string> = {
 // Provider model mapping
 const IMAGE_MODELS: Record<
   string,
-  { provider: "lovable" | "leonardo"; lovableModel?: string; leonardoId?: string }
+  {
+    provider: "lovable" | "leonardo" | "pollinations" | "huggingface";
+    lovableModel?: string;
+    leonardoId?: string;
+    pollinationsModel?: string;
+    huggingFaceProviderId?: string;
+    huggingFaceModel?: string;
+  }
 > = {
+  pollinations_gpt_image_2: { provider: "pollinations", pollinationsModel: "gpt-image-2" },
+  pollinations_nanobanana_pro: { provider: "pollinations", pollinationsModel: "nanobanana-pro" },
+  pollinations_seedream5: { provider: "pollinations", pollinationsModel: "seedream5" },
+  pollinations_ideogram_quality: { provider: "pollinations", pollinationsModel: "ideogram-v4-quality" },
+  hf_ideogram_4: { provider: "huggingface", huggingFaceProviderId: "ideogram/v4", huggingFaceModel: "ideogram-ai/ideogram-4-fp8" },
+  hf_flux_krea: { provider: "huggingface", huggingFaceProviderId: "fal-ai/flux/krea", huggingFaceModel: "black-forest-labs/FLUX.1-Krea-dev" },
+  hf_qwen_image: { provider: "huggingface", huggingFaceProviderId: "fal-ai/qwen-image", huggingFaceModel: "Qwen/Qwen-Image" },
   nano_banana: { provider: "lovable", lovableModel: "google/gemini-2.5-flash-image" },
   nano_banana_2: { provider: "lovable", lovableModel: "google/gemini-3.1-flash-image" },
   seedream_4_5: { provider: "leonardo", leonardoId: "b24e16ff-06e3-43eb-8d33-4c419f36e1b7" },
@@ -45,7 +60,7 @@ const IMAGE_MODELS: Record<
   phoenix: { provider: "leonardo", leonardoId: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3" },
 };
 
-const DEFAULT_MODEL = "nano_banana";
+const DEFAULT_MODEL = "pollinations_gpt_image_2";
 const VIDEO_REFERENCE_PATTERN = /\.(mp4|webm|mov|avi|mkv|m4v|gif)(\?|$)/i;
 
 const isLikelyVideoReference = (ref: string) => ref.startsWith("data:video/") || VIDEO_REFERENCE_PATTERN.test(ref);
@@ -75,6 +90,19 @@ function base64ToBytes(base64: string): Uint8Array {
   return bytes;
 }
 
+function compactPromptForUrl(prompt: string, max = 1800): string {
+  const cleaned = prompt.replace(/\s+/g, " ").trim();
+  return cleaned.length > max ? cleaned.slice(0, max) : cleaned;
+}
+
+async function downloadImageFromUrl(url: string): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  const imgRes = await fetch(url);
+  if (!imgRes.ok) return null;
+  const mime = imgRes.headers.get("content-type") || "image/png";
+  if (!mime.startsWith("image/")) return null;
+  return { bytes: new Uint8Array(await imgRes.arrayBuffer()), mime };
+}
+
 async function uploadAndSave(
   admin: any,
   userId: string,
@@ -102,6 +130,49 @@ async function uploadAndSave(
     });
   }
   return ref;
+}
+
+async function getDailyImageUsage(admin: any, userId: string, usageDate: string): Promise<number> {
+  const { data, error } = await admin
+    .from("daily_usage")
+    .select("images_generated")
+    .eq("user_id", userId)
+    .eq("usage_date", usageDate)
+    .maybeSingle();
+  if (error) {
+    console.error("Failed to read image usage:", error);
+    return 0;
+  }
+  return Number(data?.images_generated || 0);
+}
+
+async function incrementDailyImageUsage(admin: any, userId: string, usageDate: string) {
+  const { data: existing, error } = await admin
+    .from("daily_usage")
+    .select("id, images_generated, videos_generated")
+    .eq("user_id", userId)
+    .eq("usage_date", usageDate)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to read image usage for increment:", error);
+    return;
+  }
+
+  if (existing?.id) {
+    const nextImages = Number(existing.images_generated || 0) + 1;
+    const { error: updateError } = await admin
+      .from("daily_usage")
+      .update({ images_generated: nextImages, updated_at: new Date().toISOString() })
+      .eq("id", existing.id);
+    if (updateError) console.error("Failed to update image usage:", updateError);
+    return;
+  }
+
+  const { error: insertError } = await admin
+    .from("daily_usage")
+    .insert({ user_id: userId, usage_date: usageDate, images_generated: 1, videos_generated: 0 });
+  if (insertError) console.error("Failed to insert image usage:", insertError);
 }
 
 async function resolveStorageRefToSignedUrl(storageRef: string): Promise<string> {
@@ -297,6 +368,107 @@ async function generateWithLovable(
   return { bytes: parsed.bytes, mime: parsed.mime || "image/png" };
 }
 
+async function generateWithPollinations(
+  prompt: string,
+  model: string,
+  width: number,
+  height: number,
+): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  const apiKey = Deno.env.get("POLLINATIONS_API_KEY");
+  if (!apiKey) return null;
+
+  const url = new URL(`https://gen.pollinations.ai/image/${encodeURIComponent(compactPromptForUrl(prompt))}`);
+  url.searchParams.set("model", model);
+  url.searchParams.set("width", String(width));
+  url.searchParams.set("height", String(height));
+  url.searchParams.set("nologo", "true");
+  url.searchParams.set("private", "true");
+  url.searchParams.set("enhance", "true");
+  url.searchParams.set("safe", "true");
+
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      Accept: "image/*,application/json",
+    },
+  });
+
+  const contentType = res.headers.get("content-type") || "";
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    console.error("Pollinations image generation failed:", model, res.status, errText);
+    return null;
+  }
+
+  if (contentType.startsWith("image/")) {
+    return { bytes: new Uint8Array(await res.arrayBuffer()), mime: contentType };
+  }
+
+  const data = await res.json().catch(() => null);
+  const imageUrl = data?.url || data?.image || data?.images?.[0]?.url;
+  if (typeof imageUrl === "string") {
+    if (imageUrl.startsWith("data:image/")) {
+      const parsed = parseDataUrl(imageUrl);
+      return { bytes: parsed.bytes, mime: parsed.mime || "image/png" };
+    }
+    return await downloadImageFromUrl(imageUrl);
+  }
+
+  return null;
+}
+
+async function generateWithHuggingFace(
+  prompt: string,
+  providerId: string,
+  width: number,
+  height: number,
+): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  const apiKey = Deno.env.get("HUGGINGFACE_API_TOKEN") || Deno.env.get("HF_TOKEN");
+  if (!apiKey) return null;
+
+  const res = await fetch(`https://router.huggingface.co/fal-ai/${providerId}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json,image/*",
+    },
+    body: JSON.stringify({
+      prompt,
+      image_size: { width, height },
+      num_images: 1,
+      num_inference_steps: 32,
+      guidance_scale: 4.5,
+      sync_mode: true,
+      enable_safety_checker: true,
+      output_format: "png",
+    }),
+  });
+
+  const contentType = res.headers.get("content-type") || "";
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    console.error("Hugging Face image generation failed:", providerId, res.status, errText);
+    return null;
+  }
+
+  if (contentType.startsWith("image/")) {
+    return { bytes: new Uint8Array(await res.arrayBuffer()), mime: contentType };
+  }
+
+  const data = await res.json().catch(() => null);
+  const imageUrl = data?.images?.[0]?.url || data?.image?.url || data?.url;
+  if (typeof imageUrl === "string") {
+    if (imageUrl.startsWith("data:image/")) {
+      const parsed = parseDataUrl(imageUrl);
+      return { bytes: parsed.bytes, mime: parsed.mime || "image/png" };
+    }
+    return await downloadImageFromUrl(imageUrl);
+  }
+
+  return null;
+}
+
 async function generateWithGeminiStudioImage(
   userInstruction: string,
   referenceImageUrl: string
@@ -405,6 +577,7 @@ async function generateWithLeonardo(
   width: number,
   height: number,
   referenceImageUrl?: string,
+  modelId = "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3",
 ): Promise<{ bytes: Uint8Array; mime: string } | null> {
   const apiKey = Deno.env.get("LEONARDO_API_KEY_NEW") || Deno.env.get("LEONARDO_API_KEY");
   if (!apiKey) return null;
@@ -418,12 +591,11 @@ async function generateWithLeonardo(
 
   const body: Record<string, unknown> = {
     prompt,
-    modelId: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3",
+    modelId,
     width,
     height,
     num_images: 1,
     alchemy: true,
-    photoReal: true,
     presetStyle: "CINEMATIC",
     public: false,
   };
@@ -499,7 +671,7 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) throw new Error("Backend is not configured");
-    if (!LOVABLE_API_KEY && !Deno.env.get("GEMINI_API_KEY")) {
+    if (!LOVABLE_API_KEY && !Deno.env.get("GEMINI_API_KEY") && !Deno.env.get("POLLINATIONS_API_KEY") && !Deno.env.get("HUGGINGFACE_API_TOKEN")) {
       throw new Error("Image generation API key not configured");
     }
 
@@ -544,21 +716,17 @@ serve(async (req) => {
       };
 
       const dailyLimit = userEmail === CEO_EMAIL ? 20 : (tierLimits[tier] || 5);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const { count } = await admin
-        .from("generated_images")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", userId)
-        .gte("created_at", today.toISOString());
+      const today = new Date().toISOString().split("T")[0];
+      const usedToday = await getDailyImageUsage(admin, userId, today);
 
-      if ((count || 0) >= dailyLimit) {
+      if (usedToday >= dailyLimit) {
         return new Response(
           JSON.stringify({
             error: `Daily image limit reached (${dailyLimit}/day). Upgrade your plan for more.`,
             limit_reached: true,
             remaining: 0,
             limit: dailyLimit,
+            used: usedToday,
           }),
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
@@ -598,72 +766,81 @@ serve(async (req) => {
     // Free tier image generation uses normal Nano Banana unless a supported model is passed.
     const requestedModelKey = typeof modelId === "string" && IMAGE_MODELS[modelId] ? modelId : DEFAULT_MODEL;
     const selectedModelKey = requestedModelKey;
-    const selectedModel = IMAGE_MODELS[selectedModelKey] || IMAGE_MODELS[DEFAULT_MODEL];
 
     let imgBytes: Uint8Array | null = null;
     let imgMime = "image/png";
 
-    if (referenceUrl) {
-      console.log(`[PRIMARY] ${selectedModelKey} reference generation (${selectedModel.lovableModel}): "${enhancedPrompt}"`);
-      try {
-        const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel!, referenceUrl);
-        if (generated) {
-          imgBytes = generated.bytes;
-          imgMime = generated.mime;
-        }
-      } catch (e) {
-        console.error("Nano Banana reference generation failed:", e);
-      }
-      if (!imgBytes) {
-        console.log(`[FALLBACK] Gemini Studio reference generation: "${enhancedPrompt}"`);
-        const generated = await generateWithGeminiStudioImage(enhancedPrompt, referenceUrl);
-        if (generated) {
-          imgBytes = generated.bytes;
-          imgMime = generated.mime;
-        }
-      }
-      if (!imgBytes) {
-        console.log(`[FALLBACK] Leonardo reference generation: "${enhancedPrompt}"`);
-        const generated = await generateWithLeonardo(enhancedPrompt, dims.width, dims.height, referenceUrl);
-        if (generated) {
-          imgBytes = generated.bytes;
-          imgMime = generated.mime;
-        }
-      }
-    }
+    const useGenerated = (generated: { bytes: Uint8Array; mime: string } | null) => {
+      if (!generated) return false;
+      imgBytes = generated.bytes;
+      imgMime = generated.mime;
+      return true;
+    };
 
-    if (!imgBytes && !referenceUrl && selectedModel.provider === "lovable" && selectedModel.lovableModel) {
-      console.log(`[PRIMARY] ${selectedModelKey} (${selectedModel.lovableModel}): "${enhancedPrompt}"`);
+    const tryModel = async (key: string, ref?: string) => {
+      const model = IMAGE_MODELS[key];
+      if (!model) return false;
+      console.log(`[IMAGE] trying ${key} via ${model.provider}${ref ? " with reference" : ""}`);
       try {
-        const generated = await generateWithLovable(enhancedPrompt, selectedModel.lovableModel);
-        if (generated) {
-          imgBytes = generated.bytes;
-          imgMime = generated.mime;
+        if (model.provider === "pollinations" && model.pollinationsModel && !ref) {
+          return useGenerated(await generateWithPollinations(enhancedPrompt, model.pollinationsModel, dims.width, dims.height));
+        }
+        if (model.provider === "huggingface" && model.huggingFaceProviderId && !ref) {
+          return useGenerated(await generateWithHuggingFace(enhancedPrompt, model.huggingFaceProviderId, dims.width, dims.height));
+        }
+        if (model.provider === "lovable" && model.lovableModel) {
+          return useGenerated(await generateWithLovable(enhancedPrompt, model.lovableModel, ref));
+        }
+        if (model.provider === "leonardo") {
+          return useGenerated(await generateWithLeonardo(enhancedPrompt, dims.width, dims.height, ref, model.leonardoId));
         }
       } catch (e) {
-        console.error("Lovable AI failed:", e);
+        console.error(`Image model failed (${key}):`, e);
+      }
+      return false;
+    };
+
+    if (referenceUrl) {
+      const referenceFallbacks = Array.from(new Set([selectedModelKey, "nano_banana_2", "nano_banana", "phoenix"]));
+      for (const key of referenceFallbacks) {
+        if (await tryModel(key, referenceUrl)) break;
       }
       if (!imgBytes) {
-        console.log(`[FALLBACK] Gemini Studio text-to-image: "${enhancedPrompt}"`);
-        const generated = await generateWithGeminiStudioTextToImage(enhancedPrompt);
-        if (generated) {
-          imgBytes = generated.bytes;
-          imgMime = generated.mime;
-        }
+        console.log(`[FALLBACK] Gemini Studio reference generation`);
+        useGenerated(await generateWithGeminiStudioImage(enhancedPrompt, referenceUrl));
       }
+    } else {
+      const textFallbacks = Array.from(new Set([
+        selectedModelKey,
+        "pollinations_gpt_image_2",
+        "pollinations_nanobanana_pro",
+        "pollinations_seedream5",
+        "pollinations_ideogram_quality",
+        "hf_ideogram_4",
+        "hf_flux_krea",
+        "hf_qwen_image",
+        "nano_banana_2",
+        "nano_banana",
+        "phoenix",
+      ]));
+
+      for (const key of textFallbacks) {
+        if (await tryModel(key)) break;
+      }
+
       if (!imgBytes) {
-        console.log(`[FALLBACK] Leonardo text-to-image: "${enhancedPrompt}"`);
-        const generated = await generateWithLeonardo(enhancedPrompt, dims.width, dims.height);
-        if (generated) {
-          imgBytes = generated.bytes;
-          imgMime = generated.mime;
-        }
+        console.log(`[FALLBACK] Gemini Studio text-to-image`);
+        useGenerated(await generateWithGeminiStudioTextToImage(enhancedPrompt));
       }
     }
 
     if (!imgBytes) throw new Error("Image generation providers are temporarily unavailable or quota-limited. Please try again shortly.");
 
     const ref = await uploadAndSave(admin, userId, prompt, style, aspectRatio, imgBytes, imgMime);
+
+    if (userId !== "anonymous") {
+      await incrementDailyImageUsage(admin, userId, new Date().toISOString().split("T")[0]);
+    }
 
     // If a conversationId is provided, insert the assistant message directly so the
     // image appears in chat via realtime even if the client request timed out.
