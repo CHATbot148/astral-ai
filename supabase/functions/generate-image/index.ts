@@ -538,6 +538,7 @@ async function generateWithLeonardo(
   width: number,
   height: number,
   referenceImageUrl?: string,
+  modelId = "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3",
 ): Promise<{ bytes: Uint8Array; mime: string } | null> {
   const apiKey = Deno.env.get("LEONARDO_API_KEY_NEW") || Deno.env.get("LEONARDO_API_KEY");
   if (!apiKey) return null;
@@ -551,12 +552,11 @@ async function generateWithLeonardo(
 
   const body: Record<string, unknown> = {
     prompt,
-    modelId: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3",
+    modelId,
     width,
     height,
     num_images: 1,
     alchemy: true,
-    photoReal: true,
     presetStyle: "CINEMATIC",
     public: false,
   };
