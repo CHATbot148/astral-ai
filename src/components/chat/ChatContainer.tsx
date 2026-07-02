@@ -18,6 +18,7 @@ import { useConversations } from '@/hooks/useConversations';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useSubscription } from '@/hooks/useSubscription';
 import { makeStorageRef, resolveFileUrl } from '@/lib/storageRef';
 import { cn } from '@/lib/utils';
 import { getAISettings } from '@/lib/aiSettings';
@@ -115,6 +116,7 @@ export const ChatContainer = () => {
   const messagesRef = useRef<any[]>([]);
   const { toast } = useToast();
   const { user } = useAuth();
+  const { refreshUsage } = useSubscription();
 
   const {
     conversations, currentConversation, messages,
@@ -459,7 +461,6 @@ export const ChatContainer = () => {
       }
     }
 
-    // Free tier now uses normal Nano Banana (Gemini 2.5 Flash Image).
     const conversationIdForGen = conversationIdOverride || currentConversation?.id;
     const { data, error } = await supabase.functions.invoke('generate-image', {
       body: {
@@ -468,13 +469,14 @@ export const ChatContainer = () => {
         aspectRatio: opts.aspectRatio,
         referenceMediaUrl,
         referenceImageUrl: referenceMediaUrl,
-        modelId: 'nano_banana',
+        modelId: opts.modelId || 'pollinations_gpt_image_2',
         appInForeground: isAppInForeground(),
         conversationId: conversationIdForGen,
       },
     });
     if (error) throw new Error(await extractFunctionErrorMessage(error, error.message || 'Image generation failed'));
     if (data?.error) throw new Error(data.error);
+    void refreshUsage();
     return data?.image ?? null;
   };
 
