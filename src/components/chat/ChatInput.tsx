@@ -492,11 +492,6 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
                         </div>
                       </button>
                     </div>
-                    <div className="px-5 py-2.5 border-t border-border/50 bg-secondary/20">
-                      <p className="text-[10px] text-muted-foreground/80">
-                        Video generation is paused while credits recharge.
-                      </p>
-                    </div>
                   </motion.div>
                 </>
               )}

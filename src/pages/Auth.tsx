@@ -183,21 +183,159 @@ const Auth = () => {
         />
       </div>
 
-      {/* Desktop layout restored: large screens keep the classic two-pane auth screen. */}
-      <section className="relative hidden md:flex h-full min-h-[100dvh] flex-col justify-between overflow-hidden border-r border-border bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 p-10 text-white dark:from-slate-950 dark:via-indigo-950 dark:to-slate-900">
-        <div className="absolute inset-0 opacity-30" style={{ background: 'radial-gradient(circle at 20% 15%, hsl(var(--xai-cyan) / 0.45), transparent 32%), radial-gradient(circle at 85% 80%, hsl(var(--xai-purple) / 0.4), transparent 34%)' }} />
-        <div className="relative z-10 flex items-center gap-3">
-          <img src={astrazLogo} alt="Astraz" className="h-12 w-12 object-contain drop-shadow-[0_0_24px_hsl(var(--xai-cyan)/0.45)]" />
+      {/* Desktop showcase pane — modern, animated, cinematic */}
+      <section className="relative hidden md:flex h-full min-h-[100dvh] flex-col justify-between overflow-hidden border-r border-white/5 bg-[#050510] p-12 text-white">
+        {/* Animated aurora orbs */}
+        <motion.div
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-[20%] -left-[10%] h-[70%] w-[70%] rounded-full bg-indigo-500/30 blur-[140px]"
+          animate={{ x: [0, 40, -20, 0], y: [0, 30, -10, 0], scale: [1, 1.08, 0.96, 1] }}
+          transition={{ duration: 18, repeat: Infinity, ease: 'easeInOut' }}
+        />
+        <motion.div
+          aria-hidden="true"
+          className="pointer-events-none absolute -bottom-[25%] -right-[10%] h-[75%] w-[75%] rounded-full bg-fuchsia-500/25 blur-[160px]"
+          animate={{ x: [0, -30, 20, 0], y: [0, -20, 15, 0], scale: [1, 1.1, 0.95, 1] }}
+          transition={{ duration: 22, repeat: Infinity, ease: 'easeInOut' }}
+        />
+        <motion.div
+          aria-hidden="true"
+          className="pointer-events-none absolute top-[30%] left-[35%] h-[45%] w-[45%] rounded-full bg-cyan-400/20 blur-[130px]"
+          animate={{ x: [0, 20, -30, 0], y: [0, -25, 20, 0] }}
+          transition={{ duration: 26, repeat: Infinity, ease: 'easeInOut' }}
+        />
+
+        {/* Grid overlay */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 opacity-[0.07]"
+          style={{
+            backgroundImage:
+              'linear-gradient(rgba(255,255,255,0.6) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.6) 1px, transparent 1px)',
+            backgroundSize: '56px 56px',
+            maskImage: 'radial-gradient(ellipse at 50% 40%, black 40%, transparent 75%)',
+          }}
+        />
+
+        {/* Floating particles */}
+        {[...Array(14)].map((_, i) => (
+          <motion.span
+            key={i}
+            aria-hidden="true"
+            className="pointer-events-none absolute h-1 w-1 rounded-full bg-white/60"
+            style={{ left: `${(i * 37) % 100}%`, top: `${(i * 53) % 100}%` }}
+            animate={{ y: [0, -20, 0], opacity: [0.15, 0.85, 0.15] }}
+            transition={{ duration: 4 + (i % 5), repeat: Infinity, delay: i * 0.3, ease: 'easeInOut' }}
+          />
+        ))}
+
+        {/* Brand header */}
+        <motion.div
+          initial={{ opacity: 0, y: -12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+          className="relative z-10 flex items-center gap-3"
+        >
+          <motion.div
+            animate={{ rotate: [0, 4, -4, 0] }}
+            transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }}
+            className="relative"
+          >
+            <div className="absolute inset-0 rounded-full bg-indigo-500/40 blur-2xl" />
+            <img src={astrazLogo} alt="Astraz" className="relative h-14 w-14 object-contain drop-shadow-[0_0_28px_rgba(129,140,248,0.7)]" />
+          </motion.div>
           <div>
-            <p className="font-display text-2xl font-bold">Astraz</p>
-            <p className="text-xs uppercase tracking-[0.24em] text-white/55">Astrinique</p>
+            <p className="font-display text-2xl font-bold tracking-tight">Astraz</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-white/50">by Astrinique</p>
           </div>
-        </div>
+        </motion.div>
+
+        {/* Hero copy */}
         <div className="relative z-10 max-w-xl">
-          <h2 className="font-display text-5xl font-bold leading-tight tracking-normal">Your intelligent companion.</h2>
-          <p className="mt-5 max-w-md text-base leading-7 text-white/70">Sign in to continue your conversations, generate media, read files, and keep your Astraz workspace synced.</p>
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
+            className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 backdrop-blur-xl"
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+            </span>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/80">Online · Ready</span>
+          </motion.div>
+
+          <motion.h2
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.9, delay: 0.25, ease: [0.22, 1, 0.36, 1] }}
+            className="font-display text-[3.5rem] font-bold leading-[1.05] tracking-tight"
+          >
+            Your intelligent{' '}
+            <span className="relative inline-block bg-gradient-to-r from-indigo-300 via-fuchsia-300 to-cyan-300 bg-clip-text text-transparent">
+              companion.
+              <motion.span
+                aria-hidden="true"
+                className="absolute -inset-x-2 bottom-1 -z-10 h-3 bg-gradient-to-r from-indigo-500/40 to-fuchsia-500/40 blur-xl"
+                animate={{ opacity: [0.4, 0.8, 0.4] }}
+                transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+              />
+            </span>
+          </motion.h2>
+
+          <motion.p
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            className="mt-6 max-w-md text-[15px] leading-7 text-white/65"
+          >
+            Chat, generate cinematic images and videos, analyze files, set reminders — one workspace synced across every device.
+          </motion.p>
+
+          {/* Feature pill grid */}
+          <motion.div
+            initial="hidden"
+            animate="show"
+            variants={{ hidden: {}, show: { transition: { staggerChildren: 0.08, delayChildren: 0.55 } } }}
+            className="mt-8 grid grid-cols-2 gap-2.5 max-w-md"
+          >
+            {[
+              { icon: '💬', label: 'Multi-model chat' },
+              { icon: '🎨', label: 'AI image studio' },
+              { icon: '🎬', label: 'Cinematic video' },
+              { icon: '🎙️', label: 'Voice calls' },
+            ].map((f) => (
+              <motion.div
+                key={f.label}
+                variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } }}
+                whileHover={{ y: -3, transition: { duration: 0.2 } }}
+                className="group flex items-center gap-2.5 rounded-2xl border border-white/10 bg-white/[0.03] px-3.5 py-2.5 backdrop-blur-xl transition-colors hover:border-indigo-400/40 hover:bg-white/[0.06]"
+              >
+                <span className="text-lg transition-transform group-hover:scale-110">{f.icon}</span>
+                <span className="text-[13px] font-medium text-white/85">{f.label}</span>
+              </motion.div>
+            ))}
+          </motion.div>
         </div>
-        <a href="https://astrinique.vercel.app" target="_blank" rel="noopener noreferrer" className="relative z-10 text-[11px] font-bold uppercase tracking-[0.3em] text-white/45 hover:text-white transition-colors">Made by Astrinique</a>
+
+        {/* Footer attribution */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.6, delay: 0.9 }}
+          className="relative z-10 flex items-center justify-between"
+        >
+          <a
+            href="https://astrinique.vercel.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.32em] text-white/45 transition-colors hover:text-white"
+          >
+            <span className="h-px w-8 bg-white/30 transition-all group-hover:w-12 group-hover:bg-white/60" />
+            Made by Astrinique
+          </a>
+          <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-white/30">v · 2026</p>
+        </motion.div>
       </section>
 
       <motion.div

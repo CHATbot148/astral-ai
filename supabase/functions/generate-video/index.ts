@@ -590,12 +590,20 @@ serve(async (req) => {
 
     const basePrompt = String(prompt).trim();
     let generationPrompt = [
-      `Create a premium, photorealistic, cinematic video clip.`,
-      `Scene: ${basePrompt}`,
-      `Motion: natural physically plausible movement, smooth camera path, stable framing, realistic parallax, believable timing, no random jump cuts.`,
-      `Visual quality: high-end commercial production, real-world materials, clean lighting, accurate shadows/reflections, detailed textures, rich but natural color grade, sharp subject separation.`,
-      `Composition: 16:9 professional framing, clear focal subject, no awkward cropping, no unwanted text or watermark.`,
-      `Avoid: flicker, morphing objects, warped faces/hands, melting details, jitter, over-smoothed plastic surfaces, unreadable text, fake logos unless explicitly requested.`,
+      `PREMIUM CINEMATIC VIDEO — treat this like a shot from a high-budget film or top-tier commercial spot.`,
+      ``,
+      `SCENE: ${basePrompt}`,
+      ``,
+      `DIRECTION:`,
+      `• Photorealistic rendering, real-world physics, believable weight, inertia, momentum, gravity, and secondary motion (hair, cloth, water, dust).`,
+      `• Deliberate cinematography: purposeful camera path (dolly / crane / slow push-in / gentle arc), stable framing, natural parallax, tasteful depth of field with clean subject-background separation.`,
+      `• Lighting: motivated key light with soft fill and rim, accurate shadows and reflections, correct color temperature, HDR-like dynamic range, cinematic color grade (neither flat nor over-saturated).`,
+      `• Materials: micro-detail on skin, fabric, metal, glass, foliage — no plastic or wax-like surfaces, no muddy textures.`,
+      `• Motion continuity: temporally consistent identity, faces, hands, digits, logos, and text across every frame; no morphing, warping, jitter, flicker, ghosting, or seam artifacts.`,
+      `• Composition: 16:9 professional framing following rule-of-thirds / leading lines where appropriate, clear focal subject, generous but intentional negative space, no awkward cropping.`,
+      `• Audio-visual clarity: subject reads instantly in the first frame; motion resolves cleanly before the last frame.`,
+      ``,
+      `HARD AVOID: melting/morphing objects, warped faces or hands, extra fingers, unreadable garbled text, unintended watermarks or logos, low-frame-rate stutter, over-smoothed AI plastic look, over-sharpened halos, chromatic aberration artifacts, uncanny frozen background, jump cuts, sudden style shifts mid-clip.`,
     ].join("\n");
     if (referenceMediaUrl && GEMINI_API_KEY) {
       try {
