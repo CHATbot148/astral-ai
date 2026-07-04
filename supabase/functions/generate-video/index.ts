@@ -18,6 +18,12 @@ type ModelConfig = {
 };
 
 const VIDEO_MODELS: Record<string, ModelConfig> = {
+  pollinations_grok_video_pro: {
+    provider: "pollinations",
+    apiModel: "grok-video-pro",
+    durations: [4, 6, 8],
+    qualities: ["720p", "1080p"],
+  },
   pollinations_veo: {
     provider: "pollinations",
     apiModel: "veo",
@@ -30,10 +36,28 @@ const VIDEO_MODELS: Record<string, ModelConfig> = {
     durations: [5, 8, 10],
     qualities: ["720p", "1080p"],
   },
+  pollinations_seedance_2: {
+    provider: "pollinations",
+    apiModel: "seedance-2.0",
+    durations: [5, 8, 10],
+    qualities: ["720p", "1080p"],
+  },
   pollinations_wan_pro: {
     provider: "pollinations",
     apiModel: "wan-pro-1080p",
     durations: [5, 8, 10],
+    qualities: ["720p", "1080p"],
+  },
+  pollinations_ltx_2: {
+    provider: "pollinations",
+    apiModel: "ltx-2",
+    durations: [4, 6, 8],
+    qualities: ["720p", "1080p"],
+  },
+  pollinations_nova_reel: {
+    provider: "pollinations",
+    apiModel: "nova-reel",
+    durations: [4, 6],
     qualities: ["720p", "1080p"],
   },
   puter_sora_2_pro: {
@@ -72,6 +96,125 @@ const VIDEO_MODELS: Record<string, ModelConfig> = {
 };
 
 const DEFAULT_MODEL = "pollinations_veo";
+
+type ProviderStatus = {
+  provider: string;
+  status: "available" | "unavailable" | "configured" | "not_configured";
+  message: string;
+  checkedAt: string;
+  models?: string[];
+};
+
+type ProviderAttemptError = {
+  modelId: string;
+  provider: string;
+  model: string;
+  message: string;
+};
+
+class ProviderFailureError extends Error {
+  providerErrors: ProviderAttemptError[];
+  constructor(providerErrors: ProviderAttemptError[]) {
+    const last = providerErrors[providerErrors.length - 1];
+    const firstLines = providerErrors
+      .slice(0, 5)
+      .map((e) => `${e.provider}/${e.model}: ${e.message}`)
+      .join(" | ");
+    super(
+      last
+        ? `All video providers failed. Provider errors: ${firstLines}`
+        : "Video generation providers are temporarily unavailable."
+    );
+    this.name = "ProviderFailureError";
+    this.providerErrors = providerErrors;
+  }
+}
+
+function sanitizeProviderMessage(value: unknown, max = 900): string {
+  const raw = value instanceof Error ? value.message : typeof value === "string" ? value : JSON.stringify(value);
+  return String(raw || "Unknown provider error")
+    .replace(/Bearer\s+[A-Za-z0-9._~+\-/=]+/gi, "Bearer [redacted]")
+    .replace(/(api[_-]?key|token|authorization)\s*[:=]\s*[\"']?[^\s\"',}]+/gi, "$1=[redacted]")
+    .slice(0, max);
+}
+
+async function readResponseSnippet(res: Response, max = 900): Promise<string> {
+  const contentType = res.headers.get("content-type") || "";
+  const text = contentType.includes("application/json")
+    ? JSON.stringify(await res.json().catch(() => ({})))
+    : await res.text().catch(() => "");
+  return sanitizeProviderMessage(text, max);
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = 7000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function getVideoProviderHealth(): Promise<{ available: boolean; status: string; providers: ProviderStatus[]; checkedAt: string }> {
+  const checkedAt = new Date().toISOString();
+  const providers: ProviderStatus[] = [];
+  const pollinationsKey = Deno.env.get("POLLINATIONS_API_KEY");
+  const puterKey = Deno.env.get("PUTER_API_KEY") || Deno.env.get("PUTER_AUTH_TOKEN");
+  const leonardoKey = Deno.env.get("LEONARDO_API_KEY_NEW") || Deno.env.get("LEONARDO_API_KEY");
+
+  if (!pollinationsKey) {
+    providers.push({ provider: "pollinations", status: "not_configured", message: "Pollinations token is not configured.", checkedAt });
+  } else {
+    try {
+      const res = await fetchWithTimeout("https://gen.pollinations.ai/video/models", {
+        headers: { Authorization: `Bearer ${pollinationsKey}`, Accept: "application/json" },
+      });
+      if (!res.ok) {
+        providers.push({
+          provider: "pollinations",
+          status: "unavailable",
+          message: `Pollinations model endpoint failed (${res.status}): ${await readResponseSnippet(res)}`,
+          checkedAt,
+        });
+      } else {
+        const models = await res.json().catch(() => []);
+        const names = Array.isArray(models) ? models.map((m) => String(m?.name || "")).filter(Boolean) : [];
+        providers.push({
+          provider: "pollinations",
+          status: names.length ? "available" : "unavailable",
+          message: names.length ? "Pollinations video models are reachable." : "Pollinations returned no video models.",
+          checkedAt,
+          models: names,
+        });
+      }
+    } catch (error) {
+      providers.push({ provider: "pollinations", status: "unavailable", message: sanitizeProviderMessage(error), checkedAt });
+    }
+  }
+
+  providers.push({
+    provider: "puter",
+    status: puterKey ? "configured" : "not_configured",
+    message: puterKey ? "Puter token is configured; generation attempts will verify quota live." : "Puter token is not configured.",
+    checkedAt,
+  });
+
+  providers.push({
+    provider: "leonardo",
+    status: leonardoKey ? "configured" : "not_configured",
+    message: leonardoKey ? "Leonardo token is configured as a fallback; generation attempts will verify quota live." : "Leonardo token is not configured.",
+    checkedAt,
+  });
+
+  const available = providers.some((p) => p.status === "available" || p.status === "configured");
+  return {
+    available,
+    status: available ? "Video generation is available." : "No video generation provider is currently available.",
+    providers,
+    checkedAt,
+  };
+}
 
 const ASPECT_BY_QUALITY: Record<VideoQuality, { width: number; height: number; size: string }> = {
   "720p": { width: 1280, height: 720, size: "1280x720" },
@@ -185,10 +328,7 @@ async function generateV2(
     }),
   });
 
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`Leonardo v2 generation failed (${res.status}): ${t}`);
-  }
+  if (!res.ok) throw new Error(`Leonardo v2 generation failed (${res.status}): ${await readResponseSnippet(res)}`);
 
   const data = await res.json();
   const genId = data.generationId || data.generation?.id;
@@ -218,7 +358,7 @@ async function generateV2(
 
       throw new Error("v2 generation completed but no video URL found");
     }
-    if (gen.status === "FAILED") throw new Error("Video generation failed on Leonardo");
+    if (gen.status === "FAILED") throw new Error(`Leonardo v2 generation failed: ${sanitizeProviderMessage(gen?.error || gen?.failureReason || gen)}`);
   }
   throw new Error("Video generation timed out");
 }
@@ -251,10 +391,7 @@ async function generateV1TextToVideo(
     }),
   });
 
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`Leonardo v1 text-to-video failed (${res.status}): ${t}`);
-  }
+  if (!res.ok) throw new Error(`Leonardo v1 text-to-video failed (${res.status}): ${await readResponseSnippet(res)}`);
 
   const data = await res.json();
   const genId =
@@ -283,7 +420,7 @@ async function generateV1TextToVideo(
       if (vid?.url) return vid.url;
       throw new Error("v1 generation completed but no video URL found");
     }
-    if (gen?.status === "FAILED") throw new Error("Video generation failed on Leonardo");
+    if (gen?.status === "FAILED") throw new Error(`Leonardo v1 generation failed: ${sanitizeProviderMessage(gen?.error || gen?.failureReason || gen)}`);
   }
   throw new Error("Video generation timed out");
 }
@@ -317,16 +454,16 @@ async function generateWithPollinationsVideo(
     headers: { Authorization: `Bearer ${apiKey}`, Accept: "video/mp4,application/json,*/*" },
   });
   const contentType = res.headers.get("content-type") || "video/mp4";
-  if (!res.ok) throw new Error(`Pollinations video generation failed (${res.status}): ${(await res.text()).slice(0, 400)}`);
+  if (!res.ok) throw new Error(`Pollinations video generation failed (${res.status}): ${await readResponseSnippet(res)}`);
   if (contentType.startsWith("video/") || contentType === "application/octet-stream") {
     return { bytes: new Uint8Array(await res.arrayBuffer()), mime: contentType.startsWith("video/") ? contentType : "video/mp4" };
   }
 
   const data = await res.json().catch(() => null);
   const videoUrl = data?.url || data?.video || data?.videos?.[0]?.url;
-  if (!videoUrl || typeof videoUrl !== "string") throw new Error("Pollinations returned no video URL");
+  if (!videoUrl || typeof videoUrl !== "string") throw new Error(`Pollinations returned no video URL: ${sanitizeProviderMessage(data)}`);
   const dl = await fetch(videoUrl);
-  if (!dl.ok) throw new Error("Failed to download Pollinations video");
+  if (!dl.ok) throw new Error(`Failed to download Pollinations video (${dl.status}): ${await readResponseSnippet(dl)}`);
   return { bytes: new Uint8Array(await dl.arrayBuffer()), mime: dl.headers.get("content-type") || "video/mp4" };
 }
 
@@ -351,12 +488,14 @@ async function generateWithPuterVideo(
     size: dims.size,
     resolution: dims.size,
     ...(inputReference ? { input_reference: inputReference } : {}),
+  }).catch((error: unknown) => {
+    throw new Error(`Puter video generation failed: ${sanitizeProviderMessage(error)}`);
   });
   const src = typeof video === "string" ? video : video?.src || video?.url || video?.data?.url || video?.dataUrl;
   if (!src || typeof src !== "string") throw new Error("Puter returned no video URL");
   if (src.startsWith("data:")) return parseDataUrl(src);
   const dl = await fetch(src);
-  if (!dl.ok) throw new Error("Failed to download Puter video");
+  if (!dl.ok) throw new Error(`Failed to download Puter video (${dl.status}): ${await readResponseSnippet(dl)}`);
   return { bytes: new Uint8Array(await dl.arrayBuffer()), mime: dl.headers.get("content-type") || "video/mp4" };
 }
 
@@ -494,7 +633,14 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { prompt, modelId, duration, quality, referenceMediaUrl } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    if (body?.action === "health" || body?.healthCheck === true) {
+      return new Response(JSON.stringify(await getVideoProviderHealth()), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { prompt, modelId, duration, quality, referenceMediaUrl } = body;
     if (!prompt) throw new Error("Prompt is required");
 
     const LEONARDO_API_KEY = Deno.env.get("LEONARDO_API_KEY_NEW") || Deno.env.get("LEONARDO_API_KEY");
@@ -627,7 +773,22 @@ serve(async (req) => {
     );
 
     let ref: string | null = null;
-    const fallbackKeys = Array.from(new Set([selectedModel, "pollinations_veo", "pollinations_seedance_pro", "pollinations_wan_pro", "puter_sora_2_pro", "puter_veo_31_lite", "kling_3", "veo_31_fast"]));
+    const providerErrors: ProviderAttemptError[] = [];
+    const fallbackKeys = Array.from(new Set([
+      selectedModel,
+      "pollinations_grok_video_pro",
+      "pollinations_veo",
+      "pollinations_seedance_pro",
+      "pollinations_seedance_2",
+      "pollinations_wan_pro",
+      "pollinations_ltx_2",
+      "pollinations_nova_reel",
+      "puter_sora_2_pro",
+      "puter_veo_31_lite",
+      "kling_3",
+      "veo_31_fast",
+      "hailuo_23",
+    ]));
     for (const key of fallbackKeys) {
       const attempt = VIDEO_MODELS[key];
       if (!attempt) continue;
@@ -650,11 +811,13 @@ serve(async (req) => {
           break;
         }
       } catch (providerError) {
-        console.error(`[generate-video] provider failed ${key}:`, providerError);
+        const message = sanitizeProviderMessage(providerError);
+        providerErrors.push({ modelId: key, provider: attempt.provider, model: attempt.apiModel, message });
+        console.error(`[generate-video] provider failed ${key} (${attempt.provider}/${attempt.apiModel}): ${message}`);
       }
     }
 
-    if (!ref) throw new Error("Video generation providers are temporarily unavailable or quota-limited. Please try again shortly.");
+    if (!ref) throw new ProviderFailureError(providerErrors);
     await incrementDailyVideoUsage(admin, userId, todayKey);
 
     try {
@@ -668,9 +831,10 @@ serve(async (req) => {
     });
   } catch (e) {
     console.error("generate-video error:", e);
+    const providerErrors = e instanceof ProviderFailureError ? e.providerErrors : undefined;
     return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error", provider_errors: providerErrors }),
+      { status: e instanceof ProviderFailureError ? 503 : 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
