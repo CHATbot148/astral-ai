@@ -32,6 +32,10 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   onGenerate: (opts: VideoGenOptions) => Promise<void>;
   initialPrompt?: string;
+  videoAvailable?: boolean;
+  videoStatus?: string;
+  checkingVideoHealth?: boolean;
+  onRefreshVideoHealth?: () => void;
 }
 
 const SUGGESTIONS = [
@@ -51,7 +55,7 @@ const fadeUp = {
   show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
 };
 
-export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPrompt = "" }: Props) => {
+export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPrompt = "", videoAvailable = true, videoStatus, checkingVideoHealth = false, onRefreshVideoHealth }: Props) => {
   const { canGenerateVideo, remainingVideos, tier, tierConfig } = useSubscription();
   const [prompt, setPrompt] = useState(initialPrompt);
   const [isWorking, setIsWorking] = useState(false);
@@ -102,7 +106,7 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   };
 
   const run = async () => {
-    if (!prompt.trim()) return;
+    if (!prompt.trim() || !videoAvailable) return;
     try {
       setIsWorking(true);
       setError(null);
@@ -264,12 +268,17 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
           </AnimatePresence>
 
           {/* Limits */}
-          {!canGenerateVideo && (
+          {(!canGenerateVideo || !videoAvailable) && (
             <div className="flex items-center gap-2 p-3 rounded-xl bg-destructive/10 border border-destructive/20">
-              <Lock className="h-4 w-4 text-destructive shrink-0" />
+              {checkingVideoHealth ? <Loader2 className="h-4 w-4 text-destructive shrink-0 animate-spin" /> : <Lock className="h-4 w-4 text-destructive shrink-0" />}
               <p className="text-xs text-destructive">
-                {tier === "free" ? "Video generation requires a paid plan." : `Daily limit reached (${tierConfig.limits.videosPerDay}/day).`}
+                {!videoAvailable ? (videoStatus || "Video generation is temporarily unavailable.") : tier === "free" ? "Video generation requires a paid plan." : `Daily limit reached (${tierConfig.limits.videosPerDay}/day).`}
               </p>
+              {!videoAvailable && onRefreshVideoHealth && (
+                <button type="button" onClick={onRefreshVideoHealth} className="ml-auto text-[11px] font-medium text-destructive underline-offset-4 hover:underline">
+                  Retry
+                </button>
+              )}
             </div>
           )}
 
@@ -280,7 +289,7 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
                 {remainingVideos} video{remainingVideos !== 1 ? "s" : ""} left today
               </p>
             )}
-            <Button onClick={run} disabled={isWorking || !prompt.trim() || !canGenerateVideo}
+            <Button onClick={run} disabled={isWorking || !prompt.trim() || !canGenerateVideo || !videoAvailable}
               className={cn(
                 "ml-auto gap-2 min-w-[130px] rounded-xl font-medium",
                 "bg-gradient-to-r from-xai-cyan to-xai-purple text-white hover:opacity-90 transition-opacity"
