@@ -1204,6 +1204,13 @@ export const ChatContainer = () => {
           const capturedConvId = convId;
           const vidPrompt = finalDirective.prompt;
 
+          if (!videoHealth.available) {
+            await addMessage(capturedConvId, 'assistant', `Video generation is unavailable right now. ${videoHealth.status}`);
+            setIsGeneratingVideo(false);
+            setTypingLabel(undefined);
+            return;
+          }
+
           setIsGeneratingVideo(true);
           setTypingLabel('Generating video…');
           setTypingMode('typing');
