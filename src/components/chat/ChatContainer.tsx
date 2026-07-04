@@ -735,10 +735,8 @@ export const ChatContainer = () => {
     const imageMatch = value.match(/\[GENERATE_IMAGE:([^\]]+)\]/);
     if (imageMatch?.[1]) return { type: 'image', prompt: imageMatch[1].trim() };
 
-    // Video generation is temporarily disabled — treat any [GENERATE_VIDEO:...] as image
-    // so we never trigger Leonardo while credits are paused.
     const videoMatch = value.match(/\[GENERATE_VIDEO:([^\]]+)\]/);
-    if (videoMatch?.[1]) return { type: 'image', prompt: videoMatch[1].trim() };
+    if (videoMatch?.[1]) return { type: 'video', prompt: videoMatch[1].trim() };
 
     return null;
   };
@@ -1347,13 +1345,13 @@ export const ChatContainer = () => {
                     <p className="text-xs text-muted-foreground">Create AI images</p>
                   </div>
                 </button>
-                <div className="flex items-center gap-3 px-4 py-3 w-full text-left text-sm rounded-xl opacity-60 cursor-not-allowed">
+                <button onClick={() => { setShowVisualizePopup(false); openVideoDialog(); }} className="flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/70 w-full text-left text-sm rounded-xl transition-colors">
                   <span className="text-xl">🎬</span>
                   <div>
                     <p className="font-medium">Generate Video</p>
-                    <p className="text-xs text-muted-foreground">Paused — credits recharging</p>
+                    <p className="text-xs text-muted-foreground">Cinematic AI clips</p>
                   </div>
-                </div>
+                </button>
 
               </div>
               <button onClick={() => setShowVisualizePopup(false)} className="w-full py-3 text-sm text-muted-foreground hover:text-foreground border-t border-border/50">Cancel</button>
