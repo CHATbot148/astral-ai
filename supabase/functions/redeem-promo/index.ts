@@ -108,10 +108,56 @@ serve(async (req) => {
       });
     }
 
+    const now = new Date();
+    const durationDays = Number(result.duration_days || 30);
+    const expiresAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+    const subData = {
+      user_id: userId,
+      tier: result.tier,
+      billing_cycle: "monthly",
+      status: "active",
+      started_at: now.toISOString(),
+      expires_at: expiresAt.toISOString(),
+      access_until: expiresAt.toISOString(),
+      cancelled_at: null,
+      cancellation_type: null,
+      auto_renew: false,
+      save_payment_method: false,
+      agreed_to_privacy_policy: true,
+      privacy_policy_agreed_at: now.toISOString(),
+      source: "promo",
+    };
+
+    const { error: upsertError } = await supabase
+      .from("subscriptions")
+      .upsert(subData, { onConflict: "user_id" });
+    if (upsertError) {
+      console.error("Subscription upsert error:", upsertError);
+      return new Response(JSON.stringify({ error: "Code redeemed, but subscription activation failed. Contact support." }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    try {
+      await fetch(`${SUPABASE_URL}/functions/v1/subscription-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE_ROLE_KEY}` },
+        body: JSON.stringify({
+          user_id: userId,
+          type: "payment_success",
+          period_key: `promo-${expiresAt.toISOString().slice(0, 10)}`,
+          data: { tier: result.tier, cycle: "promo", expires_at: expiresAt.toISOString(), source: "promo" },
+        }),
+      });
+    } catch (emailError) {
+      console.error("promo success email failed:", emailError);
+    }
+
     return new Response(JSON.stringify({
       success: true,
       tier: result.tier,
-      duration_days: result.duration_days,
+      duration_days: durationDays,
+      expires_at: expiresAt.toISOString(),
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     console.error("redeem-promo error:", e);
