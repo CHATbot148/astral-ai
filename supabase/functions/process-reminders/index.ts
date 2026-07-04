@@ -34,6 +34,10 @@ serve(async (req) => {
     }
 
     if (!reminders || reminders.length === 0) {
+      // Still run retention/subscription jobs even when no user-created
+      // reminders are due; otherwise missed-login and expiry emails silently
+      // stop whenever the reminders table is empty.
+      await runRecurringChecks(SUPABASE_URL, SERVICE_ROLE_KEY);
       return new Response(JSON.stringify({ processed: 0 }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -108,22 +112,7 @@ serve(async (req) => {
     }
 
     // Piggyback on cron: re-engagement + subscription renewal checks
-    try {
-      await Promise.all([
-        fetch(`${SUPABASE_URL}/functions/v1/check-reengagement`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE_ROLE_KEY}` },
-          body: JSON.stringify({}),
-        }),
-        fetch(`${SUPABASE_URL}/functions/v1/check-subscription-renewals`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE_ROLE_KEY}` },
-          body: JSON.stringify({}),
-        }),
-      ]);
-    } catch (reengErr) {
-      console.error("Piggyback checks failed (non-blocking):", reengErr);
-    }
+    await runRecurringChecks(SUPABASE_URL, SERVICE_ROLE_KEY);
 
     return new Response(JSON.stringify({ processed }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -136,6 +125,25 @@ serve(async (req) => {
     );
   }
 });
+
+async function runRecurringChecks(supabaseUrl: string, serviceRoleKey: string) {
+  try {
+    await Promise.all([
+      fetch(`${supabaseUrl}/functions/v1/check-reengagement`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceRoleKey}` },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${supabaseUrl}/functions/v1/check-subscription-renewals`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceRoleKey}` },
+        body: JSON.stringify({}),
+      }),
+    ]);
+  } catch (reengErr) {
+    console.error("Recurring checks failed (non-blocking):", reengErr);
+  }
+}
 
 async function resolveConversationId(
   supabase: ReturnType<typeof createClient>,

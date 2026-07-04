@@ -37,18 +37,24 @@ const ASPECT_LABELS: Record<string, string> = {
 const IMAGE_MODELS: Record<
   string,
   {
-    provider: "lovable" | "leonardo" | "pollinations" | "huggingface";
+    provider: "lovable" | "leonardo" | "pollinations" | "huggingface" | "puter";
     lovableModel?: string;
     leonardoId?: string;
     pollinationsModel?: string;
     huggingFaceProviderId?: string;
     huggingFaceModel?: string;
+    puterModel?: string;
+    puterProvider?: string;
+    puterQuality?: string;
   }
 > = {
   pollinations_gpt_image_2: { provider: "pollinations", pollinationsModel: "gpt-image-2" },
   pollinations_nanobanana_pro: { provider: "pollinations", pollinationsModel: "nanobanana-pro" },
   pollinations_seedream5: { provider: "pollinations", pollinationsModel: "seedream5" },
   pollinations_ideogram_quality: { provider: "pollinations", pollinationsModel: "ideogram-v4-quality" },
+  puter_gpt_image_2: { provider: "puter", puterModel: "openai/gpt-image-2", puterProvider: "openai-image-generation", puterQuality: "high" },
+  puter_grok_quality: { provider: "puter", puterModel: "grok-imagine-image-quality", puterProvider: "xai", puterQuality: "2k" },
+  puter_gemini_3_pro: { provider: "puter", puterModel: "gemini-3-pro-image", puterProvider: "gemini", puterQuality: "2K" },
   hf_ideogram_4: { provider: "huggingface", huggingFaceProviderId: "ideogram/v4", huggingFaceModel: "ideogram-ai/ideogram-4-fp8" },
   hf_flux_krea: { provider: "huggingface", huggingFaceProviderId: "fal-ai/flux/krea", huggingFaceModel: "black-forest-labs/FLUX.1-Krea-dev" },
   hf_qwen_image: { provider: "huggingface", huggingFaceProviderId: "fal-ai/qwen-image", huggingFaceModel: "Qwen/Qwen-Image" },
@@ -417,6 +423,50 @@ async function generateWithPollinations(
   return null;
 }
 
+async function generateWithPuter(
+  prompt: string,
+  model: string,
+  width: number,
+  height: number,
+  referenceImageUrl?: string,
+  provider?: string,
+  quality?: string,
+): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  const token = Deno.env.get("PUTER_API_KEY") || Deno.env.get("PUTER_AUTH_TOKEN");
+  if (!token) return null;
+
+  try {
+    const mod = await import("npm:@heyputer/puter.js/src/init.cjs");
+    const puter = mod.init(token);
+    let inputImage = referenceImageUrl;
+    if (inputImage?.startsWith("storage:")) inputImage = await resolveStorageRefToSignedUrl(inputImage);
+
+    const img = await puter.ai.txt2img({
+      prompt,
+      model,
+      ...(provider ? { provider } : {}),
+      ratio: { w: width, h: height },
+      width,
+      height,
+      quality: quality || "high",
+      ...(inputImage ? { input_image: inputImage, input_images: [inputImage] } : {}),
+    });
+
+    const src = typeof img === "string" ? img : img?.src || img?.url || img?.data?.url || img?.dataUrl;
+    if (typeof src === "string") {
+      if (src.startsWith("data:image/")) {
+        const parsed = parseDataUrl(src);
+        return { bytes: parsed.bytes, mime: parsed.mime || "image/png" };
+      }
+      return await downloadImageFromUrl(src);
+    }
+  } catch (e) {
+    console.error("Puter image generation failed:", model, e);
+  }
+
+  return null;
+}
+
 async function generateWithHuggingFace(
   prompt: string,
   providerId: string,
@@ -671,7 +721,7 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) throw new Error("Backend is not configured");
-    if (!LOVABLE_API_KEY && !Deno.env.get("GEMINI_API_KEY") && !Deno.env.get("POLLINATIONS_API_KEY") && !Deno.env.get("HUGGINGFACE_API_TOKEN")) {
+    if (!LOVABLE_API_KEY && !Deno.env.get("GEMINI_API_KEY") && !Deno.env.get("POLLINATIONS_API_KEY") && !Deno.env.get("HUGGINGFACE_API_TOKEN") && !Deno.env.get("PUTER_API_KEY") && !Deno.env.get("PUTER_AUTH_TOKEN")) {
       throw new Error("Image generation API key not configured");
     }
 
@@ -753,12 +803,13 @@ serve(async (req) => {
       ``,
       `Subject: ${userPrompt}`,
       stylePrompt ? `Style: ${stylePrompt}.` : `Style: clean, premium, realistic lighting and polished design.`,
-      `Composition: well-balanced, clear focal subject, ${ASPECT_LABELS[aspectRatio] || aspectRatio} frame, no unwanted cropping.`,
-      `Realism requirements: physically plausible lighting, real-world materials, authentic product/brand design details when the user explicitly requests a real brand, accurate shadows, natural camera depth, clean background integration, premium color grading.`,
+      `Composition: well-balanced, intentional lens perspective, clear focal subject, ${ASPECT_LABELS[aspectRatio] || aspectRatio} frame, no unwanted cropping, professional negative space where useful.`,
+      `Realism requirements: physically plausible lighting, real-world materials, authentic textures, precise reflections, atmospheric depth, correct scale, believable shadows, natural camera depth, premium color grading, high dynamic range, crisp micro-detail, and real brand logos/design language only when the user explicitly requests a real brand.`,
       isReferenceEdit
-        ? `Reference edit rules: preserve the original subject identity, pose, layout, background, colors, logos, typography, and all unrelated details. Change only what the user requested, keep the rest visually consistent with the reference image.`
-        : `Design rules: make the scene specific and believable, with coherent objects, readable composition, and no generic filler details.`,
-      `Avoid: distorted text, gibberish lettering, warped faces, extra fingers, extra limbs, mangled hands, messy artifacts, low-resolution textures, unwanted watermarks, random logos not requested by the user.`,
+        ? `Reference edit rules: treat the reference as the source of truth. Preserve subject identity, face, body shape, pose, camera angle, layout, background, colors, lighting direction, logos, typography, materials, and all unrelated details. Change only the requested attributes and blend edits with matching grain, sharpness, shadows, and perspective.`
+        : `Design rules: make the scene specific, premium, modern, and believable with coherent objects, readable composition, strong silhouette, clean edges, and no generic filler details.`,
+      `Rendering target: polished commercial-grade output, realistic product/brand photography quality, cinematic lighting when appropriate, editorial-level finishing, no visible AI artifacts.`,
+      `Avoid: distorted text, gibberish lettering, warped faces, extra fingers, extra limbs, mangled hands, bad anatomy, plastic skin, muddy textures, messy artifacts, low-resolution detail, unwanted watermarks, random logos not requested by the user.`,
     ].join("\n");
     const dims = ASPECT_RATIO_MAP[aspectRatio] || ASPECT_RATIO_MAP["1:1"];
 
@@ -785,6 +836,9 @@ serve(async (req) => {
         if (model.provider === "pollinations" && model.pollinationsModel && !ref) {
           return useGenerated(await generateWithPollinations(enhancedPrompt, model.pollinationsModel, dims.width, dims.height));
         }
+        if (model.provider === "puter" && model.puterModel) {
+          return useGenerated(await generateWithPuter(enhancedPrompt, model.puterModel, dims.width, dims.height, ref, model.puterProvider, model.puterQuality));
+        }
         if (model.provider === "huggingface" && model.huggingFaceProviderId && !ref) {
           return useGenerated(await generateWithHuggingFace(enhancedPrompt, model.huggingFaceProviderId, dims.width, dims.height));
         }
@@ -801,7 +855,7 @@ serve(async (req) => {
     };
 
     if (referenceUrl) {
-      const referenceFallbacks = Array.from(new Set([selectedModelKey, "nano_banana_2", "nano_banana", "phoenix"]));
+      const referenceFallbacks = Array.from(new Set([selectedModelKey, "puter_gemini_3_pro", "puter_gpt_image_2", "nano_banana_2", "nano_banana", "phoenix"]));
       for (const key of referenceFallbacks) {
         if (await tryModel(key, referenceUrl)) break;
       }
@@ -816,6 +870,9 @@ serve(async (req) => {
         "pollinations_nanobanana_pro",
         "pollinations_seedream5",
         "pollinations_ideogram_quality",
+        "puter_gpt_image_2",
+        "puter_grok_quality",
+        "puter_gemini_3_pro",
         "hf_ideogram_4",
         "hf_flux_krea",
         "hf_qwen_image",

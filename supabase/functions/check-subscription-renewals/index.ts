@@ -14,53 +14,68 @@ serve(async (req) => {
     const admin = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
 
     const now = Date.now();
-    const in3dayMin = new Date(now + 2.5 * 24 * 3600 * 1000).toISOString();
-    const in3dayMax = new Date(now + 3.5 * 24 * 3600 * 1000).toISOString();
+    const nowIso = new Date(now).toISOString();
+    const windowForDay = (days: number) => ({
+      min: new Date(now + (days - 0.5) * 24 * 3600 * 1000).toISOString(),
+      max: new Date(now + (days + 0.5) * 24 * 3600 * 1000).toISOString(),
+    });
 
     // Renewal-reminder window: expires in ~3d
-    const { data: dueSoon } = await admin
-      .from("subscriptions")
-      .select("user_id, tier, billing_cycle, expires_at, auto_renew, status")
-      .neq("tier", "free")
-      .eq("status", "active")
-      .gte("expires_at", in3dayMin)
-      .lte("expires_at", in3dayMax);
-
     let reminders = 0;
-    for (const s of dueSoon || []) {
-      const periodKey = `${(s.expires_at || "").slice(0, 10)}`;
-      await fetch(`${SUPABASE_URL}/functions/v1/subscription-email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE}` },
-        body: JSON.stringify({
-          user_id: s.user_id, type: "renewal_reminder", period_key: periodKey,
-          data: { tier: s.tier, expires_at: s.expires_at, auto_renew: s.auto_renew },
-        }),
-      });
-      reminders++;
+    for (const days of [7, 3, 1]) {
+      const w = windowForDay(days);
+      const { data: dueSoon } = await admin
+        .from("subscriptions")
+        .select("user_id, tier, billing_cycle, expires_at, auto_renew, status")
+        .neq("tier", "free")
+        .eq("status", "active")
+        .gte("expires_at", w.min)
+        .lte("expires_at", w.max);
+
+      for (const s of dueSoon || []) {
+        const periodKey = `${days}d-${(s.expires_at || "").slice(0, 10)}`;
+        await fetch(`${SUPABASE_URL}/functions/v1/subscription-email`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE}` },
+          body: JSON.stringify({
+            user_id: s.user_id, type: "renewal_reminder", period_key: periodKey,
+            data: { tier: s.tier, expires_at: s.expires_at, auto_renew: s.auto_renew, days_left: days },
+          }),
+        });
+        reminders++;
+      }
     }
 
-    // Just-expired (last 24h) and not auto-renewing → send "expired"
-    const expiredCutoff = new Date(now - 24 * 3600 * 1000).toISOString();
+    // Any subscription past access_until/expires_at is no longer active. This
+    // is the source of truth for coupon and non-renewing plans, so premium
+    // access cannot last forever if the client misses a refresh.
     const { data: expired } = await admin
       .from("subscriptions")
-      .select("user_id, tier, expires_at, auto_renew, status")
+      .select("id, user_id, tier, expires_at, access_until, auto_renew, status")
       .neq("tier", "free")
-      .lte("expires_at", new Date(now).toISOString())
-      .gte("expires_at", expiredCutoff);
+      .eq("status", "active")
+      .or(`expires_at.lte.${nowIso},access_until.lte.${nowIso}`);
 
     let expiredSent = 0;
     for (const s of expired || []) {
-      if (s.auto_renew && s.status === "active") continue; // a renewal charge is expected
-      const periodKey = `${(s.expires_at || "").slice(0, 10)}`;
+      const endedAt = s.access_until || s.expires_at || nowIso;
+      const periodKey = `${(endedAt || "").slice(0, 10)}`;
       await fetch(`${SUPABASE_URL}/functions/v1/subscription-email`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE}` },
         body: JSON.stringify({
           user_id: s.user_id, type: "expired", period_key: periodKey,
-          data: { tier: s.tier },
+          data: { tier: s.tier, expires_at: endedAt },
         }),
       });
+      await admin.from("subscriptions").update({
+        status: "expired",
+        tier: "free",
+        auto_renew: false,
+        cancelled_at: endedAt,
+        access_until: endedAt,
+        updated_at: nowIso,
+      }).eq("id", s.id);
       expiredSent++;
     }
 

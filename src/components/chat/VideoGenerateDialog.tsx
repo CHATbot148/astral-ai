@@ -134,7 +134,7 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
             </div>
             <div>
               <h2 className="text-lg font-semibold text-foreground">Generate Video</h2>
-              <p className="text-xs text-muted-foreground">Powered by Leonardo AI</p>
+              <p className="text-xs text-muted-foreground">Premium AI video generation</p>
             </div>
           </motion.div>
         </div>
@@ -165,7 +165,7 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
               <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                 <Sparkles className="h-3.5 w-3.5" /> Model
               </p>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {VIDEO_MODEL_OPTIONS.map((m) => (
                   <button key={m.value} onClick={() => setSelectedModel(m.value)} disabled={isWorking}
                     className={cn(

@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS "Public read access for chat-files" ON storage.objects;

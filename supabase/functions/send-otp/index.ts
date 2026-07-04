@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,6 +9,22 @@ const corsHeaders = {
 // Generate 6-digit OTP
 function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function randomSalt(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return bytesToHex(bytes);
+}
+
+async function hashOtp(otp: string, salt: string): Promise<string> {
+  const data = new TextEncoder().encode(`${salt}:${otp}`);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return `sha256$${salt}$${bytesToHex(new Uint8Array(digest))}`;
 }
 
 serve(async (req) => {
@@ -36,7 +51,7 @@ serve(async (req) => {
     }
 
     const otp = generateOTP();
-    const otpHash = await bcrypt.hash(otp, 10);
+    const otpHash = await hashOtp(otp, randomSalt());
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
     // Store OTP in database

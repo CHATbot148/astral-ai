@@ -10,26 +10,60 @@ const corsHeaders = {
 type VideoQuality = "720p" | "1080p";
 
 type ModelConfig = {
-  apiVersion: "v1" | "v2";
+  provider: "pollinations" | "puter" | "leonardo";
+  apiVersion?: "v1" | "v2";
   apiModel: string;
   durations: number[];
   qualities: VideoQuality[];
 };
 
 const VIDEO_MODELS: Record<string, ModelConfig> = {
+  pollinations_veo: {
+    provider: "pollinations",
+    apiModel: "veo",
+    durations: [4, 6, 8],
+    qualities: ["720p", "1080p"],
+  },
+  pollinations_seedance_pro: {
+    provider: "pollinations",
+    apiModel: "seedance-pro",
+    durations: [5, 8, 10],
+    qualities: ["720p", "1080p"],
+  },
+  pollinations_wan_pro: {
+    provider: "pollinations",
+    apiModel: "wan-pro-1080p",
+    durations: [5, 8, 10],
+    qualities: ["720p", "1080p"],
+  },
+  puter_sora_2_pro: {
+    provider: "puter",
+    apiModel: "sora-2-pro",
+    durations: [4, 8, 12],
+    qualities: ["720p", "1080p"],
+  },
+  puter_veo_31_lite: {
+    provider: "puter",
+    apiModel: "veo-3.1-lite-generate-preview",
+    durations: [4, 6, 8],
+    qualities: ["720p", "1080p"],
+  },
   kling_3: {
+    provider: "leonardo",
     apiVersion: "v2",
     apiModel: "kling-3.0",
     durations: [5, 10],
     qualities: ["720p", "1080p"],
   },
   veo_31_fast: {
+    provider: "leonardo",
     apiVersion: "v1",
     apiModel: "VEO3_1FAST",
     durations: [6, 8],
     qualities: ["720p", "1080p"],
   },
   hailuo_23: {
+    provider: "leonardo",
     apiVersion: "v1",
     apiModel: "HAILUO_2_3",
     durations: [6, 10],
@@ -37,7 +71,12 @@ const VIDEO_MODELS: Record<string, ModelConfig> = {
   },
 };
 
-const DEFAULT_MODEL = "kling_3";
+const DEFAULT_MODEL = "pollinations_veo";
+
+const ASPECT_BY_QUALITY: Record<VideoQuality, { width: number; height: number; size: string }> = {
+  "720p": { width: 1280, height: 720, size: "1280x720" },
+  "1080p": { width: 1920, height: 1080, size: "1920x1080" },
+};
 
 function pickDuration(val: unknown, supported: number[]): number {
   const n = typeof val === "number" ? val : Number(val);
@@ -56,6 +95,15 @@ function bytesToBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
   }
   return btoa(binary);
+}
+
+function parseDataUrl(dataUrl: string): { mime: string; bytes: Uint8Array } {
+  const match = dataUrl.match(/^data:(.+?);base64,(.+)$/);
+  if (!match) throw new Error("Invalid media data");
+  const binary = atob(match[2]);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return { mime: match[1], bytes };
 }
 
 async function resolveStorageRef(
@@ -240,6 +288,78 @@ async function generateV1TextToVideo(
   throw new Error("Video generation timed out");
 }
 
+async function generateWithPollinationsVideo(
+  prompt: string,
+  model: string,
+  duration: number,
+  quality: VideoQuality,
+  referenceMediaUrl?: string,
+): Promise<{ bytes: Uint8Array; mime: string }> {
+  const apiKey = Deno.env.get("POLLINATIONS_API_KEY");
+  if (!apiKey) throw new Error("Pollinations API key is not configured");
+
+  const dims = ASPECT_BY_QUALITY[quality];
+  const url = new URL(`https://gen.pollinations.ai/video/${encodeURIComponent(prompt.replace(/\s+/g, " ").trim().slice(0, 1800))}`);
+  url.searchParams.set("model", model);
+  url.searchParams.set("duration", String(duration));
+  url.searchParams.set("aspectRatio", "16:9");
+  url.searchParams.set("nologo", "true");
+  url.searchParams.set("private", "true");
+  url.searchParams.set("safe", "true");
+  url.searchParams.set("width", String(dims.width));
+  url.searchParams.set("height", String(dims.height));
+  if (referenceMediaUrl) {
+    url.searchParams.set("referenceImage", referenceMediaUrl.startsWith("storage:") ? referenceMediaUrl : referenceMediaUrl);
+    url.searchParams.set("image", referenceMediaUrl.startsWith("storage:") ? referenceMediaUrl : referenceMediaUrl);
+  }
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${apiKey}`, Accept: "video/mp4,application/json,*/*" },
+  });
+  const contentType = res.headers.get("content-type") || "video/mp4";
+  if (!res.ok) throw new Error(`Pollinations video generation failed (${res.status}): ${(await res.text()).slice(0, 400)}`);
+  if (contentType.startsWith("video/") || contentType === "application/octet-stream") {
+    return { bytes: new Uint8Array(await res.arrayBuffer()), mime: contentType.startsWith("video/") ? contentType : "video/mp4" };
+  }
+
+  const data = await res.json().catch(() => null);
+  const videoUrl = data?.url || data?.video || data?.videos?.[0]?.url;
+  if (!videoUrl || typeof videoUrl !== "string") throw new Error("Pollinations returned no video URL");
+  const dl = await fetch(videoUrl);
+  if (!dl.ok) throw new Error("Failed to download Pollinations video");
+  return { bytes: new Uint8Array(await dl.arrayBuffer()), mime: dl.headers.get("content-type") || "video/mp4" };
+}
+
+async function generateWithPuterVideo(
+  prompt: string,
+  model: string,
+  duration: number,
+  quality: VideoQuality,
+  referenceMediaUrl?: string,
+): Promise<{ bytes: Uint8Array; mime: string }> {
+  const token = Deno.env.get("PUTER_API_KEY") || Deno.env.get("PUTER_AUTH_TOKEN");
+  if (!token) throw new Error("Puter API key is not configured");
+  const dims = ASPECT_BY_QUALITY[quality];
+  const mod = await import("npm:@heyputer/puter.js/src/init.cjs");
+  const puter = mod.init(token);
+  let inputReference = referenceMediaUrl;
+  if (inputReference?.startsWith("storage:")) inputReference = await resolveStorageRef(createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!), inputReference);
+  const video = await puter.ai.txt2vid({
+    prompt,
+    model,
+    seconds: duration,
+    size: dims.size,
+    resolution: dims.size,
+    ...(inputReference ? { input_reference: inputReference } : {}),
+  });
+  const src = typeof video === "string" ? video : video?.src || video?.url || video?.data?.url || video?.dataUrl;
+  if (!src || typeof src !== "string") throw new Error("Puter returned no video URL");
+  if (src.startsWith("data:")) return parseDataUrl(src);
+  const dl = await fetch(src);
+  if (!dl.ok) throw new Error("Failed to download Puter video");
+  return { bytes: new Uint8Array(await dl.arrayBuffer()), mime: dl.headers.get("content-type") || "video/mp4" };
+}
+
 async function uploadVideo(
   admin: ReturnType<typeof createClient>,
   userId: string,
@@ -259,6 +379,50 @@ async function uploadVideo(
     await admin.from("generated_videos").insert({ user_id: userId, prompt, video_url: ref });
   }
   return ref;
+}
+
+async function uploadVideoBytes(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  prompt: string,
+  bytes: Uint8Array,
+  mime = "video/mp4",
+): Promise<string> {
+  const ext = mime.includes("webm") ? "webm" : mime.includes("quicktime") ? "mov" : "mp4";
+  const path = `${userId}/generated/vid-${Date.now()}.${ext}`;
+  const { error } = await admin.storage
+    .from("chat-files")
+    .upload(path, bytes, { contentType: mime, upsert: false });
+  if (error) throw error;
+  const ref = `storage:chat-files/${path}`;
+  if (userId !== "anonymous") {
+    await admin.from("generated_videos").insert({ user_id: userId, prompt, video_url: ref });
+  }
+  return ref;
+}
+
+async function getDailyVideoUsage(admin: ReturnType<typeof createClient>, userId: string, usageDate: string): Promise<number> {
+  const { data } = await admin
+    .from("daily_usage")
+    .select("videos_generated")
+    .eq("user_id", userId)
+    .eq("usage_date", usageDate)
+    .maybeSingle();
+  return Number(data?.videos_generated || 0);
+}
+
+async function incrementDailyVideoUsage(admin: ReturnType<typeof createClient>, userId: string, usageDate: string) {
+  const { data: existing } = await admin
+    .from("daily_usage")
+    .select("id, images_generated, videos_generated")
+    .eq("user_id", userId)
+    .eq("usage_date", usageDate)
+    .maybeSingle();
+  if (existing?.id) {
+    await admin.from("daily_usage").update({ videos_generated: Number(existing.videos_generated || 0) + 1, updated_at: new Date().toISOString() }).eq("id", existing.id);
+  } else {
+    await admin.from("daily_usage").insert({ user_id: userId, usage_date: usageDate, images_generated: 0, videos_generated: 1 });
+  }
 }
 
 async function sendNotification(
@@ -341,7 +505,9 @@ serve(async (req) => {
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY)
       throw new Error("Backend not configured");
-    if (!LEONARDO_API_KEY) throw new Error("Leonardo API key is not configured");
+    if (!Deno.env.get("POLLINATIONS_API_KEY") && !Deno.env.get("PUTER_API_KEY") && !Deno.env.get("PUTER_AUTH_TOKEN") && !LEONARDO_API_KEY) {
+      throw new Error("Video generation API key is not configured");
+    }
 
     // Auth
     const authHeader = req.headers.get("Authorization") || "";
@@ -371,13 +537,14 @@ serve(async (req) => {
     // Subscription check
     const { data: sub } = await admin
       .from("subscriptions")
-      .select("tier, status, expires_at")
+      .select("tier, status, expires_at, access_until")
       .eq("user_id", userId)
       .eq("status", "active")
       .maybeSingle();
 
+    const subAccessUntil = sub?.access_until || sub?.expires_at;
     const tier =
-      sub && sub.status === "active" && (!sub.expires_at || new Date(sub.expires_at) > new Date())
+      sub && sub.status === "active" && (!subAccessUntil || new Date(subAccessUntil) > new Date())
         ? sub.tier
         : "free";
 
@@ -391,19 +558,16 @@ serve(async (req) => {
     const tierLimits: Record<string, number> = { free: 0, basic: 2, pro: 8, ultimate: 999999 };
     const dailyLimit = userEmail === CEO_EMAIL ? 20 : tierLimits[tier] || 0;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const { count } = await admin
-      .from("generated_videos")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .gte("created_at", today.toISOString());
+    const todayKey = new Date().toISOString().split("T")[0];
+    const usedToday = await getDailyVideoUsage(admin, userId, todayKey);
 
-    if ((count || 0) >= dailyLimit) {
+    if (usedToday >= dailyLimit) {
       return new Response(
         JSON.stringify({
           error: `Daily video limit reached (${dailyLimit}/day). Upgrade for more.`,
           limit_reached: true,
+          limit: dailyLimit,
+          used: usedToday,
         }),
         { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -419,20 +583,29 @@ serve(async (req) => {
     const vidHeight = is1080 ? 1080 : 720;
 
     // Handle reference media (describe via Gemini and augment prompt)
-    let generationPrompt = String(prompt);
+    let effectiveReferenceMediaUrl = referenceMediaUrl ? String(referenceMediaUrl) : undefined;
+    if (effectiveReferenceMediaUrl?.startsWith("storage:")) {
+      effectiveReferenceMediaUrl = await resolveStorageRef(admin, effectiveReferenceMediaUrl);
+    }
+
+    const basePrompt = String(prompt).trim();
+    let generationPrompt = [
+      `Create a premium, photorealistic, cinematic video clip.`,
+      `Scene: ${basePrompt}`,
+      `Motion: natural physically plausible movement, smooth camera path, stable framing, realistic parallax, believable timing, no random jump cuts.`,
+      `Visual quality: high-end commercial production, real-world materials, clean lighting, accurate shadows/reflections, detailed textures, rich but natural color grade, sharp subject separation.`,
+      `Composition: 16:9 professional framing, clear focal subject, no awkward cropping, no unwanted text or watermark.`,
+      `Avoid: flicker, morphing objects, warped faces/hands, melting details, jitter, over-smoothed plastic surfaces, unreadable text, fake logos unless explicitly requested.`,
+    ].join("\n");
     if (referenceMediaUrl && GEMINI_API_KEY) {
       try {
-        let refUrl = String(referenceMediaUrl);
-        if (refUrl.startsWith("storage:")) {
-          refUrl = await resolveStorageRef(admin, refUrl);
-        }
-        const refRes = await fetch(refUrl);
+        const refRes = await fetch(effectiveReferenceMediaUrl || String(referenceMediaUrl));
         if (refRes.ok) {
           const bytes = await refRes.arrayBuffer();
           const contentType = refRes.headers.get("content-type") || "image/png";
           if (contentType.startsWith("image/")) {
             const desc = await describeReference(GEMINI_API_KEY, bytes, contentType);
-            if (desc) generationPrompt = `${prompt}\n\nReference description: ${desc}`;
+            if (desc) generationPrompt += `\nReference preservation: use this image as source-of-truth for subject identity, style, lighting, colors, composition, and background unless the prompt explicitly changes them. Reference description: ${desc}`;
             console.log(`[generate-video] Reference described (${contentType})`);
           }
         }
@@ -442,33 +615,39 @@ serve(async (req) => {
     }
 
     console.log(
-      `[generate-video] model=${selectedModel} (${config.apiModel}) api=${config.apiVersion} duration=${effectiveDuration} quality=${effectiveQuality}`
+      `[generate-video] model=${selectedModel} (${config.apiModel}) provider=${config.provider} api=${config.apiVersion || "native"} duration=${effectiveDuration} quality=${effectiveQuality}`
     );
 
-    let videoUrl: string;
-
-    if (config.apiVersion === "v2") {
-      videoUrl = await generateV2(
-        LEONARDO_API_KEY,
-        config.apiModel,
-        generationPrompt,
-        effectiveDuration,
-        effectiveQuality,
-        vidWidth,
-        vidHeight
-      );
-    } else {
-      videoUrl = await generateV1TextToVideo(
-        LEONARDO_API_KEY,
-        config.apiModel,
-        generationPrompt,
-        effectiveDuration,
-        vidWidth,
-        vidHeight
-      );
+    let ref: string | null = null;
+    const fallbackKeys = Array.from(new Set([selectedModel, "pollinations_veo", "pollinations_seedance_pro", "pollinations_wan_pro", "puter_sora_2_pro", "puter_veo_31_lite", "kling_3", "veo_31_fast"]));
+    for (const key of fallbackKeys) {
+      const attempt = VIDEO_MODELS[key];
+      if (!attempt) continue;
+      try {
+        if (attempt.provider === "pollinations") {
+          const vid = await generateWithPollinationsVideo(generationPrompt, attempt.apiModel, pickDuration(effectiveDuration, attempt.durations), effectiveQuality, effectiveReferenceMediaUrl);
+          ref = await uploadVideoBytes(admin, userId, prompt, vid.bytes, vid.mime);
+          break;
+        }
+        if (attempt.provider === "puter") {
+          const vid = await generateWithPuterVideo(generationPrompt, attempt.apiModel, pickDuration(effectiveDuration, attempt.durations), effectiveQuality, effectiveReferenceMediaUrl);
+          ref = await uploadVideoBytes(admin, userId, prompt, vid.bytes, vid.mime);
+          break;
+        }
+        if (attempt.provider === "leonardo" && LEONARDO_API_KEY) {
+          const videoUrl = attempt.apiVersion === "v2"
+            ? await generateV2(LEONARDO_API_KEY, attempt.apiModel, generationPrompt, pickDuration(effectiveDuration, attempt.durations), effectiveQuality, vidWidth, vidHeight)
+            : await generateV1TextToVideo(LEONARDO_API_KEY, attempt.apiModel, generationPrompt, pickDuration(effectiveDuration, attempt.durations), vidWidth, vidHeight);
+          ref = await uploadVideo(admin, userId, prompt, videoUrl);
+          break;
+        }
+      } catch (providerError) {
+        console.error(`[generate-video] provider failed ${key}:`, providerError);
+      }
     }
 
-    const ref = await uploadVideo(admin, userId, prompt, videoUrl);
+    if (!ref) throw new Error("Video generation providers are temporarily unavailable or quota-limited. Please try again shortly.");
+    await incrementDailyVideoUsage(admin, userId, todayKey);
 
     try {
       await sendNotification(admin, SUPABASE_URL, SERVICE_ROLE_KEY, userId, prompt);

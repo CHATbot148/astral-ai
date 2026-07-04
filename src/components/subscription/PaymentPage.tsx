@@ -16,7 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useSubscription, SubscriptionTier, BillingCycle, TIER_CONFIGS } from '@/hooks/useSubscription';
+import { SubscriptionTier, BillingCycle, TIER_CONFIGS } from '@/hooks/useSubscription';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -101,7 +101,6 @@ const isExpiryValid = (value: string) => {
 export const PaymentPage = ({ selectedTier, billingCycle, reason = 'general' }: PaymentPageProps) => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { subscribe } = useSubscription();
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -214,12 +213,6 @@ export const PaymentPage = ({ selectedTier, billingCycle, reason = 'general' }: 
 
       const tierFromCode = data.tier as SubscriptionTier;
       const days = data.duration_days ?? 30;
-      await subscribe(tierFromCode, 'monthly', false, false, days);
-      // Fire-and-forget success email
-      const expires = new Date(Date.now() + days * 24 * 3600 * 1000).toISOString();
-      supabase.functions.invoke('subscription-email', {
-        body: { user_id: user.id, type: 'payment_success', period_key: `promo-${expires.slice(0, 10)}`, data: { tier: tierFromCode, cycle: 'promo', expires_at: expires, source: 'promo' } },
-      }).catch(() => {});
       setPromoApplied(true);
       setAppliedTier(tierFromCode);
       setPaymentComplete(true);
@@ -294,7 +287,7 @@ export const PaymentPage = ({ selectedTier, billingCycle, reason = 'general' }: 
     'Astraz Pro model unlocked',
     `${config.limits.imagesPerDay === Infinity ? 'Unlimited' : config.limits.imagesPerDay} image generations each day`,
     `${config.limits.videosPerDay === Infinity ? 'Unlimited' : config.limits.videosPerDay} video generations each day`,
-    config.limits.anyModel ? 'Access to any Leonardo AI model' : 'Optimized generation model access',
+    config.limits.anyModel ? 'Access to premium media models' : 'Optimized generation model access',
   ];
 
   return (

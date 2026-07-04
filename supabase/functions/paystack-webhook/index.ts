@@ -55,6 +55,18 @@ serve(async (req) => {
               access_until: newExpiry.toISOString(),
               amount_paid_minor: data.amount,
             }).eq("id", sub.id);
+            try {
+              await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/subscription-email`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}` },
+                body: JSON.stringify({
+                  user_id: sub.user_id,
+                  type: "payment_success",
+                  period_key: `renewal-${newExpiry.toISOString().slice(0, 10)}-${sub.id}`,
+                  data: { tier: sub.tier, cycle: sub.billing_cycle, expires_at: newExpiry.toISOString(), source: "renewal" },
+                }),
+              });
+            } catch (e) { console.error("renewal email failed:", e); }
           }
         }
         break;

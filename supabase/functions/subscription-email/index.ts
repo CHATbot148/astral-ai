@@ -42,7 +42,7 @@ const TEMPLATES = {
     `),
   }),
   renewal_reminder: (d: any) => ({
-    subject: `⏰ Your ${TIER_NAMES[d.tier] || "Astraz"} renews in 3 days`,
+    subject: `⏰ Your ${TIER_NAMES[d.tier] || "Astraz"} ${d.auto_renew ? "renews" : "expires"} in ${d.days_left || 3} day${Number(d.days_left || 3) === 1 ? "" : "s"}`,
     html: shell("Renewal coming up", `
       <p style="color:#cfd2e0;font-size:15px;line-height:1.55">Heads up — your <strong>${TIER_NAMES[d.tier] || d.tier}</strong> plan ${d.auto_renew ? "auto-renews" : "expires"} on <strong style="color:#00d4ff">${fmtDate(d.expires_at)}</strong>.</p>
       <p style="color:#9aa1b3;font-size:14px">${d.auto_renew ? "Nothing to do — we'll charge your saved card automatically. Cancel anytime before then in Profile → Subscription." : "Renew now to keep your premium access."}</p>
@@ -57,10 +57,18 @@ const TEMPLATES = {
       ${ctaBtn("Resubscribe")}
     `),
   }),
+  refund: (d: any) => ({
+    subject: `Your Astraz refund was processed`,
+    html: shell("Refund processed", `
+      <p style="color:#cfd2e0;font-size:15px;line-height:1.55">Your <strong>${TIER_NAMES[d.tier] || d.tier}</strong> plan was cancelled immediately and your premium access has ended.</p>
+      <p style="color:#9aa1b3;font-size:14px">If a cancellation fee applied, the remaining eligible amount has been sent back through your original payment method.</p>
+      ${ctaBtn("Open Astraz")}
+    `),
+  }),
   expired: (d: any) => ({
     subject: `Your Astraz ${TIER_NAMES[d.tier] || d.tier} plan has ended`,
     html: shell("Subscription ended", `
-      <p style="color:#cfd2e0;font-size:15px;line-height:1.55">Your premium access just ended and your account is back on the Free tier.</p>
+      <p style="color:#cfd2e0;font-size:15px;line-height:1.55">Your premium access ended${d.expires_at ? ` on <strong>${fmtDate(d.expires_at)}</strong>` : ""} and your account is back on the Free tier.</p>
       <p style="color:#9aa1b3;font-size:14px">Pick up where you left off — all your chats and memories are exactly as you saved them.</p>
       ${ctaBtn("Upgrade again")}
     `),
@@ -93,6 +101,16 @@ serve(async (req) => {
     if (!tpl) throw new Error("Unknown email type");
 
     const admin = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
+
+    const authHeader = req.headers.get("Authorization") || "";
+    const isServiceCall = authHeader === `Bearer ${SERVICE}`;
+    if (!isServiceCall) {
+      const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+      const { data: authData, error: authError } = token ? await admin.auth.getUser(token) : { data: null, error: new Error("Missing token") } as any;
+      if (authError || authData?.user?.id !== user_id) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+    }
 
     // Dedupe
     const { error: dupErr } = await admin
