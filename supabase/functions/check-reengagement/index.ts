@@ -30,11 +30,13 @@ serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
-    // Get all users with notifications enabled who haven't been seen recently
+    // Get all users; push respects notification toggles, but missed-login
+    // email is an account-retention email and should still send when push is
+    // off so long as Brevo is configured.
     const { data: profiles, error: profErr } = await admin
       .from("profiles")
       .select("user_id, notifications_enabled, notification_preference, last_seen_at")
-      .eq("notifications_enabled", true);
+      .not("last_seen_at", "is", null);
 
     if (profErr) throw profErr;
     if (!profiles || profiles.length === 0) {
@@ -66,8 +68,8 @@ serve(async (req) => {
         if (hoursSinceLastSeen >= milestone.hours && !sentSet.has(milestone.key)) {
           // Send notification
           const pref = profile.notification_preference || "push_and_email";
-          const shouldPush = pref === "push_and_email" || pref === "push_only";
-          const shouldEmail = pref === "push_and_email" || pref === "email_only";
+          const shouldPush = Boolean(profile.notifications_enabled) && (pref === "push_and_email" || pref === "push_only");
+          const shouldEmail = !profile.notifications_enabled || pref === "push_and_email" || pref === "email_only";
 
           if (shouldPush) {
             try {
