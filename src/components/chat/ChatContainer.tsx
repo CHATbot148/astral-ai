@@ -554,13 +554,65 @@ export const ChatContainer = () => {
     })();
   };
 
-  const handleVideoGenerate = async (_opts: VideoGenOptions) => {
-    toast({
-      title: 'Video generation paused',
-      description: 'Video generation is temporarily disabled while we recharge credits. Try image generation instead.',
-      variant: 'destructive',
-    });
+  const handleVideoGenerate = async (opts: VideoGenOptions) => {
+    let convId = currentConversation?.id;
+    if (!convId) {
+      const newConv = await createConversation(`Generate video: ${opts.prompt}`);
+      if (!newConv) throw new Error('Failed to create conversation');
+      convId = newConv.id;
+    }
+    await addMessage(convId, 'user', `Generate a video: ${opts.prompt}`);
     setShowVideoDialog(false);
+
+    const capturedConvId = convId;
+    (async () => {
+      setIsGeneratingVideo(true);
+      setTypingLabel('Generating video…');
+      setTypingMode('typing');
+      try {
+        let referenceMediaUrl = opts.reference?.dataUrl;
+        if (referenceMediaUrl?.startsWith('data:') && user) {
+          try {
+            const match = referenceMediaUrl.match(/^data:(.+?);base64,(.+)$/);
+            if (match) {
+              const mime = match[1];
+              const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg';
+              const binary = atob(match[2]);
+              const bytes = new Uint8Array(binary.length);
+              for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+              const path = `${user.id}/ref-video-${Date.now()}.${ext}`;
+              const { error: uploadErr } = await supabase.storage.from('chat-files').upload(path, bytes, { contentType: mime });
+              if (!uploadErr) referenceMediaUrl = makeStorageRef('chat-files', path);
+            }
+          } catch (e) {
+            console.error('Video reference upload failed, sending as-is:', e);
+          }
+        }
+
+        const { data, error } = await supabase.functions.invoke('generate-video', {
+          body: {
+            prompt: opts.prompt,
+            modelId: opts.modelId || 'pollinations_veo',
+            duration: opts.duration,
+            quality: opts.quality,
+            referenceMediaUrl,
+            appInForeground: isAppInForeground(),
+          },
+        });
+        if (error) throw new Error(await extractFunctionErrorMessage(error, error.message || 'Video generation failed'));
+        if (data?.error) throw new Error(data.error);
+        if (data?.video) {
+          await addMessage(capturedConvId, 'assistant', `Here's your video.`, [data.video]);
+        } else {
+          await addMessage(capturedConvId, 'assistant', `I couldn't generate that video. Please try again.`);
+        }
+      } catch (error) {
+        await addMessage(capturedConvId, 'assistant', `Video generation failed. ${error instanceof Error ? error.message : 'Please try again.'}`);
+      } finally {
+        setIsGeneratingVideo(false);
+        setTypingLabel(undefined);
+      }
+    })();
   };
 
   const handleEditMessage = (messageId: string, content: string) => {
@@ -1110,7 +1162,7 @@ export const ChatContainer = () => {
             try {
               const referenceMediaUrl = imageUrls[0] ?? videoFileUrls[0];
               const { data, error } = await supabase.functions.invoke('generate-video', {
-                body: { prompt: vidPrompt, modelId: 'kling_3', referenceMediaUrl, appInForeground: isAppInForeground() },
+                body: { prompt: vidPrompt, modelId: 'pollinations_veo', referenceMediaUrl, appInForeground: isAppInForeground() },
               });
               if (error) throw error;
               if (data?.error) throw new Error(data.error);

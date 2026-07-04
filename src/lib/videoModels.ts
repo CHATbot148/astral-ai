@@ -1,5 +1,5 @@
 export type VideoModelId = "pollinations_veo" | "pollinations_seedance_pro" | "pollinations_wan_pro" | "puter_sora_2_pro" | "puter_veo_31_lite" | "kling_3" | "veo_31_fast" | "hailuo_23" | "wan_22_fast";
-export type VideoDurationOption = 5 | 6 | 8 | 10;
+export type VideoDurationOption = 4 | 5 | 6 | 8 | 10 | 12;
 export type VideoQualityOption = "720p" | "1080p";
 
 export interface VideoModelOption {
