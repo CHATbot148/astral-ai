@@ -34,6 +34,7 @@ interface Props {
   initialPrompt?: string;
   videoAvailable?: boolean;
   videoStatus?: string;
+  availablePollinationsModels?: string[];
   checkingVideoHealth?: boolean;
   onRefreshVideoHealth?: () => void;
 }
@@ -55,7 +56,17 @@ const fadeUp = {
   show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
 };
 
-export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPrompt = "", videoAvailable = true, videoStatus, checkingVideoHealth = false, onRefreshVideoHealth }: Props) => {
+const MODEL_API_NAMES: Record<string, string> = {
+  pollinations_grok_video_pro: "grok-video-pro",
+  pollinations_veo: "veo",
+  pollinations_seedance_pro: "seedance-pro",
+  pollinations_seedance_2: "seedance-2.0",
+  pollinations_wan_pro: "wan-pro-1080p",
+  pollinations_ltx_2: "ltx-2",
+  pollinations_nova_reel: "nova-reel",
+};
+
+export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPrompt = "", videoAvailable = true, videoStatus, availablePollinationsModels = [], checkingVideoHealth = false, onRefreshVideoHealth }: Props) => {
   const { canGenerateVideo, remainingVideos, tier, tierConfig } = useSubscription();
   const [prompt, setPrompt] = useState(initialPrompt);
   const [isWorking, setIsWorking] = useState(false);
@@ -171,9 +182,10 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {VIDEO_MODEL_OPTIONS.map((m) => (
-                  <button key={m.value} onClick={() => setSelectedModel(m.value)} disabled={isWorking}
+                  <button key={m.value} onClick={() => setSelectedModel(m.value)} disabled={isWorking || (m.provider === "pollinations" && availablePollinationsModels.length > 0 && !availablePollinationsModels.includes(MODEL_API_NAMES[m.value] || m.value))}
                     className={cn(
                       "flex flex-col items-start px-3 py-2.5 rounded-xl border transition-all text-left",
+                      m.provider === "pollinations" && availablePollinationsModels.length > 0 && !availablePollinationsModels.includes(MODEL_API_NAMES[m.value] || m.value) && "opacity-45 cursor-not-allowed",
                       selectedModel === m.value
                         ? "border-xai-cyan bg-xai-cyan/10 shadow-[0_0_12px_-4px_hsl(var(--xai-cyan)/0.3)]"
                         : "border-border/50 bg-secondary/30 hover:border-xai-cyan/40"
