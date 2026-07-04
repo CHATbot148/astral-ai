@@ -1,4 +1,4 @@
-export type VideoModelId = "pollinations_veo" | "pollinations_seedance_pro" | "pollinations_wan_pro" | "puter_sora_2_pro" | "puter_veo_31_lite" | "kling_3" | "veo_31_fast" | "hailuo_23" | "wan_22_fast";
+export type VideoModelId = "pollinations_veo" | "pollinations_seedance_pro" | "pollinations_wan_pro" | "puter_sora_2_pro" | "puter_veo_31_lite";
 export type VideoDurationOption = 4 | 5 | 6 | 8 | 10 | 12;
 export type VideoQualityOption = "720p" | "1080p";
 
@@ -6,7 +6,7 @@ export interface VideoModelOption {
   value: VideoModelId;
   label: string;
   hint: string;
-  provider: "pollinations" | "puter" | "leonardo" | "replicate";
+  provider: "pollinations" | "puter";
   durations: VideoDurationOption[];
   qualities: VideoQualityOption[];
   supportsImageRef: boolean;
@@ -58,43 +58,6 @@ export const VIDEO_MODEL_OPTIONS: VideoModelOption[] = [
     durations: [4, 6, 8] as VideoDurationOption[],
     qualities: ["720p", "1080p"],
     supportsImageRef: true,
-  },
-  {
-    value: "kling_3",
-    label: "Kling Video 3.0",
-    hint: "Audio + visual consistency",
-    provider: "leonardo",
-    durations: [5, 10],
-    qualities: ["720p", "1080p"],
-    supportsImageRef: true,
-  },
-  {
-    value: "veo_31_fast",
-    label: "Veo 3.1 Fast",
-    hint: "Fast turnaround",
-    provider: "leonardo",
-    durations: [6, 8],
-    qualities: ["720p", "1080p"],
-    supportsImageRef: true,
-  },
-  {
-    value: "hailuo_23",
-    label: "Hailuo 2.3",
-    hint: "Dynamic action + style",
-    provider: "leonardo",
-    durations: [6, 10],
-    qualities: ["720p", "1080p"],
-    supportsImageRef: true,
-  },
-  {
-    value: "wan_22_fast",
-    label: "Wan 2.2 i2v Fast",
-    hint: "Replicate · image-to-video, ~1 min",
-    provider: "replicate",
-    durations: [5],
-    qualities: ["720p"],
-    supportsImageRef: true,
-    requiresImageRef: true,
   },
 ];
 
