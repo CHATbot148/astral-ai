@@ -505,7 +505,9 @@ serve(async (req) => {
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY)
       throw new Error("Backend not configured");
-    if (!LEONARDO_API_KEY) throw new Error("Leonardo API key is not configured");
+    if (!Deno.env.get("POLLINATIONS_API_KEY") && !Deno.env.get("PUTER_API_KEY") && !Deno.env.get("PUTER_AUTH_TOKEN") && !LEONARDO_API_KEY) {
+      throw new Error("Video generation API key is not configured");
+    }
 
     // Auth
     const authHeader = req.headers.get("Authorization") || "";
@@ -535,13 +537,14 @@ serve(async (req) => {
     // Subscription check
     const { data: sub } = await admin
       .from("subscriptions")
-      .select("tier, status, expires_at")
+      .select("tier, status, expires_at, access_until")
       .eq("user_id", userId)
       .eq("status", "active")
       .maybeSingle();
 
+    const subAccessUntil = sub?.access_until || sub?.expires_at;
     const tier =
-      sub && sub.status === "active" && (!sub.expires_at || new Date(sub.expires_at) > new Date())
+      sub && sub.status === "active" && (!subAccessUntil || new Date(subAccessUntil) > new Date())
         ? sub.tier
         : "free";
 
@@ -555,19 +558,16 @@ serve(async (req) => {
     const tierLimits: Record<string, number> = { free: 0, basic: 2, pro: 8, ultimate: 999999 };
     const dailyLimit = userEmail === CEO_EMAIL ? 20 : tierLimits[tier] || 0;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const { count } = await admin
-      .from("generated_videos")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .gte("created_at", today.toISOString());
+    const todayKey = new Date().toISOString().split("T")[0];
+    const usedToday = await getDailyVideoUsage(admin, userId, todayKey);
 
-    if ((count || 0) >= dailyLimit) {
+    if (usedToday >= dailyLimit) {
       return new Response(
         JSON.stringify({
           error: `Daily video limit reached (${dailyLimit}/day). Upgrade for more.`,
           limit_reached: true,
+          limit: dailyLimit,
+          used: usedToday,
         }),
         { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -583,20 +583,29 @@ serve(async (req) => {
     const vidHeight = is1080 ? 1080 : 720;
 
     // Handle reference media (describe via Gemini and augment prompt)
-    let generationPrompt = String(prompt);
+    let effectiveReferenceMediaUrl = referenceMediaUrl ? String(referenceMediaUrl) : undefined;
+    if (effectiveReferenceMediaUrl?.startsWith("storage:")) {
+      effectiveReferenceMediaUrl = await resolveStorageRef(admin, effectiveReferenceMediaUrl);
+    }
+
+    const basePrompt = String(prompt).trim();
+    let generationPrompt = [
+      `Create a premium, photorealistic, cinematic video clip.`,
+      `Scene: ${basePrompt}`,
+      `Motion: natural physically plausible movement, smooth camera path, stable framing, realistic parallax, believable timing, no random jump cuts.`,
+      `Visual quality: high-end commercial production, real-world materials, clean lighting, accurate shadows/reflections, detailed textures, rich but natural color grade, sharp subject separation.`,
+      `Composition: 16:9 professional framing, clear focal subject, no awkward cropping, no unwanted text or watermark.`,
+      `Avoid: flicker, morphing objects, warped faces/hands, melting details, jitter, over-smoothed plastic surfaces, unreadable text, fake logos unless explicitly requested.`,
+    ].join("\n");
     if (referenceMediaUrl && GEMINI_API_KEY) {
       try {
-        let refUrl = String(referenceMediaUrl);
-        if (refUrl.startsWith("storage:")) {
-          refUrl = await resolveStorageRef(admin, refUrl);
-        }
-        const refRes = await fetch(refUrl);
+        const refRes = await fetch(effectiveReferenceMediaUrl || String(referenceMediaUrl));
         if (refRes.ok) {
           const bytes = await refRes.arrayBuffer();
           const contentType = refRes.headers.get("content-type") || "image/png";
           if (contentType.startsWith("image/")) {
             const desc = await describeReference(GEMINI_API_KEY, bytes, contentType);
-            if (desc) generationPrompt = `${prompt}\n\nReference description: ${desc}`;
+            if (desc) generationPrompt += `\nReference preservation: use this image as source-of-truth for subject identity, style, lighting, colors, composition, and background unless the prompt explicitly changes them. Reference description: ${desc}`;
             console.log(`[generate-video] Reference described (${contentType})`);
           }
         }
@@ -606,33 +615,39 @@ serve(async (req) => {
     }
 
     console.log(
-      `[generate-video] model=${selectedModel} (${config.apiModel}) api=${config.apiVersion} duration=${effectiveDuration} quality=${effectiveQuality}`
+      `[generate-video] model=${selectedModel} (${config.apiModel}) provider=${config.provider} api=${config.apiVersion || "native"} duration=${effectiveDuration} quality=${effectiveQuality}`
     );
 
-    let videoUrl: string;
-
-    if (config.apiVersion === "v2") {
-      videoUrl = await generateV2(
-        LEONARDO_API_KEY,
-        config.apiModel,
-        generationPrompt,
-        effectiveDuration,
-        effectiveQuality,
-        vidWidth,
-        vidHeight
-      );
-    } else {
-      videoUrl = await generateV1TextToVideo(
-        LEONARDO_API_KEY,
-        config.apiModel,
-        generationPrompt,
-        effectiveDuration,
-        vidWidth,
-        vidHeight
-      );
+    let ref: string | null = null;
+    const fallbackKeys = Array.from(new Set([selectedModel, "pollinations_veo", "pollinations_seedance_pro", "pollinations_wan_pro", "puter_sora_2_pro", "puter_veo_31_lite", "kling_3", "veo_31_fast"]));
+    for (const key of fallbackKeys) {
+      const attempt = VIDEO_MODELS[key];
+      if (!attempt) continue;
+      try {
+        if (attempt.provider === "pollinations") {
+          const vid = await generateWithPollinationsVideo(generationPrompt, attempt.apiModel, pickDuration(effectiveDuration, attempt.durations), effectiveQuality, effectiveReferenceMediaUrl);
+          ref = await uploadVideoBytes(admin, userId, prompt, vid.bytes, vid.mime);
+          break;
+        }
+        if (attempt.provider === "puter") {
+          const vid = await generateWithPuterVideo(generationPrompt, attempt.apiModel, pickDuration(effectiveDuration, attempt.durations), effectiveQuality, effectiveReferenceMediaUrl);
+          ref = await uploadVideoBytes(admin, userId, prompt, vid.bytes, vid.mime);
+          break;
+        }
+        if (attempt.provider === "leonardo" && LEONARDO_API_KEY) {
+          const videoUrl = attempt.apiVersion === "v2"
+            ? await generateV2(LEONARDO_API_KEY, attempt.apiModel, generationPrompt, pickDuration(effectiveDuration, attempt.durations), effectiveQuality, vidWidth, vidHeight)
+            : await generateV1TextToVideo(LEONARDO_API_KEY, attempt.apiModel, generationPrompt, pickDuration(effectiveDuration, attempt.durations), vidWidth, vidHeight);
+          ref = await uploadVideo(admin, userId, prompt, videoUrl);
+          break;
+        }
+      } catch (providerError) {
+        console.error(`[generate-video] provider failed ${key}:`, providerError);
+      }
     }
 
-    const ref = await uploadVideo(admin, userId, prompt, videoUrl);
+    if (!ref) throw new Error("Video generation providers are temporarily unavailable or quota-limited. Please try again shortly.");
+    await incrementDailyVideoUsage(admin, userId, todayKey);
 
     try {
       await sendNotification(admin, SUPABASE_URL, SERVICE_ROLE_KEY, userId, prompt);
