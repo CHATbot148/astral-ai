@@ -1214,8 +1214,15 @@ export const ChatContainer = () => {
               const { data, error } = await supabase.functions.invoke('generate-video', {
                 body: { prompt: vidPrompt, modelId: 'pollinations_veo', referenceMediaUrl, appInForeground: isAppInForeground() },
               });
-              if (error) throw error;
-              if (data?.error) throw new Error(data.error);
+              if (error) {
+                const message = await extractFunctionErrorMessage(error, error.message || 'Video generation failed');
+                void refreshVideoHealth();
+                throw new Error(message);
+              }
+              if (data?.error) {
+                void refreshVideoHealth();
+                throw new Error(data.error);
+              }
               if (data?.video) {
                 await addMessage(capturedConvId, 'assistant', `Here's your video.`, [data.video]);
               } else {
@@ -1345,7 +1352,15 @@ export const ChatContainer = () => {
       </AnimatePresence>
 
       <ImageGenerateDialog open={showImageDialog} onOpenChange={setShowImageDialog} onGenerate={handleImageGenerate} initialPrompt={imageDialogPrompt} />
-      <VideoGenerateDialog open={showVideoDialog} onOpenChange={setShowVideoDialog} onGenerate={handleVideoGenerate} />
+      <VideoGenerateDialog
+        open={showVideoDialog}
+        onOpenChange={setShowVideoDialog}
+        onGenerate={handleVideoGenerate}
+        videoAvailable={videoHealth.available}
+        videoStatus={videoHealth.status}
+        checkingVideoHealth={checkingVideoHealth}
+        onRefreshVideoHealth={refreshVideoHealth}
+      />
 
       {/* Hidden inputs for Analyze documents flow */}
       <input ref={analyzeGalleryInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleAnalyzeFiles} />
@@ -1398,11 +1413,18 @@ export const ChatContainer = () => {
                     <p className="text-xs text-muted-foreground">Create AI images</p>
                   </div>
                 </button>
-                <button onClick={() => { setShowVisualizePopup(false); openVideoDialog(); }} className="flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/70 w-full text-left text-sm rounded-xl transition-colors">
-                  <span className="text-xl">🎬</span>
+                <button
+                  onClick={() => { if (videoHealth.available) { setShowVisualizePopup(false); openVideoDialog(); } }}
+                  disabled={!videoHealth.available || checkingVideoHealth}
+                  className={cn(
+                    "flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/70 w-full text-left text-sm rounded-xl transition-colors",
+                    (!videoHealth.available || checkingVideoHealth) && "opacity-55 cursor-not-allowed hover:bg-transparent"
+                  )}
+                >
+                  <span className="text-xl">{checkingVideoHealth ? '⏳' : '🎬'}</span>
                   <div>
                     <p className="font-medium">Generate Video</p>
-                    <p className="text-xs text-muted-foreground">Cinematic AI clips</p>
+                    <p className="text-xs text-muted-foreground">{videoHealth.available ? 'Cinematic AI clips' : videoHealth.status}</p>
                   </div>
                 </button>
 
@@ -1563,6 +1585,9 @@ export const ChatContainer = () => {
               onStartCall={user ? handleStartVoiceCall : undefined}
               onOpenImageDialog={openImageDialog}
               onOpenVideoDialog={openVideoDialog}
+              videoAvailable={videoHealth.available}
+              videoStatus={videoHealth.status}
+              checkingVideoHealth={checkingVideoHealth}
               restoreDraft={restoreDraft}
             />
           </div>
