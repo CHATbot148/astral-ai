@@ -16,7 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useSubscription, SubscriptionTier, BillingCycle, TIER_CONFIGS } from '@/hooks/useSubscription';
+import { SubscriptionTier, BillingCycle, TIER_CONFIGS } from '@/hooks/useSubscription';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -101,7 +101,6 @@ const isExpiryValid = (value: string) => {
 export const PaymentPage = ({ selectedTier, billingCycle, reason = 'general' }: PaymentPageProps) => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { } = useSubscription();
   const { user } = useAuth();
   const { toast } = useToast();
 
