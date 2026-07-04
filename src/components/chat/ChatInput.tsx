@@ -21,6 +21,9 @@ interface ChatInputProps {
   onStartCall?: () => void;
   onOpenImageDialog?: (prefill?: string) => void;
   onOpenVideoDialog?: () => void;
+  videoAvailable?: boolean;
+  videoStatus?: string;
+  checkingVideoHealth?: boolean;
   restoreDraft?: { text: string; nonce: number } | null;
 }
 
@@ -31,7 +34,7 @@ declare global {
   }
 }
 
-export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onClearEdit, onStartCall, onOpenImageDialog, onOpenVideoDialog, restoreDraft }: ChatInputProps) => {
+export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onClearEdit, onStartCall, onOpenImageDialog, onOpenVideoDialog, videoAvailable = true, videoStatus, checkingVideoHealth = false, restoreDraft }: ChatInputProps) => {
   const [message, setMessage] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [filePreviews, setFilePreviews] = useState<{ file: File; preview: string | null }[]>([]);
@@ -449,6 +452,27 @@ export const ChatInput = ({ onSend, isLoading, disabled, onStop, editValue, onCl
                         <div>
                           <p className="text-sm font-semibold">Create Image</p>
                           <p className="text-[11px] text-muted-foreground leading-snug">Visualize anything</p>
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (!videoAvailable) return;
+                          setShowAttachMenu(false);
+                          onOpenVideoDialog?.();
+                        }}
+                        disabled={!videoAvailable || checkingVideoHealth}
+                        title={!videoAvailable ? (videoStatus || 'Video generation is unavailable') : undefined}
+                        className={cn(
+                          "group relative flex flex-col items-start gap-2 p-3.5 rounded-2xl bg-secondary/40 hover:bg-secondary/80 border border-border/40 hover:border-xai-cyan/40 transition-all text-left",
+                          (!videoAvailable || checkingVideoHealth) && "opacity-55 cursor-not-allowed hover:bg-secondary/40 hover:border-border/40"
+                        )}
+                      >
+                        <span className="flex items-center justify-center h-9 w-9 rounded-xl bg-gradient-to-br from-xai-cyan/25 to-xai-purple/15 ring-1 ring-xai-cyan/25 group-hover:scale-105 transition-transform">
+                          {checkingVideoHealth ? <Loader2 className="h-4 w-4 text-xai-cyan animate-spin" /> : <Video className="h-4 w-4 text-xai-cyan" />}
+                        </span>
+                        <div>
+                          <p className="text-sm font-semibold">Create Video</p>
+                          <p className="text-[11px] text-muted-foreground leading-snug">{videoAvailable ? 'Cinematic clips' : 'Unavailable now'}</p>
                         </div>
                       </button>
                       <button
