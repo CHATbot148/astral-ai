@@ -52,11 +52,9 @@ const IMAGE_MODELS: Array<{ value: string; label: string; hint: string }> = [
   { value: "pollinations_nanobanana_pro", label: "Nano Banana Pro", hint: "Pollinations · Gemini Pro image" },
   { value: "pollinations_seedream5", label: "Seedream 5", hint: "Pollinations · premium creative" },
   { value: "pollinations_ideogram_quality", label: "Ideogram v4 Quality", hint: "Pollinations · typography/design" },
-  { value: "hf_ideogram_4", label: "Ideogram 4", hint: "Hugging Face · high fidelity" },
-  { value: "hf_flux_krea", label: "FLUX Krea", hint: "Hugging Face · realistic detail" },
-  { value: "hf_qwen_image", label: "Qwen Image", hint: "Hugging Face · prompt adherence" },
-  { value: "nano_banana_2", label: "Nano Banana 2", hint: "Lovable AI · Gemini 3.1 Flash" },
-  { value: "nano_banana", label: "Nano Banana", hint: "Lovable AI · Gemini 2.5 Flash" },
+  { value: "puter_gpt_image_2", label: "GPT Image 2", hint: "Puter · premium fallback" },
+  { value: "puter_grok_quality", label: "Grok Image Quality", hint: "Puter · crisp realism" },
+  { value: "puter_gemini_3_pro", label: "Gemini 3 Pro Image", hint: "Puter · reference edits" },
 ];
 
 const SUGGESTIONS = [
