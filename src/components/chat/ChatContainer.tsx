@@ -100,7 +100,7 @@ export const ChatContainer = () => {
   const [imageDialogPrompt, setImageDialogPrompt] = useState("");
   const [showVideoDialog, setShowVideoDialog] = useState(false);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
-  const [videoHealth, setVideoHealth] = useState<{ available: boolean; status: string; providerErrors?: Array<{ provider: string; model: string; message: string }> }>({
+  const [videoHealth, setVideoHealth] = useState<{ available: boolean; status: string; pollinationsModels?: string[]; providerErrors?: Array<{ provider: string; model: string; message: string }> }>({
     available: true,
     status: 'Checking video generation…',
   });
@@ -451,6 +451,9 @@ export const ChatContainer = () => {
       setVideoHealth({
         available: Boolean(data?.available),
         status: data?.status || (data?.available ? 'Video generation is available.' : 'Video generation is unavailable.'),
+        pollinationsModels: Array.isArray(data?.providers)
+          ? (data.providers.find((p: any) => p.provider === 'pollinations')?.models || [])
+          : [],
       });
     } catch (error) {
       setVideoHealth({
@@ -1365,6 +1368,7 @@ export const ChatContainer = () => {
         onGenerate={handleVideoGenerate}
         videoAvailable={videoHealth.available}
         videoStatus={videoHealth.status}
+        availablePollinationsModels={videoHealth.pollinationsModels}
         checkingVideoHealth={checkingVideoHealth}
         onRefreshVideoHealth={refreshVideoHealth}
       />

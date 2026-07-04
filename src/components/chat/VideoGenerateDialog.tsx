@@ -101,6 +101,15 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
     if (!qualities.includes(selectedQuality)) setSelectedQuality(qualities[0]);
   }, [qualities, selectedQuality]);
 
+  useEffect(() => {
+    if (availablePollinationsModels.length === 0) return;
+    const currentApiName = MODEL_API_NAMES[selectedModel] || selectedModel;
+    const currentModel = VIDEO_MODEL_OPTIONS.find((model) => model.value === selectedModel);
+    if (currentModel?.provider !== "pollinations" || availablePollinationsModels.includes(currentApiName)) return;
+    const next = VIDEO_MODEL_OPTIONS.find((model) => model.provider === "pollinations" && availablePollinationsModels.includes(MODEL_API_NAMES[model.value] || model.value));
+    if (next) setSelectedModel(next.value);
+  }, [availablePollinationsModels, selectedModel]);
+
   const clearRef = () => { setReference(null); setRefPreview(null); if (fileRef.current) fileRef.current.value = ""; };
 
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
