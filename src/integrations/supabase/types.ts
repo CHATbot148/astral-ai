@@ -580,6 +580,7 @@ export type Database = {
       }
     }
     Functions: {
+      expire_due_subscriptions: { Args: never; Returns: number }
       redeem_promo_code: {
         Args: { p_code: string; p_user_id: string }
         Returns: {
