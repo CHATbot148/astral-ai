@@ -32,6 +32,11 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   onGenerate: (opts: VideoGenOptions) => Promise<void>;
   initialPrompt?: string;
+  videoAvailable?: boolean;
+  videoStatus?: string;
+  availablePollinationsModels?: string[];
+  checkingVideoHealth?: boolean;
+  onRefreshVideoHealth?: () => void;
 }
 
 const SUGGESTIONS = [
@@ -51,7 +56,17 @@ const fadeUp = {
   show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
 };
 
-export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPrompt = "" }: Props) => {
+const MODEL_API_NAMES: Record<string, string> = {
+  pollinations_grok_video_pro: "grok-video-pro",
+  pollinations_veo: "veo",
+  pollinations_seedance_pro: "seedance-pro",
+  pollinations_seedance_2: "seedance-2.0",
+  pollinations_wan_pro: "wan-pro-1080p",
+  pollinations_ltx_2: "ltx-2",
+  pollinations_nova_reel: "nova-reel",
+};
+
+export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPrompt = "", videoAvailable = true, videoStatus, availablePollinationsModels = [], checkingVideoHealth = false, onRefreshVideoHealth }: Props) => {
   const { canGenerateVideo, remainingVideos, tier, tierConfig } = useSubscription();
   const [prompt, setPrompt] = useState(initialPrompt);
   const [isWorking, setIsWorking] = useState(false);
@@ -86,6 +101,15 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
     if (!qualities.includes(selectedQuality)) setSelectedQuality(qualities[0]);
   }, [qualities, selectedQuality]);
 
+  useEffect(() => {
+    if (availablePollinationsModels.length === 0) return;
+    const currentApiName = MODEL_API_NAMES[selectedModel] || selectedModel;
+    const currentModel = VIDEO_MODEL_OPTIONS.find((model) => model.value === selectedModel);
+    if (currentModel?.provider !== "pollinations" || availablePollinationsModels.includes(currentApiName)) return;
+    const next = VIDEO_MODEL_OPTIONS.find((model) => model.provider === "pollinations" && availablePollinationsModels.includes(MODEL_API_NAMES[model.value] || model.value));
+    if (next) setSelectedModel(next.value);
+  }, [availablePollinationsModels, selectedModel]);
+
   const clearRef = () => { setReference(null); setRefPreview(null); if (fileRef.current) fileRef.current.value = ""; };
 
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -102,7 +126,7 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
   };
 
   const run = async () => {
-    if (!prompt.trim()) return;
+    if (!prompt.trim() || !videoAvailable) return;
     try {
       setIsWorking(true);
       setError(null);
@@ -167,9 +191,10 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {VIDEO_MODEL_OPTIONS.map((m) => (
-                  <button key={m.value} onClick={() => setSelectedModel(m.value)} disabled={isWorking}
+                  <button key={m.value} onClick={() => setSelectedModel(m.value)} disabled={isWorking || (m.provider === "pollinations" && availablePollinationsModels.length > 0 && !availablePollinationsModels.includes(MODEL_API_NAMES[m.value] || m.value))}
                     className={cn(
                       "flex flex-col items-start px-3 py-2.5 rounded-xl border transition-all text-left",
+                      m.provider === "pollinations" && availablePollinationsModels.length > 0 && !availablePollinationsModels.includes(MODEL_API_NAMES[m.value] || m.value) && "opacity-45 cursor-not-allowed",
                       selectedModel === m.value
                         ? "border-xai-cyan bg-xai-cyan/10 shadow-[0_0_12px_-4px_hsl(var(--xai-cyan)/0.3)]"
                         : "border-border/50 bg-secondary/30 hover:border-xai-cyan/40"
@@ -264,12 +289,17 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
           </AnimatePresence>
 
           {/* Limits */}
-          {!canGenerateVideo && (
+          {(!canGenerateVideo || !videoAvailable) && (
             <div className="flex items-center gap-2 p-3 rounded-xl bg-destructive/10 border border-destructive/20">
-              <Lock className="h-4 w-4 text-destructive shrink-0" />
+              {checkingVideoHealth ? <Loader2 className="h-4 w-4 text-destructive shrink-0 animate-spin" /> : <Lock className="h-4 w-4 text-destructive shrink-0" />}
               <p className="text-xs text-destructive">
-                {tier === "free" ? "Video generation requires a paid plan." : `Daily limit reached (${tierConfig.limits.videosPerDay}/day).`}
+                {!videoAvailable ? (videoStatus || "Video generation is temporarily unavailable.") : tier === "free" ? "Video generation requires a paid plan." : `Daily limit reached (${tierConfig.limits.videosPerDay}/day).`}
               </p>
+              {!videoAvailable && onRefreshVideoHealth && (
+                <button type="button" onClick={onRefreshVideoHealth} className="ml-auto text-[11px] font-medium text-destructive underline-offset-4 hover:underline">
+                  Retry
+                </button>
+              )}
             </div>
           )}
 
@@ -280,7 +310,7 @@ export const VideoGenerateDialog = ({ open, onOpenChange, onGenerate, initialPro
                 {remainingVideos} video{remainingVideos !== 1 ? "s" : ""} left today
               </p>
             )}
-            <Button onClick={run} disabled={isWorking || !prompt.trim() || !canGenerateVideo}
+            <Button onClick={run} disabled={isWorking || !prompt.trim() || !canGenerateVideo || !videoAvailable}
               className={cn(
                 "ml-auto gap-2 min-w-[130px] rounded-xl font-medium",
                 "bg-gradient-to-r from-xai-cyan to-xai-purple text-white hover:opacity-90 transition-opacity"
