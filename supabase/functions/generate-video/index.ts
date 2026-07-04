@@ -10,26 +10,60 @@ const corsHeaders = {
 type VideoQuality = "720p" | "1080p";
 
 type ModelConfig = {
-  apiVersion: "v1" | "v2";
+  provider: "pollinations" | "puter" | "leonardo";
+  apiVersion?: "v1" | "v2";
   apiModel: string;
   durations: number[];
   qualities: VideoQuality[];
 };
 
 const VIDEO_MODELS: Record<string, ModelConfig> = {
+  pollinations_veo: {
+    provider: "pollinations",
+    apiModel: "veo",
+    durations: [4, 6, 8],
+    qualities: ["720p", "1080p"],
+  },
+  pollinations_seedance_pro: {
+    provider: "pollinations",
+    apiModel: "seedance-pro",
+    durations: [5, 8, 10],
+    qualities: ["720p", "1080p"],
+  },
+  pollinations_wan_pro: {
+    provider: "pollinations",
+    apiModel: "wan-pro-1080p",
+    durations: [5, 8, 10],
+    qualities: ["720p", "1080p"],
+  },
+  puter_sora_2_pro: {
+    provider: "puter",
+    apiModel: "sora-2-pro",
+    durations: [4, 8, 12],
+    qualities: ["720p", "1080p"],
+  },
+  puter_veo_31_lite: {
+    provider: "puter",
+    apiModel: "veo-3.1-lite-generate-preview",
+    durations: [4, 6, 8],
+    qualities: ["720p", "1080p"],
+  },
   kling_3: {
+    provider: "leonardo",
     apiVersion: "v2",
     apiModel: "kling-3.0",
     durations: [5, 10],
     qualities: ["720p", "1080p"],
   },
   veo_31_fast: {
+    provider: "leonardo",
     apiVersion: "v1",
     apiModel: "VEO3_1FAST",
     durations: [6, 8],
     qualities: ["720p", "1080p"],
   },
   hailuo_23: {
+    provider: "leonardo",
     apiVersion: "v1",
     apiModel: "HAILUO_2_3",
     durations: [6, 10],
@@ -37,7 +71,12 @@ const VIDEO_MODELS: Record<string, ModelConfig> = {
   },
 };
 
-const DEFAULT_MODEL = "kling_3";
+const DEFAULT_MODEL = "pollinations_veo";
+
+const ASPECT_BY_QUALITY: Record<VideoQuality, { width: number; height: number; size: string }> = {
+  "720p": { width: 1280, height: 720, size: "1280x720" },
+  "1080p": { width: 1920, height: 1080, size: "1920x1080" },
+};
 
 function pickDuration(val: unknown, supported: number[]): number {
   const n = typeof val === "number" ? val : Number(val);
@@ -56,6 +95,15 @@ function bytesToBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
   }
   return btoa(binary);
+}
+
+function parseDataUrl(dataUrl: string): { mime: string; bytes: Uint8Array } {
+  const match = dataUrl.match(/^data:(.+?);base64,(.+)$/);
+  if (!match) throw new Error("Invalid media data");
+  const binary = atob(match[2]);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return { mime: match[1], bytes };
 }
 
 async function resolveStorageRef(
@@ -240,6 +288,78 @@ async function generateV1TextToVideo(
   throw new Error("Video generation timed out");
 }
 
+async function generateWithPollinationsVideo(
+  prompt: string,
+  model: string,
+  duration: number,
+  quality: VideoQuality,
+  referenceMediaUrl?: string,
+): Promise<{ bytes: Uint8Array; mime: string }> {
+  const apiKey = Deno.env.get("POLLINATIONS_API_KEY");
+  if (!apiKey) throw new Error("Pollinations API key is not configured");
+
+  const dims = ASPECT_BY_QUALITY[quality];
+  const url = new URL(`https://gen.pollinations.ai/video/${encodeURIComponent(prompt.replace(/\s+/g, " ").trim().slice(0, 1800))}`);
+  url.searchParams.set("model", model);
+  url.searchParams.set("duration", String(duration));
+  url.searchParams.set("aspectRatio", "16:9");
+  url.searchParams.set("nologo", "true");
+  url.searchParams.set("private", "true");
+  url.searchParams.set("safe", "true");
+  url.searchParams.set("width", String(dims.width));
+  url.searchParams.set("height", String(dims.height));
+  if (referenceMediaUrl) {
+    url.searchParams.set("referenceImage", referenceMediaUrl.startsWith("storage:") ? referenceMediaUrl : referenceMediaUrl);
+    url.searchParams.set("image", referenceMediaUrl.startsWith("storage:") ? referenceMediaUrl : referenceMediaUrl);
+  }
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${apiKey}`, Accept: "video/mp4,application/json,*/*" },
+  });
+  const contentType = res.headers.get("content-type") || "video/mp4";
+  if (!res.ok) throw new Error(`Pollinations video generation failed (${res.status}): ${(await res.text()).slice(0, 400)}`);
+  if (contentType.startsWith("video/") || contentType === "application/octet-stream") {
+    return { bytes: new Uint8Array(await res.arrayBuffer()), mime: contentType.startsWith("video/") ? contentType : "video/mp4" };
+  }
+
+  const data = await res.json().catch(() => null);
+  const videoUrl = data?.url || data?.video || data?.videos?.[0]?.url;
+  if (!videoUrl || typeof videoUrl !== "string") throw new Error("Pollinations returned no video URL");
+  const dl = await fetch(videoUrl);
+  if (!dl.ok) throw new Error("Failed to download Pollinations video");
+  return { bytes: new Uint8Array(await dl.arrayBuffer()), mime: dl.headers.get("content-type") || "video/mp4" };
+}
+
+async function generateWithPuterVideo(
+  prompt: string,
+  model: string,
+  duration: number,
+  quality: VideoQuality,
+  referenceMediaUrl?: string,
+): Promise<{ bytes: Uint8Array; mime: string }> {
+  const token = Deno.env.get("PUTER_API_KEY") || Deno.env.get("PUTER_AUTH_TOKEN");
+  if (!token) throw new Error("Puter API key is not configured");
+  const dims = ASPECT_BY_QUALITY[quality];
+  const mod = await import("npm:@heyputer/puter.js/src/init.cjs");
+  const puter = mod.init(token);
+  let inputReference = referenceMediaUrl;
+  if (inputReference?.startsWith("storage:")) inputReference = await resolveStorageRef(createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!), inputReference);
+  const video = await puter.ai.txt2vid({
+    prompt,
+    model,
+    seconds: duration,
+    size: dims.size,
+    resolution: dims.size,
+    ...(inputReference ? { input_reference: inputReference } : {}),
+  });
+  const src = typeof video === "string" ? video : video?.src || video?.url || video?.data?.url || video?.dataUrl;
+  if (!src || typeof src !== "string") throw new Error("Puter returned no video URL");
+  if (src.startsWith("data:")) return parseDataUrl(src);
+  const dl = await fetch(src);
+  if (!dl.ok) throw new Error("Failed to download Puter video");
+  return { bytes: new Uint8Array(await dl.arrayBuffer()), mime: dl.headers.get("content-type") || "video/mp4" };
+}
+
 async function uploadVideo(
   admin: ReturnType<typeof createClient>,
   userId: string,
@@ -259,6 +379,50 @@ async function uploadVideo(
     await admin.from("generated_videos").insert({ user_id: userId, prompt, video_url: ref });
   }
   return ref;
+}
+
+async function uploadVideoBytes(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  prompt: string,
+  bytes: Uint8Array,
+  mime = "video/mp4",
+): Promise<string> {
+  const ext = mime.includes("webm") ? "webm" : mime.includes("quicktime") ? "mov" : "mp4";
+  const path = `${userId}/generated/vid-${Date.now()}.${ext}`;
+  const { error } = await admin.storage
+    .from("chat-files")
+    .upload(path, bytes, { contentType: mime, upsert: false });
+  if (error) throw error;
+  const ref = `storage:chat-files/${path}`;
+  if (userId !== "anonymous") {
+    await admin.from("generated_videos").insert({ user_id: userId, prompt, video_url: ref });
+  }
+  return ref;
+}
+
+async function getDailyVideoUsage(admin: ReturnType<typeof createClient>, userId: string, usageDate: string): Promise<number> {
+  const { data } = await admin
+    .from("daily_usage")
+    .select("videos_generated")
+    .eq("user_id", userId)
+    .eq("usage_date", usageDate)
+    .maybeSingle();
+  return Number(data?.videos_generated || 0);
+}
+
+async function incrementDailyVideoUsage(admin: ReturnType<typeof createClient>, userId: string, usageDate: string) {
+  const { data: existing } = await admin
+    .from("daily_usage")
+    .select("id, images_generated, videos_generated")
+    .eq("user_id", userId)
+    .eq("usage_date", usageDate)
+    .maybeSingle();
+  if (existing?.id) {
+    await admin.from("daily_usage").update({ videos_generated: Number(existing.videos_generated || 0) + 1, updated_at: new Date().toISOString() }).eq("id", existing.id);
+  } else {
+    await admin.from("daily_usage").insert({ user_id: userId, usage_date: usageDate, images_generated: 0, videos_generated: 1 });
+  }
 }
 
 async function sendNotification(
