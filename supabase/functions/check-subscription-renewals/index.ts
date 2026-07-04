@@ -13,6 +13,12 @@ serve(async (req) => {
     const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const admin = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
 
+    try {
+      await admin.rpc("expire_due_subscriptions");
+    } catch (rpcErr) {
+      console.error("expire_due_subscriptions rpc failed (continuing with edge fallback):", rpcErr);
+    }
+
     const now = Date.now();
     const nowIso = new Date(now).toISOString();
     const windowForDay = (days: number) => ({

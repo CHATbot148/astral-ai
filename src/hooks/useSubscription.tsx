@@ -147,6 +147,7 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
   const fetchSubscription = useCallback(async () => {
     if (!user) { setSubscription(null); setLoading(false); return; }
     try {
+      void supabase.functions.invoke('check-subscription-renewals', { body: {} }).catch(() => {});
       const { data } = await supabase
         .from('subscriptions')
         .select('*')
