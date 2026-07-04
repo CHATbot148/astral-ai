@@ -100,6 +100,11 @@ export const ChatContainer = () => {
   const [imageDialogPrompt, setImageDialogPrompt] = useState("");
   const [showVideoDialog, setShowVideoDialog] = useState(false);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
+  const [videoHealth, setVideoHealth] = useState<{ available: boolean; status: string; providerErrors?: Array<{ provider: string; model: string; message: string }> }>({
+    available: true,
+    status: 'Checking video generation…',
+  });
+  const [checkingVideoHealth, setCheckingVideoHealth] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
   const [inputDockHeight, setInputDockHeight] = useState(116);
   const [showVisualizePopup, setShowVisualizePopup] = useState(false);
@@ -419,9 +424,16 @@ export const ChatContainer = () => {
     if (!(error instanceof Error) || !("context" in error)) return fallback;
 
     try {
-      const context = (error as { context?: { json?: () => Promise<{ error?: string }> } }).context;
+      const context = (error as { context?: { json?: () => Promise<{ error?: string; provider_errors?: Array<{ provider?: string; model?: string; message?: string }> }> } }).context;
       if (context?.json) {
         const body = await context.json();
+        if (Array.isArray(body?.provider_errors) && body.provider_errors.length > 0) {
+          const details = body.provider_errors
+            .slice(0, 6)
+            .map((item) => `${item.provider || 'provider'}/${item.model || 'model'}: ${item.message || 'Unknown error'}`)
+            .join('\n');
+          return `${body.error || fallback}\n\nProvider details:\n${details}`;
+        }
         if (body?.error) return body.error;
       }
     } catch {
@@ -430,6 +442,36 @@ export const ChatContainer = () => {
 
     return error.message || fallback;
   };
+
+  const refreshVideoHealth = async () => {
+    setCheckingVideoHealth(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-video', { body: { action: 'health' } });
+      if (error) throw new Error(await extractFunctionErrorMessage(error, error.message || 'Video health check failed'));
+      setVideoHealth({
+        available: Boolean(data?.available),
+        status: data?.status || (data?.available ? 'Video generation is available.' : 'Video generation is unavailable.'),
+      });
+    } catch (error) {
+      setVideoHealth({
+        available: false,
+        status: error instanceof Error ? error.message : 'Video generation is unavailable right now.',
+      });
+    } finally {
+      setCheckingVideoHealth(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshVideoHealth();
+    const id = window.setInterval(() => void refreshVideoHealth(), 90_000);
+    const onFocus = () => void refreshVideoHealth();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
 
   const generateImageWithOptions = async (opts: ImageGenOptions, conversationIdOverride?: string): Promise<string | null> => {
     let referenceMediaUrl = opts.referenceMediaUrl ?? opts.referenceImageUrl;
@@ -555,6 +597,9 @@ export const ChatContainer = () => {
   };
 
   const handleVideoGenerate = async (opts: VideoGenOptions) => {
+    if (!videoHealth.available) {
+      throw new Error(videoHealth.status || 'Video generation is unavailable right now.');
+    }
     let convId = currentConversation?.id;
     if (!convId) {
       const newConv = await createConversation(`Generate video: ${opts.prompt}`);
@@ -599,8 +644,15 @@ export const ChatContainer = () => {
             appInForeground: isAppInForeground(),
           },
         });
-        if (error) throw new Error(await extractFunctionErrorMessage(error, error.message || 'Video generation failed'));
-        if (data?.error) throw new Error(data.error);
+        if (error) {
+          const message = await extractFunctionErrorMessage(error, error.message || 'Video generation failed');
+          void refreshVideoHealth();
+          throw new Error(message);
+        }
+        if (data?.error) {
+          void refreshVideoHealth();
+          throw new Error(data.error);
+        }
         if (data?.video) {
           await addMessage(capturedConvId, 'assistant', `Here's your video.`, [data.video]);
         } else {
@@ -1240,6 +1292,7 @@ export const ChatContainer = () => {
   };
 
   const openVideoDialog = () => {
+    void refreshVideoHealth();
     setShowVideoDialog(true);
   };
 
