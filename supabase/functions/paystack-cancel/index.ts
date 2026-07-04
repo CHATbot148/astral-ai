@@ -128,8 +128,8 @@ serve(async (req) => {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
         body: JSON.stringify({
-          user_id: user.id, type: "cancellation",
-          period_key: `cancel-${now.toISOString().slice(0, 10)}-${mode}`,
+          user_id: user.id, type: "refund",
+          period_key: `refund-${now.toISOString().slice(0, 10)}-${sub.id}`,
           data: { tier: sub.tier, access_until: mode === "immediate_refund" ? now.toISOString() : sub.expires_at },
         }),
       });

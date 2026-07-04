@@ -57,6 +57,14 @@ const TEMPLATES = {
       ${ctaBtn("Resubscribe")}
     `),
   }),
+  refund: (d: any) => ({
+    subject: `Your Astraz refund was processed`,
+    html: shell("Refund processed", `
+      <p style="color:#cfd2e0;font-size:15px;line-height:1.55">Your <strong>${TIER_NAMES[d.tier] || d.tier}</strong> plan was cancelled immediately and your premium access has ended.</p>
+      <p style="color:#9aa1b3;font-size:14px">If a cancellation fee applied, the remaining eligible amount has been sent back through your original payment method.</p>
+      ${ctaBtn("Open Astraz")}
+    `),
+  }),
   expired: (d: any) => ({
     subject: `Your Astraz ${TIER_NAMES[d.tier] || d.tier} plan has ended`,
     html: shell("Subscription ended", `
