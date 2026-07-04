@@ -94,7 +94,10 @@ export interface Subscription {
 // Subscription is "effectively active" if status=active OR (cancelled with access until future)
 const isAccessActive = (sub: Subscription | null): boolean => {
   if (!sub) return false;
-  if (sub.status === 'active') return true;
+  const accessUntil = sub.access_until || sub.expires_at;
+  if (sub.status === 'active') {
+    return !accessUntil || new Date(accessUntil).getTime() > Date.now();
+  }
   if (sub.cancellation_type === 'end_of_period' && sub.access_until) {
     return new Date(sub.access_until).getTime() > Date.now();
   }
@@ -149,7 +152,14 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
         .select('*')
         .eq('user_id', user.id)
         .maybeSingle();
-      setSubscription(data as Subscription | null);
+      const sub = data as Subscription | null;
+      const accessUntil = sub?.access_until || sub?.expires_at;
+      if (sub?.status === 'active' && accessUntil && new Date(accessUntil).getTime() <= Date.now()) {
+        setSubscription({ ...sub, status: 'expired' });
+        void supabase.functions.invoke('check-subscription-renewals', { body: {} }).catch(() => {});
+      } else {
+        setSubscription(sub);
+      }
     } catch (e) {
       console.error('Failed to fetch subscription:', e);
     } finally {

@@ -1,11 +1,29 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let out = 0;
+  for (let i = 0; i < a.length; i++) out |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return out === 0;
+}
+
+async function verifyOtpHash(otp: string, storedHash: string): Promise<boolean> {
+  const [scheme, salt, expected] = String(storedHash || "").split("$");
+  if (scheme !== "sha256" || !salt || !expected) return false;
+  const data = new TextEncoder().encode(`${salt}:${otp}`);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return timingSafeEqual(bytesToHex(new Uint8Array(digest)), expected);
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -44,8 +62,9 @@ serve(async (req) => {
       );
     }
 
-    // Compare OTP with bcrypt hash
-    const isValid = await bcrypt.compare(otp, otpRecord.otp_hash);
+    // Compare OTP with WebCrypto hash. bcrypt's Worker dependency is not
+    // available in this Edge runtime and was causing send/reset failures.
+    const isValid = await verifyOtpHash(otp, otpRecord.otp_hash);
     if (!isValid) {
       return new Response(
         JSON.stringify({ error: "Invalid verification code" }),
