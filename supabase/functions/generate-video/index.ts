@@ -635,10 +635,20 @@ serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     if (body?.action === "health" || body?.healthCheck === true) {
-      return new Response(JSON.stringify(await getVideoProviderHealth()), {
+      return new Response(JSON.stringify({
+        available: false,
+        status: "Video generation is temporarily disabled.",
+        providers: [],
+        checkedAt: new Date().toISOString(),
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    return new Response(
+      JSON.stringify({ error: "Video generation is temporarily disabled." }),
+      { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
 
     const { prompt, modelId, duration, quality, referenceMediaUrl } = body;
     if (!prompt) throw new Error("Prompt is required");

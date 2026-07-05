@@ -36,7 +36,9 @@ serve(async (req) => {
     const { data: subs, error: subErr } = await supabase
       .from("push_subscriptions")
       .select("id, endpoint, p256dh, auth")
-      .eq("user_id", userId);
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1);
 
     if (subErr) throw subErr;
 
