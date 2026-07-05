@@ -980,13 +980,31 @@ serve(async (req) => {
     };
 
     if (referenceUrl) {
-      const referenceFallbacks = Array.from(new Set([selectedModelKey, "pollinations_kontext", "pollinations_nanobanana_pro", "pollinations_seedream5", "puter_gemini_3_pro", "puter_gpt_image_2", "nano_banana_2", "nano_banana", "phoenix"]));
-      for (const key of referenceFallbacks) {
-        if (await tryModel(key, referenceUrl)) break;
-      }
+      // Gemini Studio image edit runs FIRST — it reliably accepts inline reference
+      // bytes and rarely stalls, unlike Pollinations' edits endpoint which frequently
+      // pauses mid-stream. If it fails we fall back to the model the user picked and
+      // through the rest of the reference-capable providers.
+      console.log(`[REFERENCE] Gemini Studio image edit (primary)`);
+      useGenerated(await generateWithGeminiStudioImage(enhancedPrompt, referenceUrl).catch((e) => {
+        console.error("Gemini Studio reference edit failed:", e);
+        return null;
+      }));
+
       if (!imgBytes) {
-        console.log(`[FALLBACK] Gemini Studio reference generation`);
-        useGenerated(await generateWithGeminiStudioImage(enhancedPrompt, referenceUrl));
+        const referenceFallbacks = Array.from(new Set([
+          selectedModelKey,
+          "nano_banana_2",
+          "nano_banana",
+          "puter_gemini_3_pro",
+          "puter_gpt_image_2",
+          "pollinations_kontext",
+          "pollinations_nanobanana_pro",
+          "pollinations_seedream5",
+          "phoenix",
+        ]));
+        for (const key of referenceFallbacks) {
+          if (await tryModel(key, referenceUrl)) break;
+        }
       }
     } else {
       const textFallbacks = Array.from(new Set([
