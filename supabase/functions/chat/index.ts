@@ -561,25 +561,13 @@ serve(async (req) => {
       }
     }
 
-    // Check for video generation request
-    if (!shouldGenerateImage) {
-      for (const pattern of VIDEO_GENERATION_PATTERNS) {
-        if (pattern.test(lastContent)) {
-          shouldGenerateVideo = true;
-          videoPrompt = extractGenerationPrompt(lastContent, "video");
-          break;
-        }
-      }
-    }
+    // Video generation is intentionally disabled until paid video providers are ready.
 
     // Heuristic fallback: treat natural generation requests as generation even when pattern isn't exact
     if (!shouldGenerateImage && !shouldGenerateVideo) {
       if (isLikelyImageGenerationIntent(lastContent)) {
         shouldGenerateImage = true;
         imagePrompt = extractGenerationPrompt(lastContent, "image");
-      } else if (isLikelyVideoGenerationIntent(lastContent)) {
-        shouldGenerateVideo = true;
-        videoPrompt = extractGenerationPrompt(lastContent, "video");
       }
     }
 
@@ -594,10 +582,7 @@ serve(async (req) => {
       const userApproved = /^\s*(?:yes|yep|yeah|yup|sure|ok(?:ay)?|alright|please do|do it|go ahead|go on|generate it|create it|make it|start|proceed|sounds good|that works|perfect|👍|✅)\b[.! ]*/i
         .test(lastContent);
       if (assistantAskedToGenerate && userApproved) {
-        if (/video/i.test(lastAssistantText)) {
-          shouldGenerateVideo = true;
-          videoPrompt = lastAssistantText;
-        } else {
+        if (!/video/i.test(lastAssistantText)) {
           shouldGenerateImage = true;
           imagePrompt = lastAssistantText;
         }
@@ -851,9 +836,8 @@ You have the following capabilities natively inside the Astraz app. Never tell t
 - **Talk** via voice call (16 voices, 8 feminine / 8 masculine).
 - **Render interactive widgets** (\`viz\`), **charts** (\`graph\`) and **pronunciation cards** (\`pronounce\`).
 
-You CAN also **generate videos** on demand (via the [GENERATE_VIDEO:...] tag — same pattern as image generation). Only trigger it when the user clearly asks for a video/clip/motion; otherwise prefer image generation.
-
 You do NOT do these (currently disabled — politely decline and offer to help another way):
+- Generate videos or clips. Video generation is temporarily disabled.
 - External connectors (Gmail, Calendar, Maps, Telegram, TikTok). Don't pretend to call them.
 
 ## 4. App navigation (use to help users)
@@ -925,21 +909,21 @@ The frontend renders this as an interactive card: the word/phrase, a play button
 INLINE GENERATION SAFETY (CRITICAL):
 - NEVER generate an image or video unless the user explicitly asks to generate/create/make one.
 - Informational requests (lists, explanations, comparisons, recommendations, "show me examples") must stay informational.
-- If a [Visual Image Pool] is present, use [IMG:url|source] for web media only — do NOT output [GENERATE_IMAGE] or [GENERATE_VIDEO] for that.
+- If a [Visual Image Pool] is present, use [IMG:url|source] for web media only — do NOT output [GENERATE_IMAGE] for that.
 - Do NOT proactively ask to generate media while answering normal questions.
 - Only include ONE generation tag per response, and only when generation is explicitly requested AND approved by the user.
 - If generation is not explicitly requested, never include generation tags.
 
 MEDIA GENERATION HANDLING (CRITICAL):
-When a user wants to generate an image or video:
+When a user wants to generate an image:
 1. If their request is CLEAR and detailed (e.g., "generate an image of a red sports car on a mountain road at sunset"):
    - Briefly describe what you will create
    - Ask for permission: "Shall I go ahead and generate this?"
-2. If the request is VAGUE or missing key details (e.g., "generate me an image", "make a video"):
+2. If the request is VAGUE or missing key details (e.g., "generate me an image"):
    - Ask 1-2 short clarifying questions about subject, style, or scene
    - Once you have enough detail, describe what you will create and ask for permission
 3. When the user APPROVES (says yes, go ahead, sure, do it, generate it, start, etc.):
-   - Output exactly ONE tag: [GENERATE_IMAGE:detailed prompt] or [GENERATE_VIDEO:detailed prompt]
+    - Output exactly ONE tag: [GENERATE_IMAGE:detailed prompt]
    - The prompt inside the tag should be detailed and descriptive for best results
 4. When the user DECLINES or wants to change something: adjust accordingly, do NOT generate
 5. NEVER output a generation tag without explicit user approval in that message
@@ -1019,8 +1003,8 @@ IMPORTANT RESPONSE GUIDELINES:
       systemContent += `\n\n[GENERATION CONTEXT] The user wants to generate an image. Detected prompt: "${imagePrompt}". Follow the MEDIA GENERATION HANDLING instructions above. If the prompt is clear and detailed, describe what you'll create and ask for permission. If vague, ask clarifying questions first. Do NOT output [GENERATE_IMAGE:...] until the user explicitly approves. Never tell the user there are no buttons; the app may show an approval button below your message.`;
     }
 
-    if (shouldGenerateVideo) {
-      systemContent += `\n\n[GENERATION CONTEXT] The user wants to generate a video. Detected prompt: "${videoPrompt}". Follow the MEDIA GENERATION HANDLING instructions above. If the prompt is clear and detailed, describe what you'll create and ask for permission. If vague, ask clarifying questions first. Do NOT output [GENERATE_VIDEO:...] until the user explicitly approves.`;
+    if (shouldGenerateVideo || isLikelyVideoGenerationIntent(lastContent)) {
+      systemContent += `\n\n[VIDEO DISABLED] The user is asking for video generation, but video generation is temporarily disabled. Briefly say it is currently unavailable and offer to help with an image prompt, storyboard, or still image instead. Never output a [GENERATE_VIDEO:...] tag.`;
     }
 
     if (fileContext) {

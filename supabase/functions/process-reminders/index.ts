@@ -47,6 +47,23 @@ serve(async (req) => {
 
     for (const reminder of reminders) {
       try {
+        const { data: claimed, error: claimErr } = await supabase
+          .from("scheduled_notifications")
+          .update({ status: "processing", updated_at: new Date().toISOString() })
+          .eq("id", reminder.id)
+          .eq("status", "pending")
+          .select("id")
+          .maybeSingle();
+
+        if (claimErr) {
+          console.error("Reminder claim error:", reminder.id, claimErr);
+          continue;
+        }
+        if (!claimed?.id) {
+          console.warn("Reminder already claimed, skipping:", reminder.id);
+          continue;
+        }
+
         const resolvedConversationId = await resolveConversationId(supabase, reminder.user_id, reminder.conversation_id);
         const reminderContent = `[REMINDER] 🔔 ${reminder.message}`;
 
@@ -103,11 +120,16 @@ serve(async (req) => {
           console.warn("Reminder not delivered yet, will retry:", reminder.id);
           await supabase
             .from("scheduled_notifications")
-            .update({ updated_at: new Date().toISOString(), email: fallbackEmail || reminder.email })
+            .update({ status: "pending", updated_at: new Date().toISOString(), email: fallbackEmail || reminder.email })
             .eq("id", reminder.id);
         }
       } catch (reminderErr) {
         console.error(`Error processing reminder ${reminder.id}:`, reminderErr);
+        await supabase
+          .from("scheduled_notifications")
+          .update({ status: "pending", updated_at: new Date().toISOString() })
+          .eq("id", reminder.id)
+          .eq("status", "processing");
       }
     }
 

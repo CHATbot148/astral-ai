@@ -141,6 +141,24 @@ async function deliverReminderNow(params: {
     conversationId,
   } = params;
 
+  const { data: claimed, error: claimErr } = await supabase
+    .from("scheduled_notifications")
+    .update({ status: "processing", updated_at: new Date().toISOString() })
+    .eq("id", notificationId)
+    .eq("status", "pending")
+    .select("id")
+    .maybeSingle();
+
+  if (claimErr) {
+    console.error("Immediate reminder claim error:", claimErr);
+    return false;
+  }
+
+  if (!claimed?.id) {
+    console.warn("Immediate reminder already claimed:", notificationId);
+    return true;
+  }
+
   const resolvedConversationId = await resolveConversationId(supabase, userId, conversationId);
   const reminderContent = `[REMINDER] 🔔 ${message}`;
 
@@ -195,7 +213,7 @@ async function deliverReminderNow(params: {
   } else {
     await supabase
       .from("scheduled_notifications")
-      .update({ updated_at: new Date().toISOString(), email: fallbackEmail || userEmail })
+      .update({ status: "pending", updated_at: new Date().toISOString(), email: fallbackEmail || userEmail })
       .eq("id", notificationId);
   }
 
