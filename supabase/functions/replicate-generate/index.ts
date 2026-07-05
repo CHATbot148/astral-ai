@@ -86,17 +86,54 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { kind, modelId, prompt, aspectRatio, imageUrl, userId: bodyUserId } = body;
+    const { kind, modelId, prompt, aspectRatio, imageUrl } = body;
 
-    // Validate JWT (extract userId from token, never trust body)
+    // Auth required — no anonymous callers. Enforce subscription/quota like other gen endpoints.
     const authHeader = req.headers.get("Authorization");
-    let userId = "anonymous";
-    if (authHeader?.startsWith("Bearer ")) {
-      const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-      const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const admin = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
-      const { data: { user } } = await admin.auth.getUser(authHeader.slice(7));
-      if (user) userId = user.id;
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Authentication required" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const admin = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
+    const { data: authData } = await admin.auth.getUser(authHeader.slice(7));
+    const userId = authData?.user?.id;
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "Invalid session" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Enforce subscription tier + daily image quota
+    const { data: sub } = await admin
+      .from("subscriptions")
+      .select("tier, status, expires_at")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .maybeSingle();
+    const tier = sub && sub.status === "active" && (!sub.expires_at || new Date(sub.expires_at) > new Date())
+      ? sub.tier : "free";
+    const tierLimits: Record<string, number> = { free: 5, basic: 10, pro: 25, ultimate: 999999 };
+    const today = new Date().toISOString().split("T")[0];
+    if (kind === "image") {
+      const { data: usage } = await admin
+        .from("daily_usage").select("images_generated")
+        .eq("user_id", userId).eq("usage_date", today).maybeSingle();
+      const used = usage?.images_generated ?? 0;
+      const limit = tierLimits[tier] ?? 5;
+      if (used >= limit) {
+        return new Response(JSON.stringify({ error: `Daily image limit reached (${limit}/day).`, limit_reached: true }), {
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } else if (kind === "video") {
+      if (tier === "free") {
+        return new Response(JSON.stringify({ error: "Video generation requires a paid plan." }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     if (kind === "image") {
