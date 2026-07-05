@@ -13,7 +13,6 @@ import { VoiceCall, type VoiceCallHandle } from './VoiceCall';
 import { ChatHeader } from './ChatHeader';
 
 import { ImageGenerateDialog, ImageGenOptions } from './ImageGenerateDialog';
-import { VideoGenerateDialog, VideoGenOptions } from './VideoGenerateDialog';
 import { useConversations } from '@/hooks/useConversations';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -98,13 +97,6 @@ export const ChatContainer = () => {
   const [editingMessageContent, setEditingMessageContent] = useState<string | null>(null);
   const [showImageDialog, setShowImageDialog] = useState(false);
   const [imageDialogPrompt, setImageDialogPrompt] = useState("");
-  const [showVideoDialog, setShowVideoDialog] = useState(false);
-  const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
-  const [videoHealth, setVideoHealth] = useState<{ available: boolean; status: string; pollinationsModels?: string[]; providerErrors?: Array<{ provider: string; model: string; message: string }> }>({
-    available: true,
-    status: 'Checking video generation…',
-  });
-  const [checkingVideoHealth, setCheckingVideoHealth] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
   const [inputDockHeight, setInputDockHeight] = useState(116);
   const [showVisualizePopup, setShowVisualizePopup] = useState(false);
@@ -291,14 +283,13 @@ export const ChatContainer = () => {
   // clear any lingering "generating" UI state. The server inserts the message
   // via realtime, so the HTTP roundtrip occasionally outlives the actual result.
   useEffect(() => {
-    if (!isGeneratingImage && !isGeneratingVideo) return;
+    if (!isGeneratingImage) return;
     const last = messages[messages.length - 1];
     if (last && last.role === 'assistant' && last.file_urls && last.file_urls.length > 0) {
       setIsGeneratingImage(false);
-      setIsGeneratingVideo(false);
       setTypingLabel(undefined);
     }
-  }, [messages, isGeneratingImage, isGeneratingVideo]);
+  }, [messages, isGeneratingImage]);
 
   const fetchProfile = async () => {
     if (!user) return;
@@ -370,13 +361,7 @@ export const ChatContainer = () => {
     return null;
   };
 
-  const detectVideoGenerationRequest = (content: string): string | null => {
-    for (const pattern of VIDEO_GENERATION_PATTERNS) {
-      const match = content.match(pattern);
-      if (match && match[1]) return match[1].trim();
-    }
-    return null;
-  };
+  const detectVideoGenerationRequest = (_content: string): string | null => null;
 
   const isImageRequestLoose = (text: string) =>
     /(image|picture|photo|draw|generate|create|illustration|art)/i.test(text);
@@ -442,39 +427,6 @@ export const ChatContainer = () => {
 
     return error.message || fallback;
   };
-
-  const refreshVideoHealth = async () => {
-    setCheckingVideoHealth(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('generate-video', { body: { action: 'health' } });
-      if (error) throw new Error(await extractFunctionErrorMessage(error, error.message || 'Video health check failed'));
-      setVideoHealth({
-        available: Boolean(data?.available),
-        status: data?.status || (data?.available ? 'Video generation is available.' : 'Video generation is unavailable.'),
-        pollinationsModels: Array.isArray(data?.providers)
-          ? (data.providers.find((p: any) => p.provider === 'pollinations')?.models || [])
-          : [],
-      });
-    } catch (error) {
-      setVideoHealth({
-        available: false,
-        status: error instanceof Error ? error.message : 'Video generation is unavailable right now.',
-      });
-    } finally {
-      setCheckingVideoHealth(false);
-    }
-  };
-
-  useEffect(() => {
-    void refreshVideoHealth();
-    const id = window.setInterval(() => void refreshVideoHealth(), 90_000);
-    const onFocus = () => void refreshVideoHealth();
-    window.addEventListener('focus', onFocus);
-    return () => {
-      window.clearInterval(id);
-      window.removeEventListener('focus', onFocus);
-    };
-  }, []);
 
   const generateImageWithOptions = async (opts: ImageGenOptions, conversationIdOverride?: string): Promise<string | null> => {
     let referenceMediaUrl = opts.referenceMediaUrl ?? opts.referenceImageUrl;
@@ -599,77 +551,6 @@ export const ChatContainer = () => {
     })();
   };
 
-  const handleVideoGenerate = async (opts: VideoGenOptions) => {
-    if (!videoHealth.available) {
-      throw new Error(videoHealth.status || 'Video generation is unavailable right now.');
-    }
-    let convId = currentConversation?.id;
-    if (!convId) {
-      const newConv = await createConversation(`Generate video: ${opts.prompt}`);
-      if (!newConv) throw new Error('Failed to create conversation');
-      convId = newConv.id;
-    }
-    await addMessage(convId, 'user', `Generate a video: ${opts.prompt}`);
-    setShowVideoDialog(false);
-
-    const capturedConvId = convId;
-    (async () => {
-      setIsGeneratingVideo(true);
-      setTypingLabel('Generating video…');
-      setTypingMode('typing');
-      try {
-        let referenceMediaUrl = opts.reference?.dataUrl;
-        if (referenceMediaUrl?.startsWith('data:') && user) {
-          try {
-            const match = referenceMediaUrl.match(/^data:(.+?);base64,(.+)$/);
-            if (match) {
-              const mime = match[1];
-              const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg';
-              const binary = atob(match[2]);
-              const bytes = new Uint8Array(binary.length);
-              for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-              const path = `${user.id}/ref-video-${Date.now()}.${ext}`;
-              const { error: uploadErr } = await supabase.storage.from('chat-files').upload(path, bytes, { contentType: mime });
-              if (!uploadErr) referenceMediaUrl = makeStorageRef('chat-files', path);
-            }
-          } catch (e) {
-            console.error('Video reference upload failed, sending as-is:', e);
-          }
-        }
-
-        const { data, error } = await supabase.functions.invoke('generate-video', {
-          body: {
-            prompt: opts.prompt,
-            modelId: opts.modelId || 'pollinations_veo',
-            duration: opts.duration,
-            quality: opts.quality,
-            referenceMediaUrl,
-            appInForeground: isAppInForeground(),
-          },
-        });
-        if (error) {
-          const message = await extractFunctionErrorMessage(error, error.message || 'Video generation failed');
-          void refreshVideoHealth();
-          throw new Error(message);
-        }
-        if (data?.error) {
-          void refreshVideoHealth();
-          throw new Error(data.error);
-        }
-        if (data?.video) {
-          await addMessage(capturedConvId, 'assistant', `Here's your video.`, [data.video]);
-        } else {
-          await addMessage(capturedConvId, 'assistant', `I couldn't generate that video. Please try again.`);
-        }
-      } catch (error) {
-        await addMessage(capturedConvId, 'assistant', `Video generation failed. ${error instanceof Error ? error.message : 'Please try again.'}`);
-      } finally {
-        setIsGeneratingVideo(false);
-        setTypingLabel(undefined);
-      }
-    })();
-  };
-
   const handleEditMessage = (messageId: string, content: string) => {
     setEditingMessageId(messageId);
     setEditingMessageContent(content);
@@ -715,7 +596,6 @@ export const ChatContainer = () => {
     }
     setIsLoading(false);
     setIsGeneratingImage(false);
-    setIsGeneratingVideo(false);
     setTypingLabel(undefined);
     setTypingMode('typing');
   };
@@ -786,12 +666,9 @@ export const ChatContainer = () => {
       .trim();
   };
 
-  const extractGenerationTag = (value: string): { type: 'image' | 'video'; prompt: string } | null => {
+  const extractGenerationTag = (value: string): { type: 'image'; prompt: string } | null => {
     const imageMatch = value.match(/\[GENERATE_IMAGE:([^\]]+)\]/);
     if (imageMatch?.[1]) return { type: 'image', prompt: imageMatch[1].trim() };
-
-    const videoMatch = value.match(/\[GENERATE_VIDEO:([^\]]+)\]/);
-    if (videoMatch?.[1]) return { type: 'video', prompt: videoMatch[1].trim() };
 
     return null;
   };
@@ -861,7 +738,7 @@ export const ChatContainer = () => {
       await addMessage(convId, 'user', content, fileUrls.length > 0 ? fileUrls : undefined);
 
       const userRequestedInlineGeneration = Boolean(
-        detectImageGenerationRequest(content) || detectVideoGenerationRequest(content)
+        detectImageGenerationRequest(content)
       );
 
       // Reminders
@@ -1100,7 +977,7 @@ export const ChatContainer = () => {
 
       // Keep UI reveal synced to the actual stream. Extra client-side queues made
       // Astraz feel delayed after the model had already responded.
-      let generationDirective: { type: 'image' | 'video'; prompt: string } | null = null;
+      let generationDirective: { type: 'image'; prompt: string } | null = null;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -1128,13 +1005,8 @@ export const ChatContainer = () => {
                   isInlineGenerationFlow = true;
                   setStreamingContent('');
                   setTypingMode('typing');
-                  if (generationDirective.type === 'image') {
-                    setIsGeneratingImage(true);
-                    setTypingLabel('Generating image…');
-                  } else {
-                    setIsGeneratingVideo(true);
-                    setTypingLabel('Generating video…');
-                  }
+                  setIsGeneratingImage(true);
+                  setTypingLabel('Generating image…');
                 }
               }
 
@@ -1169,8 +1041,7 @@ export const ChatContainer = () => {
             const generationStartedAt = Date.now();
             let keepPendingForRealtime = false;
             try {
-              // Use first attached media as reference (image first, then video)
-              const referenceMediaUrl = imageUrls[0] ?? videoFileUrls[0];
+              const referenceMediaUrl = imageUrls[0];
               const generatedImage = await generateImageWithOptions({ 
                 prompt: imgPrompt, 
                 style: 'photoreal', 
@@ -1200,49 +1071,6 @@ export const ChatContainer = () => {
                 setIsGeneratingImage(false);
                 setTypingLabel(undefined);
               }
-            }
-          })();
-        } else if (finalDirective?.type === 'video') {
-          isInlineGenerationFlow = true;
-          const capturedConvId = convId;
-          const vidPrompt = finalDirective.prompt;
-
-          if (!videoHealth.available) {
-            await addMessage(capturedConvId, 'assistant', `Video generation is unavailable right now. ${videoHealth.status}`);
-            setIsGeneratingVideo(false);
-            setTypingLabel(undefined);
-            return;
-          }
-
-          setIsGeneratingVideo(true);
-          setTypingLabel('Generating video…');
-          setTypingMode('typing');
-
-          (async () => {
-            try {
-              const referenceMediaUrl = imageUrls[0] ?? videoFileUrls[0];
-              const { data, error } = await supabase.functions.invoke('generate-video', {
-                body: { prompt: vidPrompt, modelId: 'pollinations_veo', referenceMediaUrl, appInForeground: isAppInForeground() },
-              });
-              if (error) {
-                const message = await extractFunctionErrorMessage(error, error.message || 'Video generation failed');
-                void refreshVideoHealth();
-                throw new Error(message);
-              }
-              if (data?.error) {
-                void refreshVideoHealth();
-                throw new Error(data.error);
-              }
-              if (data?.video) {
-                await addMessage(capturedConvId, 'assistant', `Here's your video.`, [data.video]);
-              } else {
-                await addMessage(capturedConvId, 'assistant', `I couldn't generate that video. Please try again.`);
-              }
-            } catch (error) {
-              await addMessage(capturedConvId, 'assistant', `Video generation failed. ${error instanceof Error ? error.message : 'Please try again.'}`);
-            } finally {
-              setIsGeneratingVideo(false);
-              setTypingLabel(undefined);
             }
           })();
         } else {
@@ -1296,7 +1124,6 @@ export const ChatContainer = () => {
       if (!isInlineGenerationFlow) {
         setTypingLabel(undefined);
         setIsGeneratingImage(false);
-        setIsGeneratingVideo(false);
       }
       setTypingMode('typing');
       abortControllerRef.current = null;
@@ -1306,11 +1133,6 @@ export const ChatContainer = () => {
   const openImageDialog = (prefill?: string) => {
     setImageDialogPrompt(prefill?.trim() || '');
     setShowImageDialog(true);
-  };
-
-  const openVideoDialog = () => {
-    void refreshVideoHealth();
-    setShowVideoDialog(true);
   };
 
   const handleStartVoiceCall = async () => {
@@ -1362,16 +1184,6 @@ export const ChatContainer = () => {
       </AnimatePresence>
 
       <ImageGenerateDialog open={showImageDialog} onOpenChange={setShowImageDialog} onGenerate={handleImageGenerate} initialPrompt={imageDialogPrompt} />
-      <VideoGenerateDialog
-        open={showVideoDialog}
-        onOpenChange={setShowVideoDialog}
-        onGenerate={handleVideoGenerate}
-        videoAvailable={videoHealth.available}
-        videoStatus={videoHealth.status}
-        availablePollinationsModels={videoHealth.pollinationsModels}
-        checkingVideoHealth={checkingVideoHealth}
-        onRefreshVideoHealth={refreshVideoHealth}
-      />
 
       {/* Hidden inputs for Analyze documents flow */}
       <input ref={analyzeGalleryInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleAnalyzeFiles} />
@@ -1407,14 +1219,14 @@ export const ChatContainer = () => {
         )}
       </AnimatePresence>
 
-      {/* Visualize picker (image / video) */}
+      {/* Visualize picker */}
       <AnimatePresence>
         {showVisualizePopup && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowVisualizePopup(false)}>
             <motion.div initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }} transition={{ type: 'spring', stiffness: 320, damping: 28 }} onClick={(e) => e.stopPropagation()} className="w-full sm:max-w-sm bg-popover/95 backdrop-blur-xl border border-border/70 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden">
               <div className="px-5 pt-5 pb-3 text-center">
                 <h3 className="text-base font-semibold">Visualize</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">Generate images or videos</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Generate images</p>
               </div>
               <div className="px-2 pb-2">
                 <button onClick={() => { setShowVisualizePopup(false); openImageDialog(); }} className="flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/70 w-full text-left text-sm rounded-xl transition-colors">
@@ -1424,21 +1236,6 @@ export const ChatContainer = () => {
                     <p className="text-xs text-muted-foreground">Create AI images</p>
                   </div>
                 </button>
-                <button
-                  onClick={() => { if (videoHealth.available) { setShowVisualizePopup(false); openVideoDialog(); } }}
-                  disabled={!videoHealth.available || checkingVideoHealth}
-                  className={cn(
-                    "flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/70 w-full text-left text-sm rounded-xl transition-colors",
-                    (!videoHealth.available || checkingVideoHealth) && "opacity-55 cursor-not-allowed hover:bg-transparent"
-                  )}
-                >
-                  <span className="text-xl">{checkingVideoHealth ? '⏳' : '🎬'}</span>
-                  <div>
-                    <p className="font-medium">Generate Video</p>
-                    <p className="text-xs text-muted-foreground">{videoHealth.available ? 'Cinematic AI clips' : videoHealth.status}</p>
-                  </div>
-                </button>
-
               </div>
               <button onClick={() => setShowVisualizePopup(false)} className="w-full py-3 text-sm text-muted-foreground hover:text-foreground border-t border-border/50">Cancel</button>
             </motion.div>
@@ -1516,13 +1313,13 @@ export const ChatContainer = () => {
                         enableAutoListImages={enableAutoListImages} />
                     );
                   })}
-                  {isLoading && !streamingContent && !isGeneratingImage && !isGeneratingVideo && (
+                  {isLoading && !streamingContent && !isGeneratingImage && (
                     <TypingIndicator label={typingLabel} mode={typingMode} />
                   )}
-                  {(isGeneratingImage || isGeneratingVideo) && (
+                  {isGeneratingImage && (
                     <div className="flex items-center gap-3 px-6 py-4">
                       <motion.span className="text-xai-cyan font-medium" animate={{ opacity: [1, 0.5, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>
-                        {isGeneratingVideo ? '🎬 Generating video...' : '🎨 Generating image...'}
+                        🎨 Generating image...
                       </motion.span>
                       <Button variant="outline" size="sm" onClick={stopGeneration} className="h-7 px-3 text-xs rounded-full border-destructive/50 text-destructive hover:bg-destructive/10">
                         Cancel
@@ -1595,10 +1392,6 @@ export const ChatContainer = () => {
               onClearEdit={clearEditState}
               onStartCall={user ? handleStartVoiceCall : undefined}
               onOpenImageDialog={openImageDialog}
-              onOpenVideoDialog={openVideoDialog}
-              videoAvailable={videoHealth.available}
-              videoStatus={videoHealth.status}
-              checkingVideoHealth={checkingVideoHealth}
               restoreDraft={restoreDraft}
             />
           </div>
