@@ -936,7 +936,7 @@ serve(async (req) => {
     } catch (e) {
       console.warn("[IMAGE DIRECTOR] fell back to template prompt:", e instanceof Error ? e.message : e);
     }
-    const dims = ASPECT_RATIO_MAP[aspectRatio] || ASPECT_RATIO_MAP["1:1"];
+    // dims already declared above with the Image Director block
 
 
     // Free tier image generation uses normal Nano Banana unless a supported model is passed.
