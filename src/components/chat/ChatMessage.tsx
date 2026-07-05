@@ -378,7 +378,7 @@ const TableBlock = ({ data }: { data: { headers: string[]; rows: string[][] } })
                     key={i}
                     className="px-3 py-2.5 text-left align-top font-semibold text-foreground min-w-[7.5rem] max-w-[18rem] whitespace-normal break-words [overflow-wrap:anywhere]"
                   >
-                    <span dangerouslySetInnerHTML={{ __html: h.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+                    <span dangerouslySetInnerHTML={{ __html: h.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
                   </th>
                 ))}
               </tr>
@@ -391,7 +391,7 @@ const TableBlock = ({ data }: { data: { headers: string[]; rows: string[][] } })
                       key={ci}
                       className="px-3 py-2.5 align-top text-foreground/90 min-w-[7.5rem] max-w-[18rem] whitespace-normal break-words [overflow-wrap:anywhere]"
                     >
-                      <span dangerouslySetInnerHTML={{ __html: cell.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+                      <span dangerouslySetInnerHTML={{ __html: cell.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
                     </td>
                   ))}
                 </tr>
