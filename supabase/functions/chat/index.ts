@@ -1000,7 +1000,15 @@ IMPORTANT RESPONSE GUIDELINES:
 
     // When generation intent detected, let the AI handle conversationally (ask for details/permission)
     if (shouldGenerateImage) {
-      systemContent += `\n\n[GENERATION CONTEXT] The user wants to generate an image. Detected prompt: "${imagePrompt}". Follow the MEDIA GENERATION HANDLING instructions above. If the prompt is clear and detailed, describe what you'll create and ask for permission. If vague, ask clarifying questions first. Do NOT output [GENERATE_IMAGE:...] until the user explicitly approves. Never tell the user there are no buttons; the app may show an approval button below your message.`;
+      const lastMsgImgs = messages[messages.length - 1]?.imageUrls || [];
+      const hasRef = Array.isArray(lastMsgImgs) && lastMsgImgs.length > 0;
+      if (hasRef) {
+        // Reference image attached with a generation request: emit the tag immediately.
+        // The app pairs the reference image with the tag and routes to image-edit.
+        systemContent += `\n\n[GENERATION CONTEXT — REFERENCE EDIT] The user attached an image AND asked to generate/edit. Reply with ONE short sentence like "On it — editing your reference now." then, on its own line, output exactly:\n[GENERATE_IMAGE:${imagePrompt || "clear detailed edit instruction based on the attached reference"}]\nRules: do NOT describe the output, do NOT say "Here's your image", do NOT paste a fake image link — the app renders the real image after the tag. The prompt inside the tag must be a concrete, specific edit instruction (what to change, keep, style, mood). One tag only.`;
+      } else {
+        systemContent += `\n\n[GENERATION CONTEXT] The user wants to generate an image. Detected prompt: "${imagePrompt}". Follow the MEDIA GENERATION HANDLING instructions above. If the prompt is clear and detailed, describe what you'll create and ask for permission. If vague, ask clarifying questions first. Do NOT output [GENERATE_IMAGE:...] until the user explicitly approves. Never tell the user there are no buttons; the app may show an approval button below your message.`;
+      }
     }
 
     if (shouldGenerateVideo || isLikelyVideoGenerationIntent(lastContent)) {
