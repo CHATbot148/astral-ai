@@ -775,8 +775,17 @@ export const ChatMessage = ({ role, content, isStreaming, streamingStyle, fileUr
 
   // Format text with strict sections + compact spacing for readability
   const formatText = (text: string) => {
+    const escapeHtml = (v: string) =>
+      v
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     const formatInline = (value: string) => {
-      let formatted = value;
+      // Escape raw HTML FIRST so untrusted content (e.g. AI-echoed web search text)
+      // cannot inject <script>/<img onerror>/etc. Then apply markdown-style regex.
+      let formatted = escapeHtml(value);
       formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
       formatted = formatted.replace(/\*(.*?)\*/g, '<em>$1</em>');
       formatted = formatted.replace(/`([^`]+)`/g, '<code class="bg-muted px-1.5 py-0.5 rounded text-sm font-mono">$1</code>');
