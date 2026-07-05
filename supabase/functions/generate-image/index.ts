@@ -781,12 +781,18 @@ serve(async (req) => {
       throw new Error("Image generation API key not configured");
     }
 
-    // Auth
+    // Auth — required. No anonymous image generation (prevents unlimited API burn).
     const authHeader = req.headers.get("Authorization") || "";
     const jwt = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
-    let userId = "anonymous";
+    if (!jwt) {
+      return new Response(
+        JSON.stringify({ error: "Authentication required to generate images." }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    let userId = "";
     let userEmail = "";
-    if (jwt) {
+    {
       const uc = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         global: { headers: { Authorization: `Bearer ${jwt}` } },
         auth: { persistSession: false },
@@ -796,6 +802,12 @@ serve(async (req) => {
         userId = data.user.id;
         userEmail = data.user.email || "";
       }
+    }
+    if (!userId) {
+      return new Response(
+        JSON.stringify({ error: "Invalid or expired session." }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });

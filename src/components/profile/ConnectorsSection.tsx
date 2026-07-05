@@ -34,14 +34,14 @@ export const ConnectorsSection = () => {
     if (!user) return;
     const { data } = await supabase
       .from('user_connections')
-      .select('provider, enabled, oauth_tokens, metadata')
+      .select('provider, enabled, metadata')
       .eq('user_id', user.id);
     const map: any = {};
     (data || []).forEach((r: any) => {
       map[r.provider] = {
         enabled: r.enabled,
         email: r.metadata?.email,
-        hasTokens: !!r.oauth_tokens?.access_token,
+        hasTokens: !!r.enabled,
       };
     });
     setRows(map);

@@ -37,8 +37,16 @@ serve(async (req) => {
     if (!scopeList) throw new Error("Unsupported provider");
 
     const redirectUri = `${SUPABASE_URL}/functions/v1/google-oauth-callback`;
-    const statePayload = { user_id: user.id, provider, return_to: returnTo || "/" };
-    const state = btoa(JSON.stringify(statePayload));
+    const statePayload = { user_id: user.id, provider, return_to: returnTo || "/", n: crypto.randomUUID() };
+    const raw = JSON.stringify(statePayload);
+    const secret = Deno.env.get("OAUTH_STATE_SECRET");
+    if (!secret) throw new Error("OAUTH_STATE_SECRET not configured");
+    const key = await crypto.subtle.importKey(
+      "raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+    );
+    const sigBytes = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(raw)));
+    const sig = Array.from(sigBytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+    const state = btoa(JSON.stringify({ payload: raw, sig }));
 
     const params = new URLSearchParams({
       client_id: CLIENT_ID,

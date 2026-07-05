@@ -6,6 +6,19 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Internal-only guard: require service-role bearer.
+function requireServiceRole(req: Request): Response | null {
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const auth = req.headers.get("Authorization") ?? "";
+  if (!key || auth !== `Bearer ${key}`) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  return null;
+}
+
+
 const TIER_NAMES: Record<string, string> = {
   basic: "Astraz Basic",
   pro: "Astraz Pro",
@@ -89,6 +102,8 @@ async function sendBrevo(apiKey: string, to: string, subject: string, html: stri
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const denied = requireServiceRole(req);
+  if (denied) return denied;
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -102,15 +117,6 @@ serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
 
-    const authHeader = req.headers.get("Authorization") || "";
-    const isServiceCall = authHeader === `Bearer ${SERVICE}`;
-    if (!isServiceCall) {
-      const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-      const { data: authData, error: authError } = token ? await admin.auth.getUser(token) : { data: null, error: new Error("Missing token") } as any;
-      if (authError || authData?.user?.id !== user_id) {
-        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-    }
 
     // Dedupe
     const { error: dupErr } = await admin

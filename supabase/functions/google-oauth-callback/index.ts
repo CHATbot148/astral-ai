@@ -19,7 +19,27 @@ serve(async (req) => {
       return htmlResponse(`<h2>Connection failed</h2><p>${error || "Missing code"}</p><script>setTimeout(()=>window.close(),3000)</script>`);
     }
 
-    const state = JSON.parse(atob(stateRaw));
+    // Verify HMAC-signed state to prevent OAuth connection hijacking.
+    let state: any;
+    try {
+      const wrapper = JSON.parse(atob(stateRaw));
+      const secret = Deno.env.get("OAUTH_STATE_SECRET");
+      if (!secret) throw new Error("OAUTH_STATE_SECRET not configured");
+      const key = await crypto.subtle.importKey(
+        "raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+      );
+      const sigBytes = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(wrapper.payload)));
+      const expected = Array.from(sigBytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+      // constant-time compare
+      const a = expected, b = String(wrapper.sig || "");
+      if (a.length !== b.length) throw new Error("Invalid state");
+      let diff = 0;
+      for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+      if (diff !== 0) throw new Error("Invalid state signature");
+      state = JSON.parse(wrapper.payload);
+    } catch (e) {
+      return htmlResponse(`<h2>Invalid or tampered OAuth state</h2><p>Please retry the connection from Astraz.</p><script>setTimeout(()=>window.close(),3000)</script>`);
+    }
     const { user_id, provider, return_to } = state;
 
     // Exchange code for tokens

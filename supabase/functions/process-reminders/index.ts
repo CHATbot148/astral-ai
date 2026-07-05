@@ -18,6 +18,11 @@ serve(async (req) => {
 
     if (!SUPABASE_URL || !SERVICE_ROLE_KEY) throw new Error("Backend not configured");
 
+    const auth = req.headers.get("Authorization") ?? "";
+    if (auth !== `Bearer ${SERVICE_ROLE_KEY}`) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
     const { data: reminders, error: fetchErr } = await supabase

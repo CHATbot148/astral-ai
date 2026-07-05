@@ -453,14 +453,27 @@ serve(async (req) => {
     const authHeader = req.headers.get("Authorization") || "";
     const jwt = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
 
+    if (!jwt || !SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      return new Response(
+        JSON.stringify({ error: "Authentication required" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     let userId = "";
-    if (jwt && SUPABASE_URL && SUPABASE_ANON_KEY) {
+    {
       const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         global: { headers: { Authorization: `Bearer ${jwt}` } },
         auth: { persistSession: false },
       });
       const { data } = await userClient.auth.getUser();
       if (data?.user?.id) userId = data.user.id;
+    }
+    if (!userId) {
+      return new Response(
+        JSON.stringify({ error: "Invalid or expired session" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // Fetch user memory (ChatGPT-style categorized recall)
