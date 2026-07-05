@@ -102,6 +102,8 @@ async function sendBrevo(apiKey: string, to: string, subject: string, html: stri
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const denied = requireServiceRole(req);
+  if (denied) return denied;
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -115,15 +117,6 @@ serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
 
-    const authHeader = req.headers.get("Authorization") || "";
-    const isServiceCall = authHeader === `Bearer ${SERVICE}`;
-    if (!isServiceCall) {
-      const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-      const { data: authData, error: authError } = token ? await admin.auth.getUser(token) : { data: null, error: new Error("Missing token") } as any;
-      if (authError || authData?.user?.id !== user_id) {
-        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-    }
 
     // Dedupe
     const { error: dupErr } = await admin
