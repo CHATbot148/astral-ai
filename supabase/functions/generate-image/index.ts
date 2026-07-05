@@ -849,8 +849,6 @@ serve(async (req) => {
     }
 
     const stylePrompt = STYLE_PROMPTS[style] || "";
-    // Beef up the visual prompt so the model gets rich, specific guidance
-    // (a short user prompt like "gaming logo" produces weak output otherwise).
     const userPrompt = String(prompt).trim();
     const referenceUrl = referenceImageUrl || referenceMediaUrl;
     if (referenceUrl && isLikelyVideoReference(String(referenceUrl))) {
@@ -860,20 +858,84 @@ serve(async (req) => {
       );
     }
     const isReferenceEdit = Boolean(referenceUrl);
-    const enhancedPrompt = [
+
+    // === IMAGE DIRECTOR: layered prompt engine ===
+    // Instead of passing the raw user prompt to the model, expand it via an LLM
+    // into a professional, richly-detailed image-generation brief (Layer 8).
+    // Adds category-aware boosters, lighting, composition, materials, and
+    // preserves negative constraints. Falls back to the deterministic template
+    // if the LLM is unavailable so generation never blocks.
+    const dims = ASPECT_RATIO_MAP[aspectRatio] || ASPECT_RATIO_MAP["1:1"];
+    const aspectLabel = ASPECT_LABELS[aspectRatio] || aspectRatio;
+
+    const buildFallbackPrompt = () => [
       isReferenceEdit ? `High-quality professional reference image edit.` : `High-quality professional image generation.`,
       ``,
       `Subject: ${userPrompt}`,
       stylePrompt ? `Style: ${stylePrompt}.` : `Style: clean, premium, realistic lighting and polished design.`,
-      `Composition: well-balanced, intentional lens perspective, clear focal subject, ${ASPECT_LABELS[aspectRatio] || aspectRatio} frame, no unwanted cropping, professional negative space where useful.`,
-      `Realism requirements: physically plausible lighting, real-world materials, authentic textures, precise reflections, atmospheric depth, correct scale, believable shadows, natural camera depth, premium color grading, high dynamic range, crisp micro-detail, and real brand logos/design language only when the user explicitly requests a real brand.`,
+      `Composition: well-balanced, intentional lens perspective, clear focal subject, ${aspectLabel} frame, no unwanted cropping, professional negative space where useful.`,
+      `Quality: ultra detailed, sharp focus, rich textures, natural lighting, HDR, 8K appearance, cinematic quality, premium visual aesthetics, no artifacts.`,
+      `Realism: physically plausible lighting, real materials, accurate reflections, atmospheric depth, correct scale, believable shadows, natural camera depth, premium color grading, crisp micro-detail.`,
       isReferenceEdit
-        ? `Reference edit rules: treat the reference as the source of truth. Preserve subject identity, face, body shape, pose, camera angle, layout, background, colors, lighting direction, logos, typography, materials, and all unrelated details. Change only the requested attributes and blend edits with matching grain, sharpness, shadows, and perspective.`
-        : `Design rules: make the scene specific, premium, modern, and believable with coherent objects, readable composition, strong silhouette, clean edges, and no generic filler details.`,
-      `Instruction fidelity: every user constraint is mandatory. Negations such as "do not", "don't", "no", "without", "avoid", "never", and relational instructions such as "not touching", "separate", "behind", "in front of", "left/right", "same person", or "keep unchanged" must be followed literally, not reinterpreted. If two subjects should not touch, leave clear visible space between them.`,
-      `Rendering target: polished commercial-grade output, realistic product/brand photography quality, cinematic lighting when appropriate, editorial-level finishing, no visible AI artifacts.`,
-      `Avoid: distorted text, gibberish lettering, warped faces, extra fingers, extra limbs, mangled hands, bad anatomy, plastic skin, muddy textures, messy artifacts, low-resolution detail, unwanted watermarks, random logos not requested by the user.`,
+        ? `Reference edit rules: treat the reference as the source of truth. Preserve subject identity, face, body shape, pose, camera angle, layout, background, colors, lighting direction, logos, typography, materials, and all unrelated details. Change ONLY the requested attributes.`
+        : `Design rules: specific, premium, modern, believable scene with coherent objects, readable composition, strong silhouette, clean edges.`,
+      `Instruction fidelity: every user constraint is mandatory. Negations ("do not", "no", "without", "avoid", "never", "not touching", "separate", "behind", "in front of") must be followed literally, not reinterpreted.`,
+      `Avoid: low quality, blurry, distorted anatomy, extra limbs, extra fingers, warped faces, bad hands, plastic skin, muddy textures, jpeg artifacts, oversaturated colors, watermark, random logos, gibberish text.`,
     ].join("\n");
+
+    let enhancedPrompt = buildFallbackPrompt();
+
+    try {
+      const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+      if (GEMINI_API_KEY && userPrompt) {
+        const directorSystem =
+          `You are an expert AI Image Director. Rewrite the user's short idea into ONE dense, ` +
+          `professional image-generation prompt (250-450 words, single paragraph, no headings, no lists, no quotes, no preamble). ` +
+          `\n\nDo:\n` +
+          `- Detect the category (portrait, product, car, logo, anime, fantasy, food, landscape, architecture, etc.) and add category-specific detail boosters (e.g. for cars: paint reflections, brake calipers, LED headlights, carbon fiber, tire tread; for portraits: skin pores, catchlights, individual hairs; for logos: vector, symmetry, flat design, transparent background).\n` +
+          `- Add cinematic lighting appropriate to the subject (golden hour, studio strobe, neon, volumetric, overcast realism, moonlight, showroom, etc.).\n` +
+          `- Add composition (rule of thirds, centered, symmetrical, depth of field, foreground/background separation) suited to a ${aspectLabel} frame.\n` +
+          `- Add rich material and micro-detail language (textures, reflections, weathering, fabric weave, surface imperfections when realistic).\n` +
+          `- Add professional quality tokens: ultra detailed, photorealistic where appropriate, sharp focus, HDR, 8K, natural balanced colors, premium composition, no artifacts.\n` +
+          `- Preserve ALL user constraints literally. Negations ("no", "not", "without", "avoid", "never", "not touching", "separate") must be echoed and reinforced.\n` +
+          `- Style requested: ${stylePrompt || "user's choice, default premium photoreal"}.\n` +
+          `${isReferenceEdit ? "- This is a REFERENCE-IMAGE EDIT. Instruct to preserve identity, pose, composition, background, lighting direction, and every unrelated detail from the reference; change only what the user asks.\n" : ""}` +
+          `\nDo NOT:\n` +
+          `- Add real copyrighted characters, real identifiable people, or brand names the user didn't mention.\n` +
+          `- Change or soften the user's negative constraints.\n` +
+          `- Reply with anything other than the final prompt text.\n\n` +
+          `End with a short "Avoid: ..." clause listing common failure modes to suppress (low quality, blurry, distorted anatomy, extra fingers, warped faces, bad hands, jpeg artifacts, watermark, random logos, gibberish text — plus anything the user negated).`;
+
+        const ctrl = new AbortController();
+        const timeout = setTimeout(() => ctrl.abort(), 6500);
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: ctrl.signal,
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: directorSystem }] },
+              contents: [{ role: "user", parts: [{ text: `User idea: ${userPrompt}` }] }],
+              generationConfig: { maxOutputTokens: 900, temperature: 0.55 },
+            }),
+          }
+        ).finally(() => clearTimeout(timeout));
+
+        if (res.ok) {
+          const data = await res.json();
+          const expanded = data?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text || "").join("").trim();
+          if (expanded && expanded.length > 80) {
+            enhancedPrompt = expanded;
+            console.log(`[IMAGE DIRECTOR] expanded ${userPrompt.length} -> ${expanded.length} chars`);
+          }
+        } else {
+          console.warn("[IMAGE DIRECTOR] Gemini expansion failed", res.status);
+        }
+      }
+    } catch (e) {
+      console.warn("[IMAGE DIRECTOR] fell back to template prompt:", e instanceof Error ? e.message : e);
+    }
     const dims = ASPECT_RATIO_MAP[aspectRatio] || ASPECT_RATIO_MAP["1:1"];
 
 
