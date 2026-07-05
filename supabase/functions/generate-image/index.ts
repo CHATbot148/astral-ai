@@ -49,6 +49,7 @@ const IMAGE_MODELS: Record<
   }
 > = {
   pollinations_gpt_image_2: { provider: "pollinations", pollinationsModel: "gpt-image-2" },
+  pollinations_kontext: { provider: "pollinations", pollinationsModel: "kontext" },
   pollinations_nanobanana_pro: { provider: "pollinations", pollinationsModel: "nanobanana-pro" },
   pollinations_seedream5: { provider: "pollinations", pollinationsModel: "seedream5" },
   pollinations_ideogram_quality: { provider: "pollinations", pollinationsModel: "ideogram-v4-quality" },
@@ -379,9 +380,63 @@ async function generateWithPollinations(
   model: string,
   width: number,
   height: number,
+  referenceImageUrl?: string,
 ): Promise<{ bytes: Uint8Array; mime: string } | null> {
   const apiKey = Deno.env.get("POLLINATIONS_API_KEY");
   if (!apiKey) return null;
+
+  if (referenceImageUrl) {
+    let image = referenceImageUrl.startsWith("storage:")
+      ? await resolveStorageRefToSignedUrl(referenceImageUrl)
+      : referenceImageUrl;
+
+    const body = {
+      prompt,
+      model,
+      image,
+      size: `${width}x${height}`,
+      n: 1,
+      quality: "high",
+      response_format: "b64_json",
+      negativePrompt:
+        "ignore user constraints, violate negative instructions, unwanted touching, unwanted contact, changed identity, changed pose, changed layout, extra fingers, extra limbs, warped faces, gibberish text, watermark, random logo",
+    };
+
+    const res = await fetch("https://gen.pollinations.ai/v1/images/edits", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        Accept: "image/*,application/json",
+      },
+      body: JSON.stringify(body),
+    });
+
+    const contentType = res.headers.get("content-type") || "";
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.error("Pollinations image edit failed:", model, res.status, errText);
+      return null;
+    }
+
+    if (contentType.startsWith("image/")) {
+      return { bytes: new Uint8Array(await res.arrayBuffer()), mime: contentType };
+    }
+
+    const data = await res.json().catch(() => null);
+    const b64 = data?.data?.[0]?.b64_json || data?.b64_json;
+    if (typeof b64 === "string") return { bytes: base64ToBytes(b64), mime: "image/png" };
+    const imageUrl = data?.data?.[0]?.url || data?.url || data?.image || data?.images?.[0]?.url;
+    if (typeof imageUrl === "string") {
+      if (imageUrl.startsWith("data:image/")) {
+        const parsed = parseDataUrl(imageUrl);
+        return { bytes: parsed.bytes, mime: parsed.mime || "image/png" };
+      }
+      return await downloadImageFromUrl(imageUrl);
+    }
+
+    return null;
+  }
 
   const url = new URL(`https://gen.pollinations.ai/image/${encodeURIComponent(compactPromptForUrl(prompt))}`);
   url.searchParams.set("model", model);
@@ -389,8 +444,9 @@ async function generateWithPollinations(
   url.searchParams.set("height", String(height));
   url.searchParams.set("nologo", "true");
   url.searchParams.set("private", "true");
-  url.searchParams.set("enhance", "true");
+  url.searchParams.set("enhance", "false");
   url.searchParams.set("safe", "true");
+  url.searchParams.set("negativePrompt", "ignore user constraints, violate negative instructions, unwanted touching, unwanted contact, extra fingers, extra limbs, warped faces, gibberish text, watermark, random logo");
 
   const res = await fetch(url, {
     headers: {
@@ -797,6 +853,12 @@ serve(async (req) => {
     // (a short user prompt like "gaming logo" produces weak output otherwise).
     const userPrompt = String(prompt).trim();
     const referenceUrl = referenceImageUrl || referenceMediaUrl;
+    if (referenceUrl && isLikelyVideoReference(String(referenceUrl))) {
+      return new Response(
+        JSON.stringify({ error: "Image references must be still images. Video references are not supported by the active image providers." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
     const isReferenceEdit = Boolean(referenceUrl);
     const enhancedPrompt = [
       isReferenceEdit ? `High-quality professional reference image edit.` : `High-quality professional image generation.`,
@@ -808,6 +870,7 @@ serve(async (req) => {
       isReferenceEdit
         ? `Reference edit rules: treat the reference as the source of truth. Preserve subject identity, face, body shape, pose, camera angle, layout, background, colors, lighting direction, logos, typography, materials, and all unrelated details. Change only the requested attributes and blend edits with matching grain, sharpness, shadows, and perspective.`
         : `Design rules: make the scene specific, premium, modern, and believable with coherent objects, readable composition, strong silhouette, clean edges, and no generic filler details.`,
+      `Instruction fidelity: every user constraint is mandatory. Negations such as "do not", "don't", "no", "without", "avoid", "never", and relational instructions such as "not touching", "separate", "behind", "in front of", "left/right", "same person", or "keep unchanged" must be followed literally, not reinterpreted. If two subjects should not touch, leave clear visible space between them.`,
       `Rendering target: polished commercial-grade output, realistic product/brand photography quality, cinematic lighting when appropriate, editorial-level finishing, no visible AI artifacts.`,
       `Avoid: distorted text, gibberish lettering, warped faces, extra fingers, extra limbs, mangled hands, bad anatomy, plastic skin, muddy textures, messy artifacts, low-resolution detail, unwanted watermarks, random logos not requested by the user.`,
     ].join("\n");
@@ -833,8 +896,8 @@ serve(async (req) => {
       if (!model) return false;
       console.log(`[IMAGE] trying ${key} via ${model.provider}${ref ? " with reference" : ""}`);
       try {
-        if (model.provider === "pollinations" && model.pollinationsModel && !ref) {
-          return useGenerated(await generateWithPollinations(enhancedPrompt, model.pollinationsModel, dims.width, dims.height));
+        if (model.provider === "pollinations" && model.pollinationsModel) {
+          return useGenerated(await generateWithPollinations(enhancedPrompt, model.pollinationsModel, dims.width, dims.height, ref));
         }
         if (model.provider === "puter" && model.puterModel) {
           return useGenerated(await generateWithPuter(enhancedPrompt, model.puterModel, dims.width, dims.height, ref, model.puterProvider, model.puterQuality));
@@ -855,7 +918,7 @@ serve(async (req) => {
     };
 
     if (referenceUrl) {
-      const referenceFallbacks = Array.from(new Set([selectedModelKey, "puter_gemini_3_pro", "puter_gpt_image_2", "nano_banana_2", "nano_banana", "phoenix"]));
+      const referenceFallbacks = Array.from(new Set([selectedModelKey, "pollinations_kontext", "pollinations_nanobanana_pro", "pollinations_seedream5", "puter_gemini_3_pro", "puter_gpt_image_2", "nano_banana_2", "nano_banana", "phoenix"]));
       for (const key of referenceFallbacks) {
         if (await tryModel(key, referenceUrl)) break;
       }
@@ -867,6 +930,7 @@ serve(async (req) => {
       const textFallbacks = Array.from(new Set([
         selectedModelKey,
         "pollinations_gpt_image_2",
+        "pollinations_kontext",
         "pollinations_nanobanana_pro",
         "pollinations_seedream5",
         "pollinations_ideogram_quality",
@@ -895,7 +959,7 @@ serve(async (req) => {
 
     const ref = await uploadAndSave(admin, userId, prompt, style, aspectRatio, imgBytes, imgMime);
 
-    if (userId !== "anonymous") {
+    if (userId !== "anonymous" && appInForeground !== true) {
       await incrementDailyImageUsage(admin, userId, new Date().toISOString().split("T")[0]);
     }
 
