@@ -1000,7 +1000,15 @@ IMPORTANT RESPONSE GUIDELINES:
 
     // When generation intent detected, let the AI handle conversationally (ask for details/permission)
     if (shouldGenerateImage) {
-      systemContent += `\n\n[GENERATION CONTEXT] The user wants to generate an image. Detected prompt: "${imagePrompt}". Follow the MEDIA GENERATION HANDLING instructions above. If the prompt is clear and detailed, describe what you'll create and ask for permission. If vague, ask clarifying questions first. Do NOT output [GENERATE_IMAGE:...] until the user explicitly approves. Never tell the user there are no buttons; the app may show an approval button below your message.`;
+      const lastMsgImgs = messages[messages.length - 1]?.imageUrls || [];
+      const hasRef = Array.isArray(lastMsgImgs) && lastMsgImgs.length > 0;
+      if (hasRef) {
+        // Reference image attached with a generation request: emit the tag immediately.
+        // The app pairs the reference image with the tag and routes to image-edit.
+        systemContent += `\n\n[GENERATION CONTEXT — REFERENCE EDIT] The user attached an image AND asked to generate/edit. Reply with ONE short sentence like "On it — editing your reference now." then, on its own line, output exactly:\n[GENERATE_IMAGE:${imagePrompt || "clear detailed edit instruction based on the attached reference"}]\nRules: do NOT describe the output, do NOT say "Here's your image", do NOT paste a fake image link — the app renders the real image after the tag. The prompt inside the tag must be a concrete, specific edit instruction (what to change, keep, style, mood). One tag only.`;
+      } else {
+        systemContent += `\n\n[GENERATION CONTEXT] The user wants to generate an image. Detected prompt: "${imagePrompt}". Follow the MEDIA GENERATION HANDLING instructions above. If the prompt is clear and detailed, describe what you'll create and ask for permission. If vague, ask clarifying questions first. Do NOT output [GENERATE_IMAGE:...] until the user explicitly approves. Never tell the user there are no buttons; the app may show an approval button below your message.`;
+      }
     }
 
     if (shouldGenerateVideo || isLikelyVideoGenerationIntent(lastContent)) {
@@ -1195,63 +1203,89 @@ IMPORTANT RESPONSE GUIDELINES:
     }
 
     if (hasImages) {
-      if (!MISTRAL_API_KEY) {
-        throw new Error("MISTRAL_API_KEY is not configured");
+      // Vision now runs on Gemini 2.5 Pro (native multimodal, dramatically better
+      // image understanding than Mistral Pixtral). Images are fetched server-side
+      // and inlined as base64 so private storage URLs work without exposing them.
+      const GEMINI_API_KEY_V = Deno.env.get("GEMINI_API_KEY");
+      if (!GEMINI_API_KEY_V) throw new Error("GEMINI_API_KEY is not configured for image analysis");
+
+      const fetchInline = async (url: string): Promise<{ mimeType: string; data: string } | null> => {
+        try {
+          const r = await fetch(url);
+          if (!r.ok) return null;
+          const mime = r.headers.get("content-type") || "image/jpeg";
+          if (!mime.startsWith("image/")) return null;
+          const buf = new Uint8Array(await r.arrayBuffer());
+          let bin = "";
+          const chunk = 0x8000;
+          for (let i = 0; i < buf.length; i += chunk) bin += String.fromCharCode(...buf.subarray(i, i + chunk));
+          return { mimeType: mime, data: btoa(bin) };
+        } catch (e) {
+          console.error("Vision image fetch failed:", url, e);
+          return null;
+        }
+      };
+
+      // Build Gemini contents: preserve conversation history (text only for prior turns),
+      // attach inline image parts to any turn that carried images.
+      const visionContents: any[] = [];
+      for (let i = 0; i < messages.length; i++) {
+        const msg = messages[i];
+        if (msg.role === "assistant" && (!msg.content || !String(msg.content).trim())) continue;
+        const parts: any[] = [];
+        const isLast = i === messages.length - 1;
+        // Only attach image bytes for the most recent user turn (avoids re-uploading
+        // every image on every reply — the model retains context via chat history).
+        if (isLast && Array.isArray(msg.imageUrls)) {
+          for (const url of msg.imageUrls) {
+            const inline = await fetchInline(url);
+            if (inline) parts.push({ inlineData: inline });
+          }
+        }
+        const text = String(msg.content || "").trim();
+        if (text) parts.push({ text });
+        if (parts.length === 0) continue;
+        visionContents.push({ role: msg.role === "assistant" ? "model" : "user", parts });
       }
 
-      const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${MISTRAL_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "pixtral-large-latest",
-          messages: [{ role: "system", content: systemContent }, ...formattedMessages],
-          stream: true,
-        }),
-      });
+      const visionSystem = systemContent +
+        `\n\n[VISION MODE] The user attached ${messages[messages.length - 1]?.imageUrls?.length || 1} image(s). ` +
+        `Look at them carefully. Describe or answer based on exactly what is visible. ` +
+        `Read any visible text (signs, labels, receipts, screens, handwriting) literally. ` +
+        `Identify people, objects, brands, animals, plants, locations, and actions with specific detail — not vague adjectives. ` +
+        `If the user asks a specific question about the image, answer that question directly first. ` +
+        `Never say "I can't see images" or "the image is unclear" unless it is truly unreadable — even low-quality photos usually have identifiable content. ` +
+        `If a detail is ambiguous, state your best interpretation and note the ambiguity briefly.`;
 
-      if (!response.ok) {
-        const errBody = await response.text();
-        console.error("Mistral Pixtral error:", response.status, errBody);
-        if (response.status === 429) {
-          return new Response(
-            JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment." }),
-            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      const visionModels = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-3.1-pro-preview"];
+      for (const vm of visionModels) {
+        try {
+          const res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${vm}:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY_V}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                systemInstruction: { parts: [{ text: visionSystem }] },
+                contents: visionContents,
+                generationConfig: { maxOutputTokens: 4096, temperature: 0.4 },
+              }),
+            }
           );
-        }
-        console.warn("Pixtral failed, falling back to text-only...");
-        const textOnlyMessages = formattedMessages.map((msg: any) => {
-          if (Array.isArray(msg.content)) {
-            const textParts = msg.content.filter((p: any) => p.type === 'text');
-            return { role: msg.role, content: textParts.map((p: any) => p.text).join('\n') + '\n[Note: User attached image(s) but image analysis is temporarily unavailable]' };
+          if (!res.ok || !res.body) {
+            console.error("Vision Gemini stream error:", vm, res.status, await res.text().catch(() => ""));
+            continue;
           }
-          return msg;
-        });
-
-        const fallbackRes = await fetch("https://api.mistral.ai/v1/chat/completions", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${MISTRAL_API_KEY}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: "mistral-large-latest",
-            messages: [{ role: "system", content: systemContent }, ...textOnlyMessages],
-            stream: true,
-          }),
-        });
-        if (fallbackRes.ok) {
-          const body = rawVideoCards ? appendToStream(fallbackRes.body!, rawVideoCards) : fallbackRes.body!;
-          return new Response(body, {
+          const stream = geminiStudioSseToOpenAiSse(res.body, rawVideoCards || "");
+          return new Response(stream, {
             headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
           });
+        } catch (e) {
+          console.error("Vision Gemini fetch failed:", vm, e);
         }
-        throw new Error("AI service temporarily unavailable. Please try again.");
       }
 
-      const body1 = rawVideoCards ? appendToStream(response.body!, rawVideoCards) : response.body!;
-      return new Response(body1, {
-        headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
-      });
+      throw new Error("Image analysis temporarily unavailable. Please try again shortly.");
     }
 
     // === ASTRAZ PRO (best Gemini through Lovable AI, with Google AI Studio fallback) ===
