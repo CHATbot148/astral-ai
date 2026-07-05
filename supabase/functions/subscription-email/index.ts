@@ -6,6 +6,19 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Internal-only guard: require service-role bearer.
+function requireServiceRole(req: Request): Response | null {
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const auth = req.headers.get("Authorization") ?? "";
+  if (!key || auth !== `Bearer ${key}`) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  return null;
+}
+
+
 const TIER_NAMES: Record<string, string> = {
   basic: "Astraz Basic",
   pro: "Astraz Pro",

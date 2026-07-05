@@ -21,6 +21,14 @@ serve(async (req) => {
     if (!SUPABASE_URL || !SERVICE_ROLE_KEY) throw new Error("Backend not configured");
     if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) throw new Error("VAPID keys not configured");
 
+    // Internal-only endpoint: require service-role bearer.
+    const authHeader = req.headers.get("Authorization") ?? "";
+    if (authHeader !== `Bearer ${SERVICE_ROLE_KEY}`) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { userId, title, body, url } = await req.json();
     if (!userId) throw new Error("userId required");
 
