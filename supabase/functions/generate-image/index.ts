@@ -872,20 +872,101 @@ serve(async (req) => {
     const isReferenceEdit = Boolean(referenceUrl);
     const dims = ASPECT_RATIO_MAP[aspectRatio] || ASPECT_RATIO_MAP["1:1"];
 
-    // === PROMPT ENGINE REMOVED ===
-    // The user's prompt is sent to the model verbatim. No LLM rewriting,
-    // no category boosters, no negation reinforcement, no template wrapping.
-    // The only optional addition is the UI-selected style keyword (photoreal,
-    // cinematic, anime, sketch) appended as a short suffix — nothing else.
-    const enhancedPrompt = stylePrompt
-      ? `${userPrompt}\n\nStyle: ${stylePrompt}`
-      : userPrompt;
-
-
-
-    // Free tier image generation uses normal Nano Banana unless a supported model is passed.
     const requestedModelKey = typeof modelId === "string" && IMAGE_MODELS[modelId] ? modelId : DEFAULT_MODEL;
     const selectedModelKey = requestedModelKey;
+
+    // === MODEL-AWARE PROMPT ENGINE ===
+    // Each elite image model has different strengths. A generic prompt hurts them all.
+    // We expand the user's raw concept via a fast LLM using rules tuned to the
+    // exact selected model, then send the expanded prompt to the image provider.
+    type EngineCfg = { system: string; negative: string };
+    const MODEL_ENGINES: Record<string, EngineCfg> = {
+      pollinations_nanobanana_pro: {
+        system: "Rewrite for hyper-photorealism. Add a specific camera body (e.g. Sony A7R V, Hasselblad X2D), lens focal length in mm, aperture, natural sub-surface scattering lighting, real material textures, depth of field, and environmental context. Avoid buzzwords like 'stunning', '8K', 'masterpiece'.",
+        negative: "plastic texture, CGI look, airbrushed, cartoon, smooth waxy skin, generic stock photo",
+      },
+      pollinations_ideogram_quality: {
+        system: "Rewrite focusing on graphic design, structural composition and clear typography. Put any user-supplied text inside double quotes and describe font style, weight, color, placement and hierarchy precisely. Describe layout, negative space, and color palette.",
+        negative: "garbled text, misspelled letters, blurry type, overlapping fonts, warped letters",
+      },
+      pollinations_seedream5: {
+        system: "Rewrite for ethereal, cinematic, artistic storytelling. Focus heavily on atmospheric lighting, emotional mood, volumetric fog, painterly cinematic color grading and evocative composition.",
+        negative: "flat lighting, boring composition, low contrast, plastic 3D render look",
+      },
+      pollinations_gpt_image_2: {
+        system: "Rewrite into a clean, balanced, compositionally precise scene. Describe object placement, scale, lighting direction, and spatial relationships. Keep it concrete and unambiguous.",
+        negative: "cluttered, asymmetrical layout errors, bad anatomy, extra limbs",
+      },
+      puter_gpt_image_2: {
+        system: "Rewrite into a clean, balanced, compositionally precise scene. Describe object placement, scale, lighting direction, and spatial relationships. Keep it concrete and unambiguous.",
+        negative: "cluttered, asymmetrical layout errors, bad anatomy, extra limbs",
+      },
+      puter_grok_quality: {
+        system: "Rewrite into a gritty, highly detailed, sharp-focus scene. Emphasize raw realism, intricate macro texture, and stark dramatic lighting contrast.",
+        negative: "blurry, soft focus, oversaturated, deformed hands, extra limbs",
+      },
+      puter_gemini_3_pro: {
+        system: "Rewrite focusing on complex multi-object spatial intelligence, precise physical boundaries, natural light dispersion, and lifelike physical logic. Every object gets a clear position and scale.",
+        negative: "impossible physics, floating objects, warped geometry",
+      },
+      nano_banana: {
+        system: "Rewrite focusing on multi-object spatial layout, natural light behavior and physical plausibility. Give every subject a clear position and interaction.",
+        negative: "warped geometry, floating objects, impossible physics",
+      },
+      nano_banana_2: {
+        system: "Rewrite focusing on multi-object spatial layout, natural light behavior and physical plausibility. Give every subject a clear position and interaction.",
+        negative: "warped geometry, floating objects, impossible physics",
+      },
+      pollinations_kontext: {
+        system: "Rewrite as a precise edit or contextual scene description. Preserve subject identity when a reference is implied. Describe lighting, camera and materials concretely.",
+        negative: "identity drift, warped features, plastic texture",
+      },
+    };
+
+    const engineCfg: EngineCfg = MODEL_ENGINES[selectedModelKey] || {
+      system: "Rewrite into a clear, concrete, visually specific prompt. Describe subject, composition, lighting and mood without buzzwords.",
+      negative: "low quality, blurry, distorted anatomy",
+    };
+
+    const expandPromptForModel = async (raw: string): Promise<string> => {
+      const key = Deno.env.get("LOVABLE_API_KEY");
+      if (!key || !raw) return raw;
+      try {
+        const editSuffix = isReferenceEdit
+          ? "\n\nThis is an EDIT of a supplied reference image. Preserve the reference subject's identity, pose and framing unless the user explicitly asks to change them. Describe only the requested change plus the surrounding scene."
+          : "";
+        const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+          body: JSON.stringify({
+            model: "google/gemini-2.5-flash-lite",
+            messages: [
+              {
+                role: "system",
+                content: `You are a prompt optimizer for the image model "${selectedModelKey}". ${engineCfg.system}${editSuffix}\n\nHard rules:\n- Faithfully preserve the user's intent, subjects, and any negations (e.g. "not touching", "no text"). Never invert them.\n- Do NOT add copyrighted characters, real named people, brand logos, or NSFW content unless the user asked for them.\n- Output ONE paragraph, 60-140 words. No markdown, no lists, no preamble, no surrounding quotes. Only the optimized prompt.`,
+              },
+              { role: "user", content: `User concept: ${raw}` },
+            ],
+            temperature: 0.6,
+            max_tokens: 400,
+          }),
+          signal: AbortSignal.timeout(9000),
+        });
+        if (!res.ok) return raw;
+        const data = await res.json();
+        const out = String(data?.choices?.[0]?.message?.content || "").trim().replace(/^"|"$/g, "");
+        return out.length > 20 ? out : raw;
+      } catch (e) {
+        console.error("[PROMPT ENGINE] expansion failed, using raw prompt:", e);
+        return raw;
+      }
+    };
+
+    const expandedPrompt = await expandPromptForModel(userPrompt);
+    const negativeSuffix = engineCfg.negative ? `\n\nAvoid: ${engineCfg.negative}` : "";
+    const styleSuffix = stylePrompt ? `\n\nStyle: ${stylePrompt}` : "";
+    const enhancedPrompt = `${expandedPrompt}${styleSuffix}${negativeSuffix}`;
+    console.log(`[PROMPT ENGINE] model=${selectedModelKey} expanded_len=${expandedPrompt.length}`);
 
     let imgBytes: Uint8Array | null = null;
     let imgMime = "image/png";
