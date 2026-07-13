@@ -44,6 +44,33 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+const AnimatedRoutes = () => {
+  const location = useLocation();
+  const reduce = useReducedMotion();
+  const transition = reduce
+    ? { duration: 0 }
+    : { duration: 0.15, ease: [0.22, 1, 0.36, 1] as const };
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      <motion.div
+        key={location.pathname}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={transition}
+      >
+        <Routes location={location}>
+          <Route path="/" element={<Index />} />
+          <Route path="/auth" element={<Auth />} />
+          <Route path="/payment" element={<Payment />} />
+          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </motion.div>
+    </AnimatePresence>
+  );
+};
+
 const App = () => {
   const [showSplash, setShowSplash] = useState(() => {
     // Only show splash on first visit per session
