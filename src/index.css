@@ -234,6 +234,21 @@
     to { opacity: 1; transform: translateY(0); }
   }
 
+  /* Global tactile press effect for interactive elements.
+     Kept short (150ms) so latency-sensitive taps still feel snappy. */
+  .tap {
+    transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1),
+                background-color 150ms ease-out,
+                opacity 150ms ease-out;
+  }
+  .tap:active { transform: scale(0.96); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chat-message-enter,
+    .tap { animation: none !important; transition: none !important; }
+    .tap:active { transform: none; }
+  }
+
   /* === Glassmorphic chat bubbles === */
   .chat-bubble-user {
     background: rgba(0, 0, 0, 0.05);
