@@ -383,10 +383,39 @@ async function callOpenRouterFreeFallback(
 }
 
 // ===== Puter.js chat (Astraz Pro primary) =====
-// Uses Puter's developer SDK. Puter advertises free, unlimited access to the
-// top frontier models — Grok 4 is picked here as the most powerful of that
-// unlimited tier. The SDK returns a full response; we chunk it into an
-// OpenAI-style SSE stream so the existing frontend parser works unchanged.
+// Puter advertises free, unlimited access to top frontier models. We use
+// GPT-5.5 as the primary model (best balance of quality + speed for a chat
+// assistant) and fall back to Claude Opus 4.8 if GPT-5.5 fails, times out,
+// or returns empty text. The SDK returns a full response; we chunk it into
+// an OpenAI-style SSE stream so the existing frontend parser works unchanged.
+const PUTER_PRO_MODELS = ["openai/gpt-5.5", "anthropic/claude-opus-4-8"] as const;
+const PUTER_FIRST_TOKEN_TIMEOUT_MS = 25_000;
+
+async function callPuterModel(
+  puter: any,
+  model: string,
+  prompt: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  try {
+    const result: any = await Promise.race([
+      puter.ai.chat({ prompt, model, stream: false }),
+      new Promise((_, rej) => {
+        signal?.addEventListener("abort", () => rej(new Error("aborted")), { once: true });
+      }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("puter-timeout")), PUTER_FIRST_TOKEN_TIMEOUT_MS)),
+    ]);
+    const text: string = typeof result === "string"
+      ? result
+      : result?.message?.content || result?.content || result?.text || result?.choices?.[0]?.message?.content || "";
+    if (!text || !text.trim()) return null;
+    return text;
+  } catch (e) {
+    console.error(`Puter model ${model} failed:`, e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
 async function callPuterProStream(
   systemContent: string,
   formattedMessages: Array<{ role: string; content: string }>,
@@ -397,22 +426,19 @@ async function callPuterProStream(
   try {
     const mod = await import("npm:@heyputer/puter.js/src/init.cjs");
     const puter = mod.init(token);
-    // Compose a single prompt from system + messages (Puter's SDK expects a prompt string).
     const convo = formattedMessages
       .map((m) => `${m.role === "assistant" ? "Astraz" : m.role === "system" ? "System" : "User"}: ${m.content}`)
       .join("\n\n");
     const prompt = `${systemContent}\n\n${convo}\n\nAstraz:`;
 
-    const result: any = await Promise.race([
-      puter.ai.chat({ prompt, model: "x-ai/grok-4", stream: false }),
-      new Promise((_, rej) => {
-        signal?.addEventListener("abort", () => rej(new Error("aborted")), { once: true });
-      }),
-    ]);
-    const text: string = typeof result === "string"
-      ? result
-      : result?.message?.content || result?.content || result?.text || result?.choices?.[0]?.message?.content || "";
-    if (!text || !text.trim()) return null;
+    let text: string | null = null;
+    let servedBy = "";
+    for (const model of PUTER_PRO_MODELS) {
+      text = await callPuterModel(puter, model, prompt, signal);
+      if (text) { servedBy = model; break; }
+    }
+    if (!text) return null;
+    console.log(`[Astraz Pro] served by ${servedBy}`);
 
     // Emit as OpenAI-compatible SSE. Chunk by ~40 chars so the UI still gets
     // a streaming feel rather than a single wall of text.
@@ -422,13 +448,13 @@ async function callPuterProStream(
         const chunkSize = 40;
         let i = 0;
         const push = () => {
-          if (i >= text.length) {
+          if (i >= text!.length) {
             controller.enqueue(enc.encode(`data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n`));
             controller.enqueue(enc.encode(`data: [DONE]\n\n`));
             controller.close();
             return;
           }
-          const piece = text.slice(i, i + chunkSize);
+          const piece = text!.slice(i, i + chunkSize);
           i += chunkSize;
           const payload = JSON.stringify({ choices: [{ delta: { content: piece } }] });
           controller.enqueue(enc.encode(`data: ${payload}\n\n`));
