@@ -1414,7 +1414,25 @@ IMPORTANT RESPONSE GUIDELINES:
       const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
       let lastProError = "";
 
-      // 1. Gemini Studio direct streaming (best Gemini chat models: 3.1 Pro, 3.5 Flash)
+      // 1. Puter.js — Grok 4 (free & unlimited, most powerful model Puter offers).
+      {
+        const t = withTimeout(PRO_TIMEOUT_MS);
+        try {
+          const puterRes = await callPuterProStream(systemContent, formattedMessages, t.signal);
+          t.clear();
+          if (puterRes?.body) {
+            await markProUsed();
+            const finalBody = rawVideoCards ? appendToStream(puterRes.body, rawVideoCards) : puterRes.body;
+            return new Response(finalBody, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
+          }
+        } catch (e) {
+          t.clear();
+          lastProError = e instanceof Error ? e.message : String(e);
+          console.error("Astraz Pro Puter failed:", lastProError);
+        }
+      }
+
+      // 2. Gemini Studio direct streaming fallback
       if (GEMINI_API_KEY) {
         const t = withTimeout(PRO_TIMEOUT_MS);
         try {
