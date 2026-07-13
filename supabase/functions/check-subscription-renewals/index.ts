@@ -53,11 +53,16 @@ serve(async (req) => {
     // Any subscription past access_until/expires_at is no longer active. This
     // is the source of truth for coupon and non-renewing plans, so premium
     // access cannot last forever if the client misses a refresh.
+    // Any subscription past access_until/expires_at is no longer active. We
+    // do NOT filter by status='active' here so that if another codepath (e.g.
+    // the paystack webhook) already flipped the row to 'expired', we still
+    // send the end-of-plan email. The subscription_email_log dedup guarantees
+    // one email per period_key.
     const { data: expired } = await admin
       .from("subscriptions")
       .select("id, user_id, tier, expires_at, access_until, auto_renew, status")
       .neq("tier", "free")
-      .eq("status", "active")
+      .in("status", ["active", "expired"])
       .or(`expires_at.lte.${nowIso},access_until.lte.${nowIso}`);
 
     let expiredSent = 0;
