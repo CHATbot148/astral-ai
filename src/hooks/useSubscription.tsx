@@ -36,7 +36,7 @@ export const TIER_CONFIGS: Record<SubscriptionTier, TierConfig> = {
   },
   basic: {
     name: 'Basic',
-    price: { monthly: 5000, yearly: 42000 },
+    price: { monthly: 7500, yearly: 63000 },
     limits: {
       imagesPerDay: 10,
       videosPerDay: 2,
@@ -62,7 +62,7 @@ export const TIER_CONFIGS: Record<SubscriptionTier, TierConfig> = {
   },
   ultimate: {
     name: 'Ultimate',
-    price: { monthly: 50000, yearly: 420000 },
+    price: { monthly: 55000, yearly: 462000 },
     limits: {
       imagesPerDay: Infinity,
       videosPerDay: Infinity,
