@@ -442,6 +442,9 @@ async function callPuterProStream(
     console.error("Puter Pro chat failed:", e);
     return null;
   }
+}
+
+
 
 // Detect if user is asking about something visual that benefits from inline images
 function needsVisualContext(text: string): { needed: boolean; query: string } {
